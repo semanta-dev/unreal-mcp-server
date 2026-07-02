@@ -77,9 +77,30 @@ internal/version      -ldflags build stamps
 deploy/               mcp.ab.json (P4), mcp.cutover.json (P5)
 ```
 
-## Remaining live validation (run with the editor open)
+## Live validation — DONE (2026-07-02, editor open, UE 5.7.4, L_Arena)
 
-1. `dist/uspike.exe -project <aesir>` — P1 gate (engine version + `__main__` persistence).
-2. Register `deploy/mcp.ab.json`, run `dist/abparity.exe` — P4 parity diff.
-3. Swap to `deploy/mcp.cutover.json` — P5 cutover; keep `unreal-py` for rollback.
-4. Exercise `build_compile`, `pie_observe`/`pie_wait_until`, `apply_level_recipe` in a real session.
+Validated against the running `aesir-wave-defense` editor:
+
+- **P1** `uspike` PASS — loopback multicast discovery, project-aware node selection, TCP reverse-connect,
+  engine version, **`__main__` persists = true** (confirms `hotload` default).
+- **P2/P3** `unreal-mcp -selftest` OK — companion module v6 hot-loaded, sentinel + throttle-off, `editor_status`
+  dispatched → real state (`current_level: L_Arena`, `editor_pid`, `bridge_version: 6`).
+- **P4** `abparity` **5/5 parity-equal** — `editor_status` (superset), `list_actors` (48 actors), `list_assets`
+  (superset), `execute_python` (text match), `take_screenshot` (**byte-identical**, 112860B).
+- **Write path + CallText** (`-tags live` test) — `spawn_actor`→`get_actor`→`delete_actor` round-trip on a
+  real PointLight, incl. the "Deleted …" text-tool message.
+
+**Two real bugs the live editor exposed and I fixed:**
+1. Companion-module install was mis-parsed as a *file path* by UE's ExecuteFile mode (the module's
+   `mcp_bridge.py` header comment contains a `.py` token). Fixed by wrapping the source in a **base64
+   bootstrap** (base64 output can't contain `.`), so the heuristic never triggers. (`internal/bridge/install.go`)
+2. When the editor **drops** the command channel (e.g. a second client connects), the read error was
+   classified `ErrProtocol` (not retried) instead of `ErrConnectionLost` → reconnect-once never fired.
+   Fixed: only genuine JSON parse errors are protocol faults; every socket error is a lost connection.
+   (`internal/uexec/command.go`, + `TestReconnectOnEditorDroppedConnection`)
+
+## Remaining optional live steps (disruptive — do when ready)
+
+1. Swap `aesir-wave-defense/.mcp.json` to `deploy/mcp.cutover.json` — P5 cutover (Python kept as `unreal-py` rollback).
+2. Exercise `build_compile` (closes/reopens the editor on a full rebuild), `pie_observe`/`pie_wait_until`
+   (needs PIE running), and `apply_level_recipe` in a real session.

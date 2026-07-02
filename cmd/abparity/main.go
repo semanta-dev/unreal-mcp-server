@@ -100,15 +100,13 @@ func compare(tc toolCall, py, gr *mcp.CallToolResult) (string, bool) {
 		}
 		return fmt.Sprintf("text differ:\n  py=%q\n  go=%q", p, g), false
 	case "array":
-		var pa, ga []any
-		if err := json.Unmarshal([]byte(firstText(py)), &pa); err != nil {
-			return "python not a JSON array: " + firstText(py), false
+		// FastMCP splits a Python list return into one content block per item;
+		// the Go server returns a single JSON-array block. Compare item counts.
+		pn, gn := countItems(py), countItems(gr)
+		if pn == gn {
+			return fmt.Sprintf("item count %d match", pn), true
 		}
-		_ = json.Unmarshal([]byte(firstText(gr)), &ga)
-		if len(pa) == len(ga) {
-			return fmt.Sprintf("array len %d match", len(pa)), true
-		}
-		return fmt.Sprintf("array len differ py=%d go=%d", len(pa), len(ga)), false
+		return fmt.Sprintf("item count differ py=%d go=%d", pn, gn), false
 	case "struct":
 		p := structOf(py)
 		g := structOf(gr)
@@ -147,6 +145,37 @@ func firstText(r *mcp.CallToolResult) string {
 		}
 	}
 	return ""
+}
+
+func allTexts(r *mcp.CallToolResult) []string {
+	var out []string
+	for _, c := range r.Content {
+		if tc, ok := c.(*mcp.TextContent); ok {
+			out = append(out, tc.Text)
+		}
+	}
+	return out
+}
+
+// countItems counts list items across either representation: N content blocks
+// (FastMCP per-item) or one block holding a JSON array (Go), or one object (1).
+func countItems(r *mcp.CallToolResult) int {
+	texts := allTexts(r)
+	if len(texts) > 1 {
+		return len(texts)
+	}
+	if len(texts) == 0 {
+		return 0
+	}
+	var arr []any
+	if json.Unmarshal([]byte(texts[0]), &arr) == nil {
+		return len(arr)
+	}
+	var obj map[string]any
+	if json.Unmarshal([]byte(texts[0]), &obj) == nil {
+		return 1
+	}
+	return 0
 }
 
 func structOf(r *mcp.CallToolResult) map[string]any {

@@ -70,6 +70,7 @@ type Options struct {
 	ReplyDelay          time.Duration // sleep before replying (timeout tests)
 	SplitWritesAt       int           // write the reply in chunks of this size (segmentation)
 	PadResultToMultiple int           // pad Result so the serialized reply is a multiple of this
+	CloseAfterReplies   int           // close the command channel after replying to N commands (drop-recovery tests)
 }
 
 // Editor is a running fake editor. Close it when done.
@@ -205,6 +206,7 @@ func (e *Editor) handleCommandChannel(remoteSource, ip string, port int) {
 	}()
 
 	dec := json.NewDecoder(bufio.NewReaderSize(conn, 65536))
+	replies := 0
 	for {
 		var m message
 		if err := dec.Decode(&m); err != nil {
@@ -223,6 +225,10 @@ func (e *Editor) handleCommandChannel(remoteSource, ip string, port int) {
 		out := e.buildReply(m)
 		if err := e.writeReply(conn, out); err != nil {
 			return
+		}
+		replies++
+		if e.opts.CloseAfterReplies > 0 && replies >= e.opts.CloseAfterReplies {
+			return // drop the channel (deferred conn.Close) — the client must reconnect
 		}
 	}
 }

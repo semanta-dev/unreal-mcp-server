@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"strings"
@@ -186,10 +185,17 @@ func (c *commandConn) readMessage(ctx context.Context, timeout time.Duration) (M
 		if errors.As(err, &ne) && ne.Timeout() {
 			return m, fmt.Errorf("%w: read", ErrTimeout)
 		}
-		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-			return m, fmt.Errorf("%w: read: %v", ErrConnectionLost, err)
+		// Only a genuine JSON parse error is a protocol fault. Every other error
+		// (EOF, connection reset/abort, broken pipe) means the connection is gone
+		// — return ErrConnectionLost so the session reconnects once and retries.
+		// This matters when the editor drops our command channel (e.g. another
+		// client connected, or an editor hiccup).
+		var se *json.SyntaxError
+		var ute *json.UnmarshalTypeError
+		if errors.As(err, &se) || errors.As(err, &ute) {
+			return m, fmt.Errorf("%w: decode: %v", ErrProtocol, err)
 		}
-		return m, fmt.Errorf("%w: decode: %v", ErrProtocol, err)
+		return m, fmt.Errorf("%w: read: %v", ErrConnectionLost, err)
 	}
 	if err := m.validate(); err != nil {
 		return m, fmt.Errorf("%w: %v", ErrProtocol, err)

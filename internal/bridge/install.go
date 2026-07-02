@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -94,9 +95,17 @@ func (b *Bridge) installModule(ctx context.Context) error {
 	}
 }
 
-// installHotload ExecuteFiles the embedded module source into __main__.
+// installHotload loads the embedded module source into __main__. The source is
+// wrapped in a base64 bootstrap: the editor's ExecuteFile mode treats a command
+// containing a ".py" token as a filename to load (the module's own header
+// comment contains "mcp_bridge.py", which triggered "Could not load Python
+// file ..."). base64 output can never contain "." , so the bootstrap is
+// guaranteed free of that trigger; it decodes and execs the source into globals.
 func (b *Bridge) installHotload(ctx context.Context) error {
-	res, err := b.run.RunCommand(ctx, snippets.Source(), uexec.ModeExecFile)
+	b64 := base64.StdEncoding.EncodeToString([]byte(snippets.Source()))
+	boot := fmt.Sprintf("import base64\n"+
+		"exec(compile(base64.b64decode(%q).decode(\"utf-8\"), \"mcp_bridge\", \"exec\"), globals())", b64)
+	res, err := b.run.RunCommand(ctx, boot, uexec.ModeExecFile)
 	if err != nil {
 		return fmt.Errorf("%w: hotload: %v", ErrInstall, err)
 	}

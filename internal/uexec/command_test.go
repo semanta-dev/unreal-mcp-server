@@ -204,6 +204,33 @@ func TestTimeoutTaintRecover(t *testing.T) {
 	}
 }
 
+// TestReconnectOnEditorDroppedConnection covers the live-editor bug: when the
+// editor drops our command channel (e.g. another client connected), the read
+// error must be classified ErrConnectionLost (not ErrProtocol) so the session
+// reconnects once and the next command still succeeds.
+func TestReconnectOnEditorDroppedConnection(t *testing.T) {
+	e, _ := fakeeditor.Start(fakeeditor.Options{
+		CloseAfterReplies: 1, // drop the channel after the first reply
+		OnCommand: func(req fakeeditor.CommandRequest) fakeeditor.CommandResponse {
+			return fakeeditor.CommandResponse{Success: true, Result: trimGuard(req.Command)}
+		},
+	})
+	defer e.Close()
+	s := dialFake(t, e, testCfg())
+
+	if _, err := s.RunCommand(context.Background(), "first", ModeEval); err != nil {
+		t.Fatalf("first command: %v", err)
+	}
+	// The editor dropped the channel; the next command must reconnect and succeed.
+	res, err := s.RunCommand(context.Background(), "second", ModeEval)
+	if err != nil {
+		t.Fatalf("expected reconnect+success after dropped connection, got %v", err)
+	}
+	if res.Result != "second" {
+		t.Fatalf("desync after reconnect: got %q", res.Result)
+	}
+}
+
 func TestBusyAcceptExhaustion(t *testing.T) {
 	// Editor never dials back -> reverse-connect accept exhausts -> actionable ErrConnectionLost.
 	e, _ := fakeeditor.Start(fakeeditor.Options{RefuseConnectBack: true})

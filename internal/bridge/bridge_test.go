@@ -59,8 +59,8 @@ func (f *fakeEditorRunner) RunCommand(_ context.Context, code string, mode uexec
 		f.versionChecks++
 		return okResult(strconv.Itoa(f.moduleVer)), nil
 	}
-	// Module install (hotload ExecuteFile of the source, which defines _mcp_dispatch).
-	if mode == uexec.ModeExecFile && strings.Contains(code, "def _mcp_dispatch") {
+	// Module install: the base64 bootstrap that decodes + execs the source.
+	if mode == uexec.ModeExecFile && strings.Contains(code, "exec(compile(base64.b64decode") {
 		f.installs++
 		f.moduleLoaded = true
 		f.moduleVer = snippets.Version()

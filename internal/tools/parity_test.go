@@ -37,7 +37,7 @@ func (r *scriptedRunner) RunCommand(_ context.Context, code string, mode uexec.E
 		return uexec.CommandResult{Success: true, Result: strconv.Itoa(r.version)}, nil
 	}
 	body := strings.TrimPrefix(code, "# mcp\n")
-	if mode == uexec.ModeExecFile && strings.Contains(code, "def _mcp_dispatch") {
+	if mode == uexec.ModeExecFile && strings.Contains(code, "exec(compile(base64.b64decode") {
 		r.loaded = true
 		r.version = snippets.Version()
 		return uexec.CommandResult{Success: true}, nil
