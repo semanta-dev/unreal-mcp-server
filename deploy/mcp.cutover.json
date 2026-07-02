@@ -1,0 +1,19 @@
+{
+  "_comment": "P5 cutover: 'unreal' now points at the Go binary; the Python server is kept as 'unreal-py' for one-line instant rollback (just re-point 'unreal' at python.exe + server.py). While 'unreal-py' stays registered, keep the Go server on a distinct command port (:6777). Once you delete the 'unreal-py' entry (Python fully retired), drop the -command-addr override so Go uses the default :6776.",
+  "mcpServers": {
+    "unreal": {
+      "type": "stdio",
+      "command": "C:/Users/jorda/code/games/unreal-mcp-server/dist/unreal-mcp.exe",
+      "args": ["-command-addr", "127.0.0.1:6777"],
+      "env": {
+        "UMCP_PROJECT_DIR": "C:/Users/jorda/code/games/aesir-wave-defense",
+        "UMCP_ENGINE_DIR": "D:/Unreal/Engine/UE_5.7"
+      }
+    },
+    "unreal-py": {
+      "type": "stdio",
+      "command": "C:/Users/jorda/code/games/unreal-mcp-server/.venv/Scripts/python.exe",
+      "args": ["C:/Users/jorda/code/games/unreal-mcp-server/server.py"]
+    }
+  }
+}

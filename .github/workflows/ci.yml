@@ -1,0 +1,70 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  lint-test:
+    name: lint + race test (linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.4'
+      - name: gofmt gate
+        run: |
+          unformatted=$(gofmt -l $(git ls-files '*.go'))
+          if [ -n "$unformatted" ]; then echo "unformatted:"; echo "$unformatted"; exit 1; fi
+      - name: go vet
+        run: go vet ./...
+      - name: stdout-purity gate
+        # stdout carries the MCP JSON-RPC frame. All serving-time code lives in
+        # internal/ and must never write stdout (logs go to stderr). The only
+        # sanctioned stdout writes are the pre-serve CLI handlers in main.go
+        # (-version / -selftest), which print then exit before srv.Run.
+        run: |
+          if grep -RnE 'fmt\.Print(ln|f)?\(|os\.Stdout' --include='*.go' internal | grep -v '_test.go'; then
+            echo "stdout write found in serving path (must go to stderr)"; exit 1
+          fi
+      - name: race test
+        run: go test -race ./...
+
+  build-windows:
+    name: build + integration (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.4'
+      - name: build static exe
+        env:
+          CGO_ENABLED: '0'
+        run: go build -trimpath -ldflags "-s -w" -o dist/unreal-mcp.exe ./cmd/unreal-mcp
+      - name: version smoke
+        run: .\dist\unreal-mcp.exe -version
+      - name: loopback multicast integration test
+        run: go test -tags integration -run TestLoopbackMulticastRoundTrip ./internal/uexec/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unreal-mcp-exe
+          path: dist/unreal-mcp.exe
+
+  python-lint:
+    name: companion module (python 3.11)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: py_compile
+        run: python -m py_compile internal/snippets/py/mcp_bridge.py
+      - name: ruff (best-effort)
+        run: pip install ruff && ruff check internal/snippets/py/ || true

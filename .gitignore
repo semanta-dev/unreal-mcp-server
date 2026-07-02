@@ -1,0 +1,13 @@
+# Go build output
+/dist/
+*.exe
+*.test
+*.out
+
+# Go workspace
+/vendor/
+
+# Python (legacy server kept as rollback artifact — sources tracked, caches not)
+.venv/
+__pycache__/
+*.pyc

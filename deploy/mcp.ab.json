@@ -1,0 +1,19 @@
+{
+  "_comment": "P4 A/B parity: register BOTH servers. Python stays the default 'unreal'; the Go server is 'unreal-go' on a DISTINCT TCP command port (127.0.0.1:6777) so the editor's reverse-connect never contends with Python's :6776. Copy the relevant block into aesir-wave-defense/.mcp.json.",
+  "mcpServers": {
+    "unreal": {
+      "type": "stdio",
+      "command": "C:/Users/jorda/code/games/unreal-mcp-server/.venv/Scripts/python.exe",
+      "args": ["C:/Users/jorda/code/games/unreal-mcp-server/server.py"]
+    },
+    "unreal-go": {
+      "type": "stdio",
+      "command": "C:/Users/jorda/code/games/unreal-mcp-server/dist/unreal-mcp.exe",
+      "args": ["-command-addr", "127.0.0.1:6777"],
+      "env": {
+        "UMCP_PROJECT_DIR": "C:/Users/jorda/code/games/aesir-wave-defense",
+        "UMCP_ENGINE_DIR": "D:/Unreal/Engine/UE_5.7"
+      }
+    }
+  }
+}
