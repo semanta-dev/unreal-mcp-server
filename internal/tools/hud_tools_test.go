@@ -11,11 +11,60 @@ func TestHUDToolsRegister(t *testing.T) {
 	b := bridge.New(noEditorRunner{}, bridge.Options{})
 	names := listToolNames(t, Deps{Bridge: b, ProjectDir: t.TempDir()})
 	for _, want := range []string{
+		// Phase 0a authoring
 		"widget_create", "widget_compose", "widget_compile", "widget_tree", "widget_describe",
+		// Phase 1 see + drive + bind
+		"widget_view", "widget_set_fields", "widget_inspect", "widget_read", "widget_capture",
+		"widget_bind_field", "widget_track_actor", "set_input_mode", "widget_set_focus", "pie_set_source",
+		// Phase 2 operate
+		"set_hud_widget", "widget_bind_event", "ui_click",
+		// Phase 3 mvvm
+		"widget_viewmodel_create", "widget_bind_mvvm",
+		// Phase 4 polish
+		"widget_make_rt_material",
 	} {
 		if !names[want] {
-			t.Errorf("missing HUD authoring tool: %q", want)
+			t.Errorf("missing HUD tool: %q", want)
 		}
+	}
+}
+
+func TestWidgetBindFieldArgs(t *testing.T) {
+	// The flagship health ratio bind: separate Health/MaxHealth -> Percent.
+	got := widgetBindFieldArgs(widgetBindFieldIn{
+		Blueprint: "/Game/UI/WBP_HUD", TargetWidget: "HealthBar", TargetField: "Percent",
+		Source: "owning_pawn", Path: "Health", MaxPath: "MaxHealth", Conversion: "ratio",
+	})
+	for k, want := range map[string]any{"target_widget": "HealthBar", "target_field": "Percent", "source": "owning_pawn", "path": "Health", "max_path": "MaxHealth", "conversion": "ratio"} {
+		if got[k] != want {
+			t.Fatalf("bind_field[%q] = %v, want %v", k, got[k], want)
+		}
+	}
+	// Optional GAS/format keys omitted when empty.
+	if _, ok := got["attribute"]; ok {
+		t.Fatalf("empty attribute must be omitted, got %v", got)
+	}
+}
+
+func TestWidgetViewArgs(t *testing.T) {
+	got := widgetViewArgs(widgetViewIn{Mode: "show", Blueprint: "/Game/UI/WBP_HUD", Z: 5, KeepAlive: true})
+	if got["mode"] != "show" || got["blueprint"] != "/Game/UI/WBP_HUD" || got["z"] != 5 || got["keep_alive"] != true {
+		t.Fatalf("show args = %v", got)
+	}
+	got = widgetViewArgs(widgetViewIn{Mode: "hide", Handle: "h1"})
+	if got["mode"] != "hide" || got["handle"] != "h1" || got["z"] != nil || got["keep_alive"] != nil {
+		t.Fatalf("hide args must be minimal, got %v", got)
+	}
+}
+
+func TestWidgetCaptureArgs(t *testing.T) {
+	got := widgetCaptureArgs(widgetCaptureIn{Blueprint: "/Game/UI/WBP_HealthBar", Resolutions: [][]int{{1280, 720}, {3840, 2160}}, Geometry: true})
+	res, ok := got["resolutions"].([][]int)
+	if !ok || len(res) != 2 || res[1][0] != 3840 {
+		t.Fatalf("resolutions not threaded: %v", got["resolutions"])
+	}
+	if got["geometry"] != true || got["pixels"] != nil {
+		t.Fatalf("capture flags: %v", got)
 	}
 }
 
