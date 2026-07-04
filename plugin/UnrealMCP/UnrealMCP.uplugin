@@ -14,6 +14,11 @@
 			"Name": "MCPCapture",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "MCPAuthoring",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
 		}
 	]
 }
