@@ -58,8 +58,9 @@ public:
 	void EmitProgress(const FString& OpId, const FString& PayloadJson);
 
 	/** Called by the rx thread for each inbound hello/rpc/control frame (public so the
-	 *  FRunnable can reach it). */
-	void HandleInboundFrame(const FString& Json);
+	 *  FRunnable can reach it). Returns false to stop reading (reject); teardown of a
+	 *  rejected peer is deferred to the game thread (never self-joins the rx thread). */
+	bool HandleInboundFrame(const FString& Json);
 
 	/** A queued rpc waiting for the game thread. */
 	struct FPendingRpc
@@ -86,8 +87,12 @@ private:
 	FMCPCockpitServer(const FMCPCockpitServer&) = delete;
 
 	// --- listener / peer ---
+	// OnConnectionAccepted runs on the FTcpListener thread and only HANDS OFF the new
+	// socket via PendingPeer; the game thread does ALL install/teardown so peer lifecycle
+	// is single-threaded (no listener-vs-game-thread race on the rx thread).
 	bool OnConnectionAccepted(FSocket* InSocket, const FIPv4Endpoint& Endpoint);
-	void ClosePeer();        // ONLY from the listener/game thread — never the rx thread
+	void InstallPeer(FSocket* NewSocket);   // GAME THREAD ONLY: teardown old, wire the new peer + rx thread
+	void ClosePeer();                        // GAME THREAD ONLY (or Stop after the ticker+listener are gone)
 	bool SendFrame(const TSharedRef<class FJsonObject>& Frame); // serialized send to the peer
 	void SendErrorResult(const FString& OpId, const FString& Code, const FString& Error);
 
@@ -99,11 +104,12 @@ private:
 	void ServeReplayFrom(uint64 FromSeq);
 
 	FTcpListener* Listener = nullptr;
-	FSocket* PeerSocket = nullptr;              // the single connected Go peer
-	FRunnableThread* RxThread = nullptr;
-	class FMCPRxRunnable* RxRunnable = nullptr;
+	FSocket* PeerSocket = nullptr;              // the single connected Go peer (game-thread owned)
+	FRunnableThread* RxThread = nullptr;         // game-thread owned
+	class FMCPRxRunnable* RxRunnable = nullptr;  // game-thread owned
+	TAtomic<FSocket*> PendingPeer{ nullptr };    // listener thread → game thread hand-off slot
 
-	FCriticalSection PeerCS;                     // guards PeerSocket + send serialization
+	FCriticalSection PeerCS;                     // guards PeerSocket read/null + send serialization
 	FCriticalSection RingCS;                     // guards the event ring
 
 	int32 Port = 0;

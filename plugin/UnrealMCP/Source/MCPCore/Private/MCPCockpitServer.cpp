@@ -11,6 +11,8 @@
 #include "Serialization/JsonWriter.h"
 #include "Dom/JsonObject.h"
 #include "Misc/Guid.h"
+#include "Misc/EngineVersion.h"
+#include "Misc/Paths.h"
 
 static const int32 MCP_PROTOCOL_VERSION = 1;
 static constexpr uint32 MCP_MAX_FRAME_BYTES = 64u << 20; // matches Go MaxFrameBytes
@@ -164,21 +166,42 @@ void FMCPCockpitServer::Stop()
 		delete Listener; // FTcpListener dtor stops its thread + closes the listen socket
 		Listener = nullptr;
 	}
-	ClosePeer(); // game/shutdown thread → safe join of the rx thread
+	// Ticker + listener are now gone, so no GameThreadTick/OnConnectionAccepted can race:
+	// drain a leftover handed-off socket, then tear down the installed peer.
+	if (FSocket* Leftover = PendingPeer.Exchange(nullptr))
+	{
+		Leftover->Close();
+		ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(Leftover);
+	}
+	ClosePeer();
 }
 
 bool FMCPCockpitServer::OnConnectionAccepted(FSocket* InSocket, const FIPv4Endpoint& Endpoint)
 {
-	// One peer at a time; a new connection replaces the old (Go re-dials on reconnect).
-	// Runs on the FTcpListener thread — never the rx thread — so ClosePeer's join is safe.
-	ClosePeer();
+	// Runs on the FTcpListener thread. Do NOT install/teardown here — just hand the socket
+	// to the game thread via PendingPeer so ALL peer lifecycle is single-threaded. If a
+	// prior pending socket was never consumed (two accepts before a tick), close it — it
+	// was never wired to an rx thread, so closing it directly here is safe.
+	FSocket* Superseded = PendingPeer.Exchange(InSocket);
+	if (Superseded)
+	{
+		Superseded->Close();
+		ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(Superseded);
+	}
+	return true; // accepted; ownership of InSocket transfers to us (installed on the game thread)
+}
+
+// GAME THREAD ONLY. Tears down any existing peer, then wires the new socket + its rx thread.
+void FMCPCockpitServer::InstallPeer(FSocket* NewSocket)
+{
+	ClosePeer();                 // safe: same (game) thread, so no self-join / no race
+	bPeerRejected = false;       // a fresh peer supersedes any pending rejection latch
 	{
 		FScopeLock Lock(&PeerCS);
-		PeerSocket = InSocket;
+		PeerSocket = NewSocket;
 	}
-	RxRunnable = new FMCPRxRunnable(this, InSocket);
+	RxRunnable = new FMCPRxRunnable(this, NewSocket);
 	RxThread = FRunnableThread::Create(RxRunnable, TEXT("MCPCockpitRx"));
-	return true; // accepted; ownership of InSocket transfers to us
 }
 
 // Teardown of the peer + rx thread. MUST be called from the listener or game thread —
@@ -246,6 +269,8 @@ bool FMCPCockpitServer::HandleInboundFrame(const FString& Json)
 		W->SetStringField(TEXT("type"), TEXT("welcome"));
 		W->SetStringField(TEXT("session_epoch"), SessionEpoch);
 		W->SetStringField(TEXT("manifest_digest"), ManifestDigest); // empty in A0; real in B2
+		W->SetStringField(TEXT("engine_version"), FEngineVersion::Current().ToString());
+		W->SetStringField(TEXT("project"), FPaths::GetProjectFilePath());
 		W->SetNumberField(TEXT("protocol_version"), MCP_PROTOCOL_VERSION);
 		SendFrame(W);
 		double LastSeen = 0;
@@ -312,6 +337,11 @@ void FMCPCockpitServer::SendErrorResult(const FString& OpId, const FString& Code
 bool FMCPCockpitServer::GameThreadTick(float Dt)
 {
 	if (!bRunning) return false;
+	// Install a newly-accepted peer (handed off by the listener thread), single-threaded.
+	if (FSocket* NewPeer = PendingPeer.Exchange(nullptr))
+	{
+		InstallPeer(NewPeer);
+	}
 	if (bPeerRejected.Exchange(false))
 	{
 		ClosePeer(); // deferred teardown of a token-rejected peer, safely on the game thread
