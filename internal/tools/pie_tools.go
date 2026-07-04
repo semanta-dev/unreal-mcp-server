@@ -6,17 +6,21 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"github.com/jdziat/unreal-mcp-server/internal/logtail"
+	"github.com/jdziat/unreal-mcp-server/internal/predicate"
 )
 
 type pieObserveIn struct {
 	ActorsOfInterest []string `json:"actors_of_interest,omitempty" jsonschema:"actor labels to read detailed state for"`
+	Include          []string `json:"include,omitempty" jsonschema:"glob patterns of gamestate/actor property names to include; default all (minus a noise list)"`
+	Exclude          []string `json:"exclude,omitempty" jsonschema:"glob patterns of property names to exclude"`
+	Properties       []string `json:"properties,omitempty" jsonschema:"read exactly these gamestate/actor properties (preserves key names for predicate paths)"`
+	MaxProps         int      `json:"max_props,omitempty" jsonschema:"cap on discovered properties per object; default 48"`
 }
 type pieExecIn struct {
 	Target    string         `json:"target" jsonschema:"actor label, or 'gamestate'"`
@@ -24,8 +28,9 @@ type pieExecIn struct {
 	Args      map[string]any `json:"args,omitempty"`
 }
 type pieWaitIn struct {
-	Predicate string  `json:"predicate" jsonschema:"a comparison over the pie_observe schema, e.g. \"gamestate.WaveNumber >= 2\" or \"counts.EnemyCharacter >= 1\""`
-	TimeoutS  float64 `json:"timeout_s,omitempty" jsonschema:"default 20"`
+	Predicate  string   `json:"predicate" jsonschema:"a comparison over the pie_observe schema. gamestate keys are reflected snake_case, e.g. \"gamestate.wave_number >= 2\"; counts keys are class names, e.g. \"counts.EnemyCharacter >= 1\""`
+	TimeoutS   float64  `json:"timeout_s,omitempty" jsonschema:"default 20"`
+	Properties []string `json:"properties,omitempty" jsonschema:"pin exact gamestate property key names so a predicate can use them verbatim (e.g. [\"WaveNumber\"] to match gamestate.WaveNumber)"`
 }
 type pieScreenshotIn struct {
 	Width  int `json:"width,omitempty"`
@@ -40,11 +45,23 @@ func registerPieTools(s *mcp.Server, b *bridge.Bridge) {
 			if len(in.ActorsOfInterest) > 0 {
 				m["actors_of_interest"] = in.ActorsOfInterest
 			}
+			if len(in.Include) > 0 {
+				m["include"] = in.Include
+			}
+			if len(in.Exclude) > 0 {
+				m["exclude"] = in.Exclude
+			}
+			if len(in.Properties) > 0 {
+				m["properties"] = in.Properties
+			}
+			if in.MaxProps > 0 {
+				m["max_props"] = in.MaxProps
+			}
 			return m
 		}))
 
 	add(s, "pie_exec",
-		"Invoke a BlueprintCallable UFUNCTION on a live PIE actor (deterministic driving). target is an actor label or 'gamestate'.",
+		"Invoke a UFUNCTION on a live PIE actor by reflection (FindFunction/ProcessEvent) — this dispatches BlueprintCallable functions AND, in single-standalone PIE with authority, Server RPCs. target is an actor label or 'gamestate'.",
 		structHandler[pieExecIn](b, "pie_exec", func(in pieExecIn) map[string]any {
 			m := map[string]any{"target": in.Target, "ufunction": in.UFunction}
 			if in.Args != nil {
@@ -72,7 +89,7 @@ func pieScreenshot(b *bridge.Bridge) mcp.ToolHandlerFor[pieScreenshotIn, any] {
 		if in.Height > 0 {
 			args["height"] = in.Height
 		}
-		raw, err := b.Call(ctx, "pie_screenshot", args)
+		raw, err := bridgeFromCtx(ctx, b).Call(ctx, "pie_screenshot", args)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -94,7 +111,7 @@ func pieScreenshot(b *bridge.Bridge) mcp.ToolHandlerFor[pieScreenshotIn, any] {
 
 func pieWaitUntil(b *bridge.Bridge) mcp.ToolHandlerFor[pieWaitIn, map[string]any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in pieWaitIn) (*mcp.CallToolResult, map[string]any, error) {
-		pred, err := parsePredicate(in.Predicate)
+		pred, err := predicate.Parse(in.Predicate)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -102,14 +119,18 @@ func pieWaitUntil(b *bridge.Bridge) mcp.ToolHandlerFor[pieWaitIn, map[string]any
 		if in.TimeoutS > 0 {
 			timeout = time.Duration(in.TimeoutS * float64(time.Second))
 		}
+		observeArgs := map[string]any{}
+		if len(in.Properties) > 0 {
+			observeArgs["properties"] = in.Properties
+		}
 		start := time.Now()
 		deadline := start.Add(timeout)
 		var last map[string]any
 		for {
-			raw, cerr := b.Call(ctx, "pie_observe", map[string]any{})
+			raw, cerr := bridgeFromCtx(ctx, b).Call(ctx, "pie_observe", observeArgs)
 			if cerr == nil {
 				_ = json.Unmarshal(raw, &last)
-				if ok, _ := pred.eval(last); ok {
+				if ok, _ := pred.Eval(last); ok {
 					return nil, map[string]any{"met": true, "elapsed_s": time.Since(start).Seconds(), "final_state": last}, nil
 				}
 			}
@@ -123,104 +144,6 @@ func pieWaitUntil(b *bridge.Bridge) mcp.ToolHandlerFor[pieWaitIn, map[string]any
 			}
 		}
 	}
-}
-
-// --- predicate: "<dotted.path> <op> <value>" over the observe JSON ---
-
-type predicate struct {
-	path  []string
-	op    string
-	num   float64
-	isNum bool
-	str   string
-}
-
-var predOps = []string{">=", "<=", "==", "!=", ">", "<"}
-
-func parsePredicate(expr string) (*predicate, error) {
-	expr = strings.TrimSpace(expr)
-	for _, op := range predOps {
-		if i := strings.Index(expr, op); i > 0 {
-			lhs := strings.TrimSpace(expr[:i])
-			rhs := strings.TrimSpace(expr[i+len(op):])
-			p := &predicate{path: strings.Split(lhs, "."), op: op}
-			rhs = strings.Trim(rhs, `'"`)
-			if f, err := strconv.ParseFloat(rhs, 64); err == nil {
-				p.num = f
-				p.isNum = true
-			} else {
-				p.str = rhs
-			}
-			return p, nil
-		}
-	}
-	return nil, fmt.Errorf("predicate must be '<path> <op> <value>' with op in %v; got %q", predOps, expr)
-}
-
-func (p *predicate) eval(state map[string]any) (bool, error) {
-	if state == nil {
-		return false, nil
-	}
-	val, ok := lookupPath(state, p.path)
-	if !ok {
-		return false, nil // not present yet
-	}
-	if p.isNum {
-		f, ok := toFloat(val)
-		if !ok {
-			return false, nil
-		}
-		switch p.op {
-		case ">=":
-			return f >= p.num, nil
-		case "<=":
-			return f <= p.num, nil
-		case ">":
-			return f > p.num, nil
-		case "<":
-			return f < p.num, nil
-		case "==":
-			return f == p.num, nil
-		case "!=":
-			return f != p.num, nil
-		}
-	}
-	s := fmt.Sprintf("%v", val)
-	switch p.op {
-	case "==":
-		return s == p.str, nil
-	case "!=":
-		return s != p.str, nil
-	}
-	return false, nil
-}
-
-func lookupPath(m map[string]any, path []string) (any, bool) {
-	var cur any = m
-	for _, k := range path {
-		obj, ok := cur.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		cur, ok = obj[k]
-		if !ok {
-			return nil, false
-		}
-	}
-	return cur, true
-}
-
-func toFloat(v any) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case int:
-		return float64(n), true
-	case json.Number:
-		f, err := n.Float64()
-		return f, err == nil
-	}
-	return 0, false
 }
 
 // --- log tools ---
@@ -238,19 +161,19 @@ type logsSinceIn struct {
 func registerLogTools(s *mcp.Server, d Deps) {
 	add(s, "logs_mark", "Return a marker (byte offset) into the project log for a later logs_since.",
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, map[string]any, error) {
-			if d.ProjectDir == "" {
+			if resolveDeps(ctx, d).ProjectDir == "" {
 				return nil, nil, errNoProject
 			}
-			path := logtail.LogPath(d.ProjectDir)
+			path := logtail.LogPath(resolveDeps(ctx, d).ProjectDir)
 			return nil, map[string]any{"marker": strconv.FormatInt(logtail.Size(path), 10)}, nil
 		})
 
 	add(s, "logs_tail", "Return recent project log lines filtered by severity/category.",
 		func(ctx context.Context, _ *mcp.CallToolRequest, in logsTailIn) (*mcp.CallToolResult, map[string]any, error) {
-			if d.ProjectDir == "" {
+			if resolveDeps(ctx, d).ProjectDir == "" {
 				return nil, nil, errNoProject
 			}
-			path := logtail.LogPath(d.ProjectDir)
+			path := logtail.LogPath(resolveDeps(ctx, d).ProjectDir)
 			text, _, err := logtail.ReadFrom(path, 0)
 			if err != nil {
 				return nil, nil, err
@@ -272,11 +195,11 @@ func registerLogTools(s *mcp.Server, d Deps) {
 
 	add(s, "logs_since", "Return project log lines since a marker, with error/warning/ensure counts (attributable output for a run).",
 		func(ctx context.Context, _ *mcp.CallToolRequest, in logsSinceIn) (*mcp.CallToolResult, map[string]any, error) {
-			if d.ProjectDir == "" {
+			if resolveDeps(ctx, d).ProjectDir == "" {
 				return nil, nil, errNoProject
 			}
 			off, _ := strconv.ParseInt(in.Marker, 10, 64)
-			path := logtail.LogPath(d.ProjectDir)
+			path := logtail.LogPath(resolveDeps(ctx, d).ProjectDir)
 			text, _, err := logtail.ReadFrom(path, off)
 			if err != nil {
 				return nil, nil, err

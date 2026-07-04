@@ -1,0 +1,101 @@
+package tools
+
+import (
+	"testing"
+
+	"github.com/jdziat/unreal-mcp-server/internal/bridge"
+	"github.com/jdziat/unreal-mcp-server/internal/rubric"
+)
+
+// v7ToolNames are the tools added for playtest capture, high-level design, and
+// tighter editor integration. Registration must not need a live editor.
+var v7ToolNames = []string{
+	"reflect_object",
+	"capture_start", "capture_status", "capture_stop", "scene_contact_sheet",
+	"scene_apply", "scene_plan", "scene_clear", "env_preset_apply", "design_check", "layout_preview",
+	"viewport_set", "viewport_get", "focus_actors", "select_actors", "get_selection", "editor_state",
+	"playtest_capture", "playtest_evaluate",
+}
+
+func TestV7ToolsRegister(t *testing.T) {
+	b := bridge.New(noEditorRunner{}, bridge.Options{})
+	names := listToolNames(t, Deps{Bridge: b, ProjectDir: t.TempDir()})
+	for _, want := range v7ToolNames {
+		if !names[want] {
+			t.Errorf("missing v7 tool: %q", want)
+		}
+	}
+	// The frozen parity tools must still be present alongside the additions.
+	for _, want := range parityToolNames {
+		if !names[want] {
+			t.Errorf("v7 additions dropped a frozen parity tool: %q", want)
+		}
+	}
+}
+
+func TestOrderBeats(t *testing.T) {
+	beats := []playtestBeat{
+		{AtS: 2, WaitUntil: "a"},
+		{AtS: 0, Exec: &playtestExecBeat{Target: "gamestate", UFunction: "X"}},
+		{AtS: 1, WaitUntil: "b"},
+		{AtS: 0, WaitUntil: "c"}, // ties keep declaration order (stable)
+	}
+	got := orderBeats(beats)
+	wantAt := []float64{0, 0, 1, 2}
+	for i, w := range wantAt {
+		if got[i].AtS != w {
+			t.Errorf("beat %d: at_s = %v, want %v", i, got[i].AtS, w)
+		}
+	}
+	// stability: the two at_s==0 beats stay in their original relative order.
+	if got[0].Exec == nil || got[1].WaitUntil != "c" {
+		t.Errorf("stable order broken: %+v", got[:2])
+	}
+	// the input slice must not be mutated.
+	if beats[0].AtS != 2 {
+		t.Error("orderBeats mutated its input")
+	}
+}
+
+func TestFailedFrameIndices(t *testing.T) {
+	r := rubric.Report{Checks: []rubric.CheckResult{
+		{ID: "a", Passed: true, Evidence: &rubric.Evidence{FrameIndex: 1}},   // passed -> not marked
+		{ID: "b", Passed: false, Evidence: &rubric.Evidence{FrameIndex: 5}},  // failed -> 5
+		{ID: "c", Passed: false, Evidence: &rubric.Evidence{FrameIndex: 5}},  // dup -> once
+		{ID: "d", Passed: false, Evidence: &rubric.Evidence{FrameIndex: -1}}, // log check -> skip
+		{ID: "e", Passed: false, Evidence: nil},                              // no evidence -> skip
+		{ID: "f", Passed: false, Evidence: &rubric.Evidence{FrameIndex: 8}},
+	}}
+	got := failedFrameIndices(r)
+	if len(got) != 2 || got[0] != 5 || got[1] != 8 {
+		t.Fatalf("failedFrameIndices = %v, want [5 8]", got)
+	}
+}
+
+func TestReportToJSON(t *testing.T) {
+	r := rubric.Report{Verdict: "FAIL", Checks: []rubric.CheckResult{
+		{ID: "wave", Kind: "reached", Severity: "fail", Passed: false, Message: "never reached",
+			Evidence: &rubric.Evidence{FrameIndex: 3, TWorld: 1.5, Value: "Active"}},
+	}}
+	m := reportToJSON(r)
+	if m["verdict"] != "FAIL" {
+		t.Errorf("verdict = %v", m["verdict"])
+	}
+	checks := m["checks"].([]map[string]any)
+	if len(checks) != 1 || checks[0]["id"] != "wave" || checks[0]["passed"] != false {
+		t.Fatalf("unexpected checks: %v", checks)
+	}
+	ev := checks[0]["evidence"].(map[string]any)
+	if ev["frame"] != 3 {
+		t.Errorf("evidence frame = %v, want 3", ev["frame"])
+	}
+}
+
+func TestToVec3(t *testing.T) {
+	if v := toVec3([]float64{1, 2, 3, 4}); v != [3]float64{1, 2, 3} {
+		t.Errorf("toVec3 overrun = %v", v)
+	}
+	if v := toVec3([]float64{7}); v != [3]float64{7, 0, 0} {
+		t.Errorf("toVec3 short = %v", v)
+	}
+}

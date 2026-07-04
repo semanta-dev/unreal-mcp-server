@@ -19,3 +19,8 @@ func IsAlive(pid int) bool {
 	}
 	return p.Signal(syscall.Signal(0)) == nil
 }
+
+// ProcessIdentity is the recycled-PID guard token. On non-Windows (CI/build only —
+// production is Windows) it returns "" so the pool falls back to liveness-only; the
+// recycled-PID race the token defends against is a Windows PID-reuse concern.
+func ProcessIdentity(pid int) string { return "" }

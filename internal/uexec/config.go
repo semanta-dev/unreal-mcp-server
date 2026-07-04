@@ -60,6 +60,14 @@ type Config struct {
 	// project matches (avoids attaching to the wrong editor on a multi-project box).
 	ProjectDir string
 
+	// StrictNode disables the "no match within timeout → first discovered node"
+	// fallback in node selection. REQUIRED for a leased per-instance session under the
+	// multi-project daemon: during another project's editor cold-start the only node
+	// on the shared discovery is a DIFFERENT tenant's editor, and the fallback would
+	// pin this session to it (isolation break). With StrictNode, selection returns
+	// ErrEditorNotFound instead, so the caller keeps polling for its OWN node.
+	StrictNode bool
+
 	PingInterval     time.Duration
 	NodeTimeout      time.Duration
 	DiscoveryTimeout time.Duration

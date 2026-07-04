@@ -51,3 +51,22 @@ func LoggingMiddleware(logger *slog.Logger) mcp.Middleware {
 func InstallMiddleware(s *mcp.Server, logger *slog.Logger) {
 	s.AddReceivingMiddleware(RecoverMiddleware(logger), LoggingMiddleware(logger))
 }
+
+// InstallDepsMiddleware installs the per-session Deps resolver (MULTI_PROJECT_SYSTEM.md
+// §4): before each handler runs, it resolves the request's session to its editor-lease
+// Deps and puts them in ctx (WithDeps) so tools route to the right editor. resolve
+// returns (Deps, true) when a session is bound to a lease, else (Deps{}, false) — in
+// which case handlers fall back to the value captured at registration (single-project
+// stdio is unaffected because it installs no such middleware). The daemon supplies
+// resolve (it owns the session→lease→bridge mapping); the tools package stays
+// decoupled from the daemon.
+func InstallDepsMiddleware(s *mcp.Server, resolve func(ctx context.Context, req mcp.Request) (Deps, bool)) {
+	s.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if d, ok := resolve(ctx, req); ok {
+				ctx = WithDeps(ctx, d)
+			}
+			return next(ctx, method, req)
+		}
+	})
+}

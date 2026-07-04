@@ -75,6 +75,13 @@ func (j *Job) Snapshot() Snapshot {
 	return Snapshot{ID: j.ID, Status: j.status, Progress: prog, Result: j.result, Err: errStr}
 }
 
+// Status returns the job's current status (cheap; no allocation).
+func (j *Job) Status() Status {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.status
+}
+
 // Cancel requests cancellation; the job's ctx is cancelled and its final status
 // becomes Cancelled unless it already finished.
 func (j *Job) Cancel() {
@@ -137,4 +144,18 @@ func (r *Registry) Get(id string) (*Job, bool) {
 	defer r.mu.RUnlock()
 	j, ok := r.jobs[id]
 	return j, ok
+}
+
+// HasRunning reports whether any job is still Running. The daemon idle-sweep uses
+// this to REFUSE reclaiming a lease whose holder has async work in flight (e.g. a
+// long build_compile that produces no tool calls for minutes).
+func (r *Registry) HasRunning() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, j := range r.jobs {
+		if j.Status() == Running {
+			return true
+		}
+	}
+	return false
 }

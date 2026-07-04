@@ -26,6 +26,64 @@ toolchain (mingw) not installed locally — runs in CI.
 **Tool surface: 39** (16 frozen parity + 23 e2e additions). All `go test ./...`
 green; `go vet` + `gofmt` clean; `mcp_bridge.py` passes `py_compile` on 3.11.
 
+## v7 — Playtest capture, high-level design, tighter editor integration
+
+Plan: `PLAYTEST_UPGRADE_PLAN.md` (multi-agent designed + adversarially critiqued).
+`_MCP_BRIDGE_VERSION 6 → 7` (16 new editor ops, additive; `pie_observe` upgraded to
+reflection). **Tool surface: 39 → 58** (19 additions). All `go test ./...` green,
+`go vet`/`gofmt` clean, `py_compile` OK.
+
+| Group | Status | Notes |
+|---|---|---|
+| **Pure cores** | ✅ done, unit-tested | `internal/montage` (contact sheet + 5×7 font), `internal/scenespec` (spec→plan compiler + layout/prefab/env/diff/checks), `internal/framing` (orbit/frame poses), `internal/predicate` (extracted from pie_tools), `internal/rubric` (temporal pass/fail) — all ungated, table-tested |
+| **P4 reflection** | ✅ done (editor-gated) | `_reflect_observe`/`_op_reflect_object`; `pie_observe` v2 drops the wrong `_GS_ALLOWLIST` (it listed `IntermissionTime`, which doesn't exist, and missed `WaveClearGoldAmount`/`IntermissionEndTime`) |
+| **P5 capture** | ✅ done (editor-gated) | in-editor `register_slate_post_tick_callback` recorder → disk manifest → Go montage in one `capture_stop`; `capture_poses` synchronous multi-angle; scene_capture (editor/simulate) vs pie_highres (possessed PIE) |
+| **P6 design** | ✅ done (editor-gated) | `scene_apply` (one transaction, tag-scoped prune), `scene_clear`, `scene_bounds`, `design_probe`; Go `scene_apply`/`scene_plan`/`env_preset_apply`/`design_check`/`layout_preview` |
+| **P7 integration** | ✅ done (editor-gated) | `viewport_set`/`viewport_get`/`focus_actors`/`select_actors`/`get_selection`/`editor_state` |
+| **P8 playtest** | ✅ done (editor-gated) | `playtest_capture` orchestrator (Go-only) + pure `playtest_evaluate` |
+| **P9 transact** | ⏸ deferred | atomic named undo batch — cut per critique (programmatic undo uncertain in 5.7); `scene_apply` already wraps its realize in one `ScopedEditorTransaction` |
+
+**Review round (multi-agent, adversarially verified):** 13 confirmed gated-path bugs
+found & fixed — recorder self-teardown on auto-stop/error (leaked slate callback +
+SceneCapture2D), explicit stop-reason, `pie_highres` async-file path/tolerance, PIE
+frame-source warning, `_apply_placement` component-property routing (env presets were
+setting actor-level keys that raised and suppressed the save) + material handling +
+soft-warning-vs-hard-error split, `playtest_capture` detached-context cleanup on
+cancellation, `scene_apply` `ok` derived from the editor's error array, `scene_contact_sheet`
+explicit-0 elevation, `pie_wait_until` snake-case predicate docs + `properties` pin.
+
+## Autonomy execution (AUTONOMY_UPGRADE_PLAN.md) — in progress
+
+Executing the autonomy plan phase by phase, each gated by specialist reviewer agents to ≥ A-.
+
+**P1 — trustworthy verdicts & self-correction** (bridge v9). Shipped: `internal/crash` (Go-side crash
+reader — `CrashContext.runtime-xml` + `[Callstack]`-format log scanner + access-violation banner→cause →
+`{kind,file,line,frames}`); error-code taxonomy in the dispatch envelope incl. **in-band `{"error"}`
+promotion** so NOT_IN_PIE/CLASS_UNRESOLVED/ASSET_NOT_FOUND/SPAWN_FAILED are actually produced, surfaced
+as `OpError.Code/Retryable`; perf tier-a (`perf.{fps,frame_ms,hitch_ms}` per sample) + rubric `min`/`max`
+reducers; crash wiring into `playtest_capture` on the **dropped-channel/error path** (a hard crash IS the
+dropped channel); normalized `issues[{code,label,message}]` on `scene_apply`. Live-gated acceptance:
+`scripts/smoke_p1.json` (L_Arena playtest + the null-deref crash-diagnosis case). Quick wins folded in:
+`playtest_capture time_dilation` (slomo), `console` op, `read_capture`/`capture_clear` verbs.
+
+**P7a — PIE-world C++ capture helper** (ELEVATED, user priority; bridge v10). Shipped the
+`plugin/UnrealMCP` UE plugin: `UMCPCaptureSubsystem` (GameInstanceSubsystem) spawns a
+`SceneCapture2D` into the GAME world (renders backgrounded — the one thing Python can't do) and,
+with `include_ui`, grabs the composited viewport (scene + Slate/UMG HUD) via
+`FSlateApplication::TakeScreenshot` (fixes the "can't capture HUD / HighResShot unreliable"
+limitation). Exposed as `capture_start source=game_scene` → slots into the existing capture_stop/
+montage flow; `PLUGIN_MISSING` coded error if not compiled. Design-gated (adversarial, web-verified):
+fixed 1 real compile blocker (`#include "Widgets/SViewport.h"` for the GetGameViewportWidget upcast)
++ a latent `capture_list` KeyError; 3 candidate findings refuted by verify. Installed into aesir +
+poly-world `Plugins/`. Live-compile gated (poly-world needs one build_compile; aesir already compiled+loaded).
+
+**Gated (awaiting a live-editor run, per the P1–P9 gate model):** the editor-side ops
+above. Pure sub-logic (montage tiling, scene compile/layout/prefab/env/diff, framing,
+predicate/rubric, beat scheduling, evidence→mark-cell mapping, invariant evaluator) is
+unit-tested with no editor. Live validation is left to the user's editor session — the
+running editor's command channel is owned by the user's active MCP clients, and a second
+client would drop the first.
+
 ## What "gated" means
 
 Code that can only be exercised against a **live editor** (build_compile full

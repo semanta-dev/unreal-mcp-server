@@ -58,3 +58,19 @@ func Launch(engineDir, uproject string, extraArgs ...string) (int, error) {
 	go func() { _ = cmd.Wait() }()
 	return cmd.Process.Pid, nil
 }
+
+// Kill force-terminates a process by PID (best-effort, cross-platform via os.Process.Kill:
+// TerminateProcess on Windows, SIGKILL elsewhere). Used to close an editor that ignored the
+// graceful `quit` console command — which only closes PIE, not the editor when no PIE is
+// running — so a full rebuild is never blocked by a still-running editor holding the module
+// DLL or the Live Coding lock. Returns nil for pid<=0 or an already-gone process.
+func Kill(pid int) error {
+	if pid <= 0 {
+		return nil
+	}
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return err
+	}
+	return p.Kill()
+}

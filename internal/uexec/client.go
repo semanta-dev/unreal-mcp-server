@@ -15,19 +15,42 @@ type Session struct {
 	self   string
 	logger *slog.Logger
 
-	mu     sync.Mutex // single-flight: serializes all commands (== Python _LOCK)
-	bc     *broadcastConn
-	cmd    *commandConn
-	nodeID string
-	gen    uint64 // increments on each new command channel (reconnect/editor restart)
+	mu         sync.Mutex // single-flight: serializes all commands (== Python _LOCK)
+	bc         *broadcastConn
+	cmd        *commandConn
+	nodeID     string
+	gen        uint64 // increments on each new command channel (reconnect/editor restart)
+	sharedDisc bool   // true => bc is a shared Discovery this Session must not close
 }
 
-// New creates a Session. logger may be nil (logs are discarded).
+// New creates a self-contained Session (owns its own discovery). logger may be nil.
 func New(cfg Config, logger *slog.Logger) *Session {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
 	return &Session{cfg: cfg.withDefaults(), self: newUUID(), logger: logger}
+}
+
+// NewOnDiscovery creates a PER-INSTANCE Session that SHARES a Discovery (§2): it
+// reuses the shared multicast socket + node table + self-id, and owns only its own
+// command channel (give cfg a distinct ephemeral CommandAddr "127.0.0.1:0" and a
+// ProjectDir to pin the right editor node). Start() is a no-op (discovery already
+// running); Close() tears down only this Session's command channel, never the
+// shared Discovery. This is the Model-A daemon's per-lease bridge.
+func NewOnDiscovery(cfg Config, disc *Discovery, logger *slog.Logger) *Session {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+	// A per-instance shared Session MUST use an ephemeral loopback reverse-connect
+	// port — never inherit the fixed 6776 default (§1 rank-1: two shared sessions on
+	// 6776 would collide, the exact hazard the split exists to prevent).
+	if cfg.CommandAddr == "" {
+		cfg.CommandAddr = "127.0.0.1:0"
+	}
+	return &Session{
+		cfg: cfg.withDefaults(), self: disc.self, logger: logger,
+		bc: disc.bc, sharedDisc: true,
+	}
 }
 
 // SelfID returns this session's node id (the protocol "source").
@@ -69,7 +92,7 @@ func (s *Session) WaitForNode(ctx context.Context) (*Node, error) {
 	if bc == nil {
 		return nil, errors.New("uexec: session not started")
 	}
-	return bc.waitForNode(ctx, s.cfg.ProjectDir, s.cfg.DiscoveryTimeout)
+	return bc.waitForNode(ctx, s.cfg.ProjectDir, s.cfg.DiscoveryTimeout, s.cfg.StrictNode)
 }
 
 // OpenCommand opens a command channel to a specific node id.
@@ -144,7 +167,8 @@ func (s *Session) RunCommand(ctx context.Context, code string, mode ExecMode) (C
 }
 
 func (s *Session) reconnectLocked(ctx context.Context) error {
-	node, err := s.bc.waitForNode(ctx, s.cfg.ProjectDir, s.cfg.DiscoveryTimeout)
+	// Strict under a lease: a reconnect must NOT re-pin to a wrong-project node either.
+	node, err := s.bc.waitForNode(ctx, s.cfg.ProjectDir, s.cfg.DiscoveryTimeout, s.cfg.StrictNode)
 	if err != nil {
 		return err
 	}
@@ -162,9 +186,11 @@ func (s *Session) Close() error {
 		s.cmd.close()
 		s.cmd = nil
 	}
-	if s.bc != nil {
+	// A Session sharing a Discovery must NOT close the shared multicast socket/node
+	// table — the daemon owns the Discovery's lifetime.
+	if s.bc != nil && !s.sharedDisc {
 		s.bc.close()
-		s.bc = nil
 	}
+	s.bc = nil
 	return nil
 }

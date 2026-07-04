@@ -21,6 +21,12 @@ type Deps struct {
 	Jobs       *jobs.Registry
 	ProjectDir string
 	EngineDir  string
+	// Restart, when non-nil (daemon mode), performs a §3.1 CONTROLLED editor restart
+	// that PRESERVES this session's lease: it tears down the leased editor, runs
+	// buildStep with no editor up (nil for a plain restart), relaunches with the same
+	// instance token, and re-pins the lease. In single-project stdio mode it is nil and
+	// tools relaunch the editor directly (a fresh process is fine — no lease to keep).
+	Restart func(ctx context.Context, buildStep func(context.Context) error) error
 }
 
 // RegisterAll adds all tools to the server: the 16 frozen parity tools plus the
@@ -35,6 +41,20 @@ func RegisterAll(s *mcp.Server, d Deps) {
 	registerLogTools(s, d)
 	registerGitTools(s, d)
 	registerAuthoringTools(s, d.Bridge)
+	// v7 additions: reflection, multi-frame capture, high-level design, tighter
+	// editor integration, and the playtest orchestrator.
+	registerReflectTools(s, d.Bridge)
+	registerCaptureTools(s, d)
+	registerSceneTools(s, d.Bridge)
+	registerViewportTools(s, d.Bridge)
+	registerPlaytestTools(s, d)
+	registerDiscoveryTools(s, d)
+	registerAuthoring2Tools(s, d)
+	registerVerificationTools(s, d)
+	registerPWTools(s, d)
+	registerRobustnessTools(s, d)
+	registerHeadlessTools(s, d)
+	registerControlTools(s, d)
 }
 
 // registerParityTools adds the 16 frozen parity tools.
@@ -171,7 +191,7 @@ func add[In, Out any](s *mcp.Server, name, desc string, h mcp.ToolHandlerFor[In,
 // structured content (the SDK also mirrors it into JSON text content).
 func structHandler[In any](b *bridge.Bridge, op string, args func(In) map[string]any) mcp.ToolHandlerFor[In, map[string]any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, map[string]any, error) {
-		raw, err := b.Call(ctx, op, args(in))
+		raw, err := bridgeFromCtx(ctx, b).Call(ctx, op, args(in))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -189,7 +209,7 @@ func structHandler[In any](b *bridge.Bridge, op string, args func(In) map[string
 // editor Warning/Error output as text (parity with the Python format_output).
 func textHandler[In any](b *bridge.Bridge, op string, args func(In) map[string]any) mcp.ToolHandlerFor[In, any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
-		text, err := b.CallText(ctx, op, args(in))
+		text, err := bridgeFromCtx(ctx, b).CallText(ctx, op, args(in))
 		if err != nil {
 			return nil, nil, err
 		}

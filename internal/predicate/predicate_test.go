@@ -1,6 +1,37 @@
-package tools
+package predicate
 
 import "testing"
+
+// Guards the LookupPath []any branch: a numeric path segment indexes a JSON array
+// (pie_verify's flagship predicate nodes.0.SupplyRatio). Committed coverage for the
+// PW gate blocker fix.
+func TestArrayIndexPath(t *testing.T) {
+	state := map[string]any{"nodes": []any{
+		map[string]any{"SupplyRatio": 0.4},
+		map[string]any{"SupplyRatio": 0.9},
+	}}
+	mustEval := func(expr string, want bool) {
+		t.Helper()
+		p, err := Parse(expr)
+		if err != nil {
+			t.Fatalf("parse %q: %v", expr, err)
+		}
+		got, _ := p.Eval(state)
+		if got != want {
+			t.Errorf("Eval(%q) = %v, want %v", expr, got, want)
+		}
+	}
+	mustEval("nodes.0.SupplyRatio < 0.5", true)  // index 0 -> 0.4 < 0.5
+	mustEval("nodes.1.SupplyRatio < 0.5", false) // index 1 -> 0.9
+	mustEval("nodes.5.SupplyRatio < 0.5", false) // out of range -> unmet
+	// A non-array indexed numerically, or a non-numeric index into an array, is unmet.
+	if v, ok := LookupPath(state, []string{"nodes", "x"}); ok {
+		t.Errorf("non-numeric array index should miss, got %v", v)
+	}
+	if _, ok := LookupPath(map[string]any{"a": 1.0}, []string{"a", "0"}); ok {
+		t.Error("indexing a scalar should miss")
+	}
+}
 
 func obs() map[string]any {
 	return map[string]any{
@@ -23,11 +54,11 @@ func TestPredicateNumeric(t *testing.T) {
 		{"counts.Missing >= 1", false}, // absent path -> false
 	}
 	for _, c := range cases {
-		p, err := parsePredicate(c.expr)
+		p, err := Parse(c.expr)
 		if err != nil {
 			t.Fatalf("parse %q: %v", c.expr, err)
 		}
-		if got, _ := p.eval(obs()); got != c.want {
+		if got, _ := p.Eval(obs()); got != c.want {
 			t.Errorf("%q = %v, want %v", c.expr, got, c.want)
 		}
 	}
@@ -42,25 +73,25 @@ func TestPredicateString(t *testing.T) {
 		{`gamestate.WaveState == "Intermission"`, false},
 		{"gamestate.WaveState != 'Intermission'", true},
 	} {
-		p, err := parsePredicate(c.expr)
+		p, err := Parse(c.expr)
 		if err != nil {
 			t.Fatalf("parse %q: %v", c.expr, err)
 		}
-		if got, _ := p.eval(obs()); got != c.want {
+		if got, _ := p.Eval(obs()); got != c.want {
 			t.Errorf("%q = %v, want %v", c.expr, got, c.want)
 		}
 	}
 }
 
 func TestPredicateInvalid(t *testing.T) {
-	if _, err := parsePredicate("no operator here"); err == nil {
+	if _, err := Parse("no operator here"); err == nil {
 		t.Fatal("expected parse error for missing operator")
 	}
 }
 
 func TestPredicateNilState(t *testing.T) {
-	p, _ := parsePredicate("gamestate.WaveNumber >= 1")
-	if got, _ := p.eval(nil); got {
+	p, _ := Parse("gamestate.WaveNumber >= 1")
+	if got, _ := p.Eval(nil); got {
 		t.Fatal("nil state should never satisfy a predicate")
 	}
 }
@@ -70,11 +101,11 @@ func TestPredicateNilState(t *testing.T) {
 // predicates match against that name.
 func TestPredicateEnumString(t *testing.T) {
 	state := map[string]any{"gamestate": map[string]any{"WaveState": "IN_PROGRESS"}}
-	p, err := parsePredicate("gamestate.WaveState == 'IN_PROGRESS'")
+	p, err := Parse("gamestate.WaveState == 'IN_PROGRESS'")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ok, _ := p.eval(state); !ok {
+	if ok, _ := p.Eval(state); !ok {
 		t.Fatal("expected enum-name string predicate to match")
 	}
 }

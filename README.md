@@ -18,7 +18,7 @@ Claude Code ── stdio ──> unreal-mcp.exe ── UDP/TCP (loopback) ──
                            │                                       (PythonScriptPlugin
   internal/uexec  protocol port  ─────────┘                        remote execution)
   internal/bridge companion-module dispatch (mcp_bridge.py, hot-loaded)
-  internal/tools  39 MCP tools
+  internal/tools  58 MCP tools
 ```
 
 - `internal/uexec` — Go port of Epic's remote-execution wire protocol (UDP-multicast
@@ -53,7 +53,7 @@ Registered in the consuming project's `.mcp.json` (see `deploy/`). Key flags/env
 | | `-selftest` | | connect + editor_status round-trip, exit non-zero on failure |
 | | `-version` | | print version and exit |
 
-## Tools (39)
+## Tools (58)
 
 **Parity (16, frozen names):** `editor_status`, `execute_python`, `execute_console_command`,
 `open_level`, `list_actors`, `get_actor`, `spawn_actor`, `delete_actor`, `set_actor_transform`,
@@ -63,7 +63,8 @@ Registered in the consuming project's `.mcp.json` (see `deploy/`). Key flags/env
 **Build/lifecycle:** `build_compile` (auto livecoding-vs-full + diagnostics, async job),
 `job_status`, `job_cancel`, `project_ensure_open`, `editor_restart`.
 
-**PIE/verify:** `pie_observe`, `pie_wait_until` (deterministic predicate wait), `pie_exec`, `pie_screenshot`.
+**PIE/verify:** `pie_observe` (reflection-driven, game-agnostic), `pie_wait_until` (deterministic
+predicate wait), `pie_exec`, `pie_screenshot`.
 
 **Logs:** `logs_mark`, `logs_tail`, `logs_since`.
 
@@ -71,6 +72,30 @@ Registered in the consuming project's `.mcp.json` (see `deploy/`). Key flags/env
 
 **Authoring:** `apply_level_recipe`, `level_snapshot`, `level_diff`, `asset_info`, `asset_reimport`,
 `create_material_instance`.
+
+### v7 additions (19) — playtest capture, high-level design, tighter editor integration
+
+**Playtest capture (goal A):** `playtest_capture` — the capstone: open→play→record a synchronized
+filmstrip of frames+state→run deterministic beats→return **one contact-sheet montage + a per-frame
+timeline + a PASS/WARN/FAIL rubric verdict + a log summary** (failed checks red-border their evidence
+frame). `playtest_evaluate` re-scores a recorded timeline against a rubric with no editor.
+
+**Multi-frame capture:** `capture_start`/`capture_status`/`capture_stop` — an in-editor slate-tick
+recorder buffers frames+state to disk (no per-frame round-trip); `capture_stop` returns a montage +
+timeline. `scene_contact_sheet` renders a target/level from N orbit angles into one image.
+
+**High-level design (goal B):** `scene_apply` (realize a declarative `unreal.scene/v1` spec —
+blockout, prefabs, grid/ring/line/scatter layouts, lighting — idempotently in one transaction, with
+tag-scoped prune), `scene_plan` (dry-run diff), `scene_clear`, `env_preset_apply` (lit sky/exposure
+presets, sun always pitched down), `design_check` (lint lighting/missing-meshes/player-start/nav
+invariants), `layout_preview` (offline).
+
+**Tighter editor integration (goal C):** `reflect_object` (discover any object's exposed
+properties — no hardcoded allowlist), `viewport_set`/`viewport_get`, `focus_actors`, `select_actors`,
+`get_selection`, `editor_state` (rich superset of `editor_status`).
+
+Pure algorithmic cores are separate, unit-tested Go packages: `internal/{montage,scenespec,framing,
+predicate,rubric}`. See `PLAYTEST_UPGRADE_PLAN.md` for the full design.
 
 ## Testing
 
@@ -99,3 +124,10 @@ rollback.
   only, NOT during PIE — use `pie_screenshot`/HighResShot during play).
 - UENUM properties (e.g. wave state) are read as their enumerator **name** (UPPER_SNAKE_CASE) so
   `pie_wait_until` string predicates match.
+- A `SceneCapture2D` spawned via `EditorActorSubsystem` renders the **editor** world, not the
+  possessed-PIE game world. So `capture_start`/`playtest_capture` default to `scene_capture` for
+  editor/**simulate** worlds (backgrounded-safe) and to `pie_highres` (HighResShot) for possessed
+  PIE — `mode: "pie"` uses HighResShot, `mode: "simulate"`/`"editor"` uses SceneCapture2D.
+- `pie_observe`/`reflect_object` discover properties by reflection, so default field keys are the
+  reflected (snake_case) names, e.g. `gamestate.wave_number`. Pass `properties:["WaveNumber"]` to pin
+  a specific key for a predicate path.

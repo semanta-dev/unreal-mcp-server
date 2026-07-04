@@ -30,23 +30,22 @@ type jobIDIn struct {
 }
 
 func registerBuildTools(s *mcp.Server, d Deps) {
-	reg := d.Jobs
-
 	add(s, "build_compile",
 		"Compile the project's C++ (async job). strategy=auto classifies from the git diff: header/reflection/new-file changes -> full Build.bat rebuild (closes+reopens the editor); body-only changes -> Live Coding. Poll job_status for streamed progress and structured diagnostics.",
 		func(ctx context.Context, _ *mcp.CallToolRequest, in buildCompileIn) (*mcp.CallToolResult, jobStartOut, error) {
-			if d.ProjectDir == "" || d.EngineDir == "" {
+			rd := resolveDeps(ctx, d)
+			if rd.ProjectDir == "" || rd.EngineDir == "" {
 				return nil, jobStartOut{}, errors.New("build_compile requires -project and -engine")
 			}
-			job := reg.Start(context.Background(), func(jctx context.Context, progress func(string)) (any, error) {
-				return runBuildCompile(jctx, d, in.Strategy, progress)
+			job := rd.Jobs.Start(context.Background(), func(jctx context.Context, progress func(string)) (any, error) {
+				return runBuildCompile(jctx, rd, in.Strategy, progress)
 			})
 			return nil, jobStartOut{JobID: job.ID, Status: string(jobs.Running)}, nil
 		})
 
 	add(s, "job_status", "Poll an async job (build_compile, editor_restart, project_ensure_open) for status, streamed progress, and result.",
 		func(ctx context.Context, _ *mcp.CallToolRequest, in jobIDIn) (*mcp.CallToolResult, map[string]any, error) {
-			j, ok := reg.Get(in.JobID)
+			j, ok := resolveDeps(ctx, d).Jobs.Get(in.JobID)
 			if !ok {
 				return nil, nil, fmt.Errorf("no such job: %s", in.JobID)
 			}
@@ -59,7 +58,7 @@ func registerBuildTools(s *mcp.Server, d Deps) {
 
 	add(s, "job_cancel", "Request cancellation of an async job.",
 		func(ctx context.Context, _ *mcp.CallToolRequest, in jobIDIn) (*mcp.CallToolResult, map[string]any, error) {
-			j, ok := reg.Get(in.JobID)
+			j, ok := resolveDeps(ctx, d).Jobs.Get(in.JobID)
 			if !ok {
 				return nil, nil, fmt.Errorf("no such job: %s", in.JobID)
 			}
@@ -157,14 +156,45 @@ func runFullRebuild(ctx context.Context, d Deps, progress func(string)) (build.R
 	}
 	target := lifecycle.EditorTarget(uproject)
 
-	// Remember the current map so we can reopen it.
+	// Remember the current map, and save while the editor is still up (both paths).
 	priorMap := currentLevelPath(ctx, d.Bridge)
-	pid := editorPID(ctx, d.Bridge)
-
-	progress("saving and closing the editor for a full rebuild")
 	_, _ = d.Bridge.Call(ctx, "save_all", map[string]any{})
+
+	// Daemon: a full rebuild relaunches the editor, so it MUST go through the §3.1
+	// controlled restart — otherwise the session's lease would be lost and the new
+	// editor orphaned. The controller closes the editor, runs Build.bat with nothing
+	// holding the DLL, relaunches with the SAME instance token, and re-pins the lease.
+	if d.Restart != nil {
+		var res build.Result
+		var buildErrored bool
+		err := d.Restart(ctx, func(rctx context.Context) error {
+			progress("running Build.bat " + target)
+			r, berr := build.RunFull(rctx, d.EngineDir, target, uproject, progress)
+			res = r
+			buildErrored = berr != nil
+			return berr // infra failure only; compile errors travel in res, still relaunch
+		})
+		if err != nil {
+			// If the build itself COMPLETED (only the post-build relaunch failed), keep
+			// its diagnostics and note the relaunch failure instead of dropping the
+			// result — a failed job discards the result, so fold it into a success shape.
+			if !buildErrored && res.Strategy != "" {
+				res.Reason = strings.TrimSpace(res.Reason + "; editor relaunch failed (lease dropped — re-attach): " + err.Error())
+				return res, nil
+			}
+			return res, err // pre-build (BeginRestart) or infra build failure
+		}
+		if priorMap != "" {
+			progress("editor relaunched (lease preserved); reopen prior map when ready: " + priorMap)
+		}
+		return res, nil
+	}
+
+	// Single-project: close, build, relaunch a fresh editor (no lease to preserve).
+	pid := editorPID(ctx, d.Bridge)
+	progress("closing the editor for a full rebuild")
 	_, _ = d.Bridge.RunPython(ctx, `unreal.SystemLibrary.execute_console_command(None, "quit")`, uexec.ModeExecFile)
-	waitForEditorExit(pid, 60*time.Second, progress)
+	closeEditor(pid, progress)
 
 	progress("running Build.bat " + target)
 	res, err := build.RunFull(ctx, d.EngineDir, target, uproject, progress)
@@ -188,16 +218,15 @@ func runFullRebuild(ctx context.Context, d Deps, progress func(string)) (build.R
 }
 
 func registerLifecycleTools(s *mcp.Server, d Deps) {
-	reg := d.Jobs
-
 	add(s, "project_ensure_open",
 		"Ensure the editor is open with the project (launches it if no editor is discovered). Async job: poll job_status; waits up to timeout_s for the editor to answer.",
 		func(ctx context.Context, _ *mcp.CallToolRequest, in ensureOpenIn) (*mcp.CallToolResult, jobStartOut, error) {
-			if d.EngineDir == "" {
+			rd := resolveDeps(ctx, d)
+			if rd.EngineDir == "" {
 				return nil, jobStartOut{}, errors.New("project_ensure_open requires -engine")
 			}
-			job := reg.Start(context.Background(), func(jctx context.Context, progress func(string)) (any, error) {
-				return ensureOpen(jctx, d, in, progress)
+			job := rd.Jobs.Start(context.Background(), func(jctx context.Context, progress func(string)) (any, error) {
+				return ensureOpen(jctx, rd, in, progress)
 			})
 			return nil, jobStartOut{JobID: job.ID, Status: string(jobs.Running)}, nil
 		})
@@ -205,21 +234,32 @@ func registerLifecycleTools(s *mcp.Server, d Deps) {
 	add(s, "editor_restart",
 		"Save, quit, and relaunch the editor (async job). Useful after a full rebuild or to recover a wedged editor.",
 		func(ctx context.Context, _ *mcp.CallToolRequest, in editorRestartIn) (*mcp.CallToolResult, jobStartOut, error) {
-			if d.EngineDir == "" {
+			rd := resolveDeps(ctx, d)
+			if rd.EngineDir == "" {
 				return nil, jobStartOut{}, errors.New("editor_restart requires -project and -engine")
 			}
-			job := reg.Start(context.Background(), func(jctx context.Context, progress func(string)) (any, error) {
+			job := rd.Jobs.Start(context.Background(), func(jctx context.Context, progress func(string)) (any, error) {
 				if in.Save {
-					_, _ = d.Bridge.Call(jctx, "save_all", map[string]any{})
+					_, _ = rd.Bridge.Call(jctx, "save_all", map[string]any{})
 				}
-				pid := editorPID(jctx, d.Bridge)
-				_, _ = d.Bridge.RunPython(jctx, `unreal.SystemLibrary.execute_console_command(None, "quit")`, uexec.ModeExecFile)
-				waitForEditorExit(pid, 60*time.Second, progress)
-				uproject := lifecycle.FindUproject(d.ProjectDir)
+				// Daemon: a restart relaunches the editor, so it must go through the
+				// §3.1 controlled restart to preserve the lease + track the new editor.
+				if rd.Restart != nil {
+					progress("controlled restart (lease preserved)")
+					if err := rd.Restart(jctx, nil); err != nil {
+						return nil, err
+					}
+					return map[string]any{"restarted": true, "lease_preserved": true}, nil
+				}
+				// Single-project: close + relaunch a fresh editor.
+				pid := editorPID(jctx, rd.Bridge)
+				_, _ = rd.Bridge.RunPython(jctx, `unreal.SystemLibrary.execute_console_command(None, "quit")`, uexec.ModeExecFile)
+				closeEditor(pid, progress)
+				uproject := lifecycle.FindUproject(rd.ProjectDir)
 				if uproject == "" {
 					return nil, errors.New("no .uproject under -project")
 				}
-				newPID, err := lifecycle.Launch(d.EngineDir, uproject, "-nosplash")
+				newPID, err := lifecycle.Launch(rd.EngineDir, uproject, "-nosplash")
 				if err != nil {
 					return nil, err
 				}
@@ -297,6 +337,23 @@ func waitForEditorExit(pid int, timeout time.Duration, progress func(string)) {
 		time.Sleep(1 * time.Second)
 	}
 	progress("editor did not exit within timeout; continuing")
+}
+
+// closeEditor waits briefly for the editor to exit gracefully (the caller has already sent the
+// `quit` console command) and then FORCE-KILLS any survivor. `quit` only ends PIE, not the editor
+// when no PIE is running, so without this the editor keeps holding the module DLL / Live Coding
+// lock and a full rebuild fails ("Unable to build while Live Coding is active"). Making the close
+// reliable here removes the need for any out-of-band manual force-kill (whose churn was the root
+// of editor/MCP relaunch wedges).
+func closeEditor(pid int, progress func(string)) {
+	waitForEditorExit(pid, 8*time.Second, progress)
+	if pid > 0 && lifecycle.IsAlive(pid) {
+		progress(fmt.Sprintf("editor still running after quit; force-killing PID %d to unblock the rebuild", pid))
+		if err := lifecycle.Kill(pid); err != nil {
+			progress("force-kill failed: " + err.Error())
+		}
+		waitForEditorExit(pid, 20*time.Second, progress)
+	}
 }
 
 func editorPID(ctx context.Context, b *bridge.Bridge) int {

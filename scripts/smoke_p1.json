@@ -1,0 +1,23 @@
+{
+  "_comment": "P1 live-gated acceptance smoke for the aesir game. Pass `args` to the playtest_capture MCP tool against a live editor with L_Arena. GREEN => every subsequent PASS is trustworthy (frames captured, wave state reached, enemies spawned, no log errors, perf within band). To exercise the crash-diagnosis path, write a null-deref into AEnemyCharacter::Tick, rebuild, and re-run: the result must carry crash{kind,file,line,frames} + an error code instead of a bare transport error.",
+  "tool": "playtest_capture",
+  "args": {
+    "mode": "pie",
+    "level": "/Game/Maps/L_Arena",
+    "duration_s": 15,
+    "time_dilation": 4,
+    "track_actors": [],
+    "rubric": [
+      { "id": "captured_frames", "kind": "nonzero_count", "path": "counts.EnemyCharacter", "severity": "fail" },
+      { "id": "wave_in_progress", "kind": "reached", "path": "gamestate.wave_state", "params": { "value": "IN_PROGRESS" }, "severity": "fail" },
+      { "id": "no_log_errors", "kind": "log_zero", "path": "errors", "severity": "fail" },
+      { "id": "fps_floor", "kind": "min", "path": "perf.fps", "params": { "value": 20 }, "severity": "warn" },
+      { "id": "no_hitch", "kind": "max", "path": "perf.hitch_ms", "params": { "value": 250 }, "severity": "warn" }
+    ]
+  },
+  "expect": {
+    "verdict": "PASS",
+    "montage": "a filmstrip of the wave with the enemy count rising",
+    "on_null_deref_in_Tick": "verdict FAIL with crash={kind:'crash'|'assert', file:'.../EnemyCharacter.cpp', line:<n>, frames:[...]} and a machine-branchable code — no human reads the crash window"
+  }
+}

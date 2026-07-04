@@ -162,7 +162,14 @@ func (b *broadcastConn) broadcastCloseConnection(remoteNodeID string) {
 // waitForNode blocks until a node is selectable or timeout elapses. With
 // projectDir set it prefers the matching node; on timeout with nodes present but
 // no match, it falls back to the first node with an ambiguity warning (parity).
-func (b *broadcastConn) waitForNode(ctx context.Context, projectDir string, timeout time.Duration) (*Node, error) {
+func (b *broadcastConn) waitForNode(ctx context.Context, projectDir string, timeout time.Duration, strict bool) (*Node, error) {
+	// Strict selection is only meaningful with a project to match — pickNode's
+	// no-filter path returns an arbitrary nodes[0], which under a lease would
+	// cross-bind. Refuse rather than bind blind (defends a leased caller that set
+	// StrictNode but forgot ProjectDir; the Spawner always sets both).
+	if strict && projectDir == "" {
+		return nil, fmt.Errorf("%w: strict node selection requires a project", ErrEditorNotFound)
+	}
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 	tick := time.NewTicker(100 * time.Millisecond)
@@ -178,7 +185,10 @@ func (b *broadcastConn) waitForNode(ctx context.Context, projectDir string, time
 			return nil, ctx.Err()
 		case <-deadline.C:
 			nodes := b.nodes.list()
-			if len(nodes) > 0 {
+			// Under a lease (strict), NEVER fall back to an arbitrary node — a
+			// non-matching node is a DIFFERENT tenant's editor on the shared
+			// discovery. Return not-found so the caller keeps polling for its own.
+			if !strict && len(nodes) > 0 {
 				n := nodes[0]
 				if projectDir != "" {
 					b.logger.Warn("no editor node matched project; falling back to first discovered node",

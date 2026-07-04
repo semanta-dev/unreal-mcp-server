@@ -39,6 +39,24 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
+	// Multi-project daemon mode (MULTI_PROJECT_SYSTEM.md): one process, StreamableHTTP,
+	// a 1:1 editor lease per agent session. Distinct from the single-project stdio path
+	// below — it must NOT kill sibling processes (concurrent editors are the point).
+	if cfg.DaemonAddr != "" {
+		if err := runDaemon(ctx, cfg, logger); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("daemon exited with error", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// Reclaim the reverse-connect port from any orphaned sibling server (stale from a prior
+	// session) before discovery starts. Only for the default port — a custom -command-addr means
+	// a deliberate concurrent setup, which we must not disturb. See killOrphanSiblings.
+	if cfg.CommandAddr == "127.0.0.1:6776" {
+		killOrphanSiblings(logger)
+	}
+
 	// Discovery runs in the background; failing to start it is non-fatal so the
 	// server still boots and lists tools (they error at call time until an
 	// editor appears).

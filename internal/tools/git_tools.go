@@ -54,10 +54,9 @@ type gitLogOut struct {
 }
 
 func registerGitTools(s *mcp.Server, d Deps) {
-	dir := d.ProjectDir
-
 	add(s, "git_status", "Show the git working-tree status of the project (branch, staged, unstaged, untracked).",
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, gitStatusOut, error) {
+			dir := resolveDeps(ctx, d).ProjectDir
 			if dir == "" {
 				return nil, gitStatusOut{}, errNoProject
 			}
@@ -70,6 +69,7 @@ func registerGitTools(s *mcp.Server, d Deps) {
 
 	add(s, "git_diff", "Show the git diff of the project working tree, optionally limited to paths.",
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gitDiffIn) (*mcp.CallToolResult, gitDiffOut, error) {
+			dir := resolveDeps(ctx, d).ProjectDir
 			if dir == "" {
 				return nil, gitDiffOut{}, errNoProject
 			}
@@ -86,6 +86,7 @@ func registerGitTools(s *mcp.Server, d Deps) {
 
 	add(s, "git_checkpoint", "Commit a checkpoint. Stages the given paths (or all tracked+new except Saved/Intermediate/DerivedDataCache) and commits. Never bypasses hooks.",
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gitCheckpointIn) (*mcp.CallToolResult, gitCheckpointOut, error) {
+			dir := resolveDeps(ctx, d).ProjectDir
 			if dir == "" {
 				return nil, gitCheckpointOut{}, errNoProject
 			}
@@ -111,6 +112,7 @@ func registerGitTools(s *mcp.Server, d Deps) {
 
 	add(s, "git_revert_to", "Hard-reset the project working tree to a ref (destructive: discards uncommitted changes). Use to roll back a bad edit in an unattended run.",
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gitRevertIn) (*mcp.CallToolResult, gitCheckpointOut, error) {
+			dir := resolveDeps(ctx, d).ProjectDir
 			if dir == "" {
 				return nil, gitCheckpointOut{}, errNoProject
 			}
@@ -126,6 +128,7 @@ func registerGitTools(s *mcp.Server, d Deps) {
 
 	add(s, "git_log", "Show recent commits (hash, subject, date).",
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gitLogIn) (*mcp.CallToolResult, gitLogOut, error) {
+			dir := resolveDeps(ctx, d).ProjectDir
 			if dir == "" {
 				return nil, gitLogOut{}, errNoProject
 			}

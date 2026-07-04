@@ -70,18 +70,27 @@ func New(run Runner, opts Options) *Bridge {
 	return &Bridge{run: run, mode: opts.Mode, projDir: opts.ProjectDir, logger: opts.Logger}
 }
 
-// OpError is an editor-reported op failure (op-level, not transport).
+// OpError is an editor-reported op failure (op-level, not transport). Code is a
+// stable machine-branchable classification (e.g. ASSET_NOT_FOUND, NOT_IN_PIE,
+// CLASS_UNRESOLVED) an autonomous agent can act on without parsing the traceback;
+// Retryable reports whether re-issuing the same op could plausibly succeed.
 type OpError struct {
 	Op        string
 	Message   string
+	Code      string
+	Retryable bool
 	Traceback string
 }
 
 func (e *OpError) Error() string {
-	if e.Traceback != "" {
-		return fmt.Sprintf("op %s failed: %s\n%s", e.Op, e.Message, e.Traceback)
+	code := e.Code
+	if code == "" {
+		code = "EDITOR_ERROR"
 	}
-	return fmt.Sprintf("op %s failed: %s", e.Op, e.Message)
+	if e.Traceback != "" {
+		return fmt.Sprintf("op %s failed [%s]: %s\n%s", e.Op, code, e.Message, e.Traceback)
+	}
+	return fmt.Sprintf("op %s failed [%s]: %s", e.Op, code, e.Message)
 }
 
 func (e *OpError) Unwrap() error { return ErrOp }
@@ -91,6 +100,8 @@ type dispatchEnvelope struct {
 	OK        bool            `json:"ok"`
 	Result    json.RawMessage `json:"result"`
 	Error     string          `json:"error"`
+	Code      string          `json:"code"`
+	Retryable bool            `json:"retryable"`
 	Traceback string          `json:"traceback"`
 }
 
@@ -143,7 +154,7 @@ func (b *Bridge) Call(ctx context.Context, op string, args any) (json.RawMessage
 		return nil, err
 	}
 	if !env.OK {
-		return nil, &OpError{Op: op, Message: env.Error, Traceback: env.Traceback}
+		return nil, &OpError{Op: op, Message: env.Error, Code: env.Code, Retryable: env.Retryable, Traceback: env.Traceback}
 	}
 	return env.Result, nil
 }
@@ -158,7 +169,7 @@ func (b *Bridge) CallText(ctx context.Context, op string, args any) (string, err
 		return "", err
 	}
 	if !env.OK {
-		return "", &OpError{Op: op, Message: env.Error, Traceback: env.Traceback}
+		return "", &OpError{Op: op, Message: env.Error, Code: env.Code, Retryable: env.Retryable, Traceback: env.Traceback}
 	}
 	var m struct {
 		Message string `json:"message"`
