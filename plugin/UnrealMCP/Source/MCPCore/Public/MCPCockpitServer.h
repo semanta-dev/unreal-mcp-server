@@ -87,9 +87,9 @@ private:
 
 	// --- listener / peer ---
 	bool OnConnectionAccepted(FSocket* InSocket, const FIPv4Endpoint& Endpoint);
-	void ClosePeer();
-	void RxLoop();           // runs on a dedicated FRunnable reading framed rpc/control
+	void ClosePeer();        // ONLY from the listener/game thread — never the rx thread
 	bool SendFrame(const TSharedRef<class FJsonObject>& Frame); // serialized send to the peer
+	void SendErrorResult(const FString& OpId, const FString& Code, const FString& Error);
 
 	// --- game-thread rpc pump ---
 	bool GameThreadTick(float Dt);  // FTSTicker: pop one rpc, dispatch (exactly one at a time)
@@ -109,11 +109,13 @@ private:
 	int32 Port = 0;
 	FString SessionEpoch;                        // minted once in Start (FGuid)
 	FString Token;
+	FString ManifestDigest;                      // empty in A0; real capability digest in B2
 	FThreadSafeCounter64 SeqCounter;             // monotonic event/progress seq
 
 	TAtomic<bool> bRunning{ false };
 	TAtomic<bool> bStopRequested{ false };       // set by a `stop` control frame (off-thread)
 	TAtomic<bool> bRpcExecuting{ false };        // exactly-one-executing guard (§5.6)
+	TAtomic<bool> bPeerRejected{ false };        // rx thread flags a bad-token peer; game thread ClosePeers it
 
 	// bounded rpc queue (SPSC: rx thread produces, game thread consumes)
 	TSpscQueue<FPendingRpc> RpcQueue;

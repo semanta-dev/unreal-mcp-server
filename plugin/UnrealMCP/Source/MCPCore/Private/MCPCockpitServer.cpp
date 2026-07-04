@@ -6,16 +6,18 @@
 #include "SocketSubsystem.h"
 #include "Interfaces/IPv4/IPv4Endpoint.h"
 #include "HAL/RunnableThread.h"
+#include "Misc/ScopeLock.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "Dom/JsonObject.h"
 #include "Misc/Guid.h"
 
 static const int32 MCP_PROTOCOL_VERSION = 1;
+static constexpr uint32 MCP_MAX_FRAME_BYTES = 64u << 20; // matches Go MaxFrameBytes
 
 // ---------------------------------------------------------------------------
-// Framing helpers: 4-byte big-endian length prefix + JSON body, matching the Go
-// internal/cockpit codec exactly.
+// Framing helpers: 4-byte big-endian length prefix + UTF-8 JSON body, matching the Go
+// internal/cockpit codec exactly (encode + decode are symmetric UTF-8).
 // ---------------------------------------------------------------------------
 
 static FString MCPJsonObjectToString(const TSharedRef<FJsonObject>& Obj)
@@ -34,23 +36,20 @@ static TSharedPtr<FJsonObject> MCPJsonParse(const FString& Str)
 	return Obj;
 }
 
-// Blocking read of exactly Num bytes from Socket into Dst. Returns false on error/close.
-static bool MCPRecvExact(FSocket* Socket, uint8* Dst, int32 Num)
+// Serialize one frame to a length-prefixed byte buffer (4-byte BE length + UTF-8 body).
+static void MCPBuildFrameBytes(const TSharedRef<FJsonObject>& Frame, TArray<uint8>& OutBuf)
 {
-	int32 Total = 0;
-	while (Total < Num)
-	{
-		int32 Read = 0;
-		if (!Socket->Recv(Dst + Total, Num - Total, Read) || Read <= 0)
-		{
-			return false;
-		}
-		Total += Read;
-	}
-	return true;
+	const FString Json = MCPJsonObjectToString(Frame);
+	FTCHARToUTF8 Utf8(*Json);
+	const int32 Len = Utf8.Length();
+	OutBuf.SetNumUninitialized(4 + Len);
+	OutBuf[0] = (Len >> 24) & 0xFF; OutBuf[1] = (Len >> 16) & 0xFF; OutBuf[2] = (Len >> 8) & 0xFF; OutBuf[3] = Len & 0xFF;
+	FMemory::Memcpy(OutBuf.GetData() + 4, Utf8.Get(), Len);
 }
 
 // Rx thread: reads framed hello/rpc/control from the peer and hands them to the server.
+// It NEVER closes/destroys the socket or joins itself — teardown is owned by the server
+// on the listener/game thread (deadlock-free teardown). It only reads and hands off.
 class FMCPRxRunnable : public FRunnable
 {
 public:
@@ -62,18 +61,42 @@ public:
 		while (!bStop)
 		{
 			uint8 Hdr[4];
-			if (!MCPRecvExact(Socket, Hdr, 4)) break;
+			if (!RecvExact(Hdr, 4)) break;
 			const uint32 Len = (uint32(Hdr[0]) << 24) | (uint32(Hdr[1]) << 16) | (uint32(Hdr[2]) << 8) | uint32(Hdr[3]);
-			if (Len == 0 || Len > (64u << 20)) break; // matches Go MaxFrameBytes
+			if (Len == 0 || Len > MCP_MAX_FRAME_BYTES) break;
 			TArray<uint8> Body;
 			Body.SetNumUninitialized(Len);
-			if (!MCPRecvExact(Socket, Body.GetData(), Len)) break;
-			FString Json(Len, reinterpret_cast<const char*>(Body.GetData())); // UTF8 payload
-			Server->HandleInboundFrame(Json);
+			if (!RecvExact(Body.GetData(), Len)) break;
+			// Decode the body as UTF-8 (symmetric with the FTCHARToUTF8 encode on send).
+			FString Json(FUTF8ToTCHAR(reinterpret_cast<const ANSICHAR*>(Body.GetData()), Len));
+			if (!Server->HandleInboundFrame(Json)) break; // false = reject/stop reading
 		}
 		return 0;
 	}
+
 private:
+	// Blocking-with-timeout read of exactly Num bytes; polls bStop between waits so a
+	// close/Stop interrupts a parked read promptly (join is bounded).
+	bool RecvExact(uint8* Dst, int32 Num)
+	{
+		int32 Total = 0;
+		while (Total < Num)
+		{
+			if (bStop) return false;
+			if (!Socket->Wait(ESocketWaitConditions::WaitForRead, FTimespan::FromMilliseconds(100)))
+			{
+				continue; // timeout: re-check bStop
+			}
+			int32 Read = 0;
+			if (!Socket->Recv(Dst + Total, Num - Total, Read) || Read <= 0)
+			{
+				return false; // peer closed / error
+			}
+			Total += Read;
+		}
+		return true;
+	}
+
 	FMCPCockpitServer* Server;
 	FSocket* Socket;
 	TAtomic<bool> bStop{ false };
@@ -81,7 +104,7 @@ private:
 
 FMCPCockpitServer& FMCPCockpitServer::Get()
 {
-	static FMCPCockpitServer* Singleton = new FMCPCockpitServer(); // never destroyed → survives Live Coding
+	static FMCPCockpitServer* Singleton = new FMCPCockpitServer(); // leaked → survives Live Coding reinstance
 	return *Singleton;
 }
 
@@ -94,12 +117,17 @@ bool FMCPCockpitServer::Start()
 	if (bRunning) return true;
 	SessionEpoch = FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens);
 	Token = FGuid::NewGuid().ToString(EGuidFormats::Digits);
-	Ring.Reset();
-	RingHead = 0;
-	RingFloor = 0;
+	{
+		FScopeLock Lock(&RingCS);
+		Ring.Reset();
+		RingHead = 0;
+		RingFloor = 0;
+		DroppedSinceEmit = 0;
+	}
 
 	// Ephemeral loopback listener (127.0.0.1:0). FTcpListener creates+binds+listens on
-	// its own thread and fires OnConnectionAccepted per peer.
+	// its own thread; FRunnableThread::Create blocks until Init() bound the socket, so
+	// GetSocket() immediately after is valid (verified 5.7).
 	Listener = new FTcpListener(FIPv4Endpoint(FIPv4Address::InternalLoopback, 0));
 	if (!Listener->GetSocket())
 	{
@@ -109,7 +137,6 @@ bool FMCPCockpitServer::Start()
 	}
 	Listener->OnConnectionAccepted().BindRaw(this, &FMCPCockpitServer::OnConnectionAccepted);
 
-	// Resolve the OS-assigned port from the bound listen socket.
 	TSharedRef<FInternetAddr> Addr = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateInternetAddr();
 	Listener->GetSocket()->GetAddress(*Addr);
 	Port = Addr->GetPort();
@@ -137,12 +164,13 @@ void FMCPCockpitServer::Stop()
 		delete Listener; // FTcpListener dtor stops its thread + closes the listen socket
 		Listener = nullptr;
 	}
-	ClosePeer();
+	ClosePeer(); // game/shutdown thread → safe join of the rx thread
 }
 
 bool FMCPCockpitServer::OnConnectionAccepted(FSocket* InSocket, const FIPv4Endpoint& Endpoint)
 {
 	// One peer at a time; a new connection replaces the old (Go re-dials on reconnect).
+	// Runs on the FTcpListener thread — never the rx thread — so ClosePeer's join is safe.
 	ClosePeer();
 	{
 		FScopeLock Lock(&PeerCS);
@@ -150,14 +178,27 @@ bool FMCPCockpitServer::OnConnectionAccepted(FSocket* InSocket, const FIPv4Endpo
 	}
 	RxRunnable = new FMCPRxRunnable(this, InSocket);
 	RxThread = FRunnableThread::Create(RxRunnable, TEXT("MCPCockpitRx"));
-	return true; // accepted; FTcpListener hands ownership of the socket to us
+	return true; // accepted; ownership of InSocket transfers to us
 }
 
+// Teardown of the peer + rx thread. MUST be called from the listener or game thread —
+// NEVER the rx thread (that would self-join). Closes the socket FIRST so the rx thread's
+// parked Recv/Wait returns, THEN joins the thread, THEN destroys the socket.
 void FMCPCockpitServer::ClosePeer()
 {
+	FSocket* Sock = nullptr;
+	{
+		FScopeLock Lock(&PeerCS);
+		Sock = PeerSocket;
+		PeerSocket = nullptr;
+	}
+	if (Sock)
+	{
+		Sock->Close(); // unblocks the rx thread's Wait/Recv
+	}
 	if (RxThread)
 	{
-		RxThread->Kill(true);
+		RxThread->Kill(true); // sets bStop + joins; bounded because the socket is closed
 		delete RxThread;
 		RxThread = nullptr;
 	}
@@ -166,102 +207,115 @@ void FMCPCockpitServer::ClosePeer()
 		delete RxRunnable;
 		RxRunnable = nullptr;
 	}
-	FScopeLock Lock(&PeerCS);
-	if (PeerSocket)
+	if (Sock)
 	{
-		PeerSocket->Close();
-		ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(PeerSocket);
-		PeerSocket = nullptr;
+		ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(Sock);
 	}
 }
 
 bool FMCPCockpitServer::SendFrame(const TSharedRef<FJsonObject>& Frame)
 {
-	const FString Json = MCPJsonObjectToString(Frame);
-	FTCHARToUTF8 Utf8(*Json);
-	const int32 Len = Utf8.Length();
 	TArray<uint8> Buf;
-	Buf.SetNumUninitialized(4 + Len);
-	Buf[0] = (Len >> 24) & 0xFF; Buf[1] = (Len >> 16) & 0xFF; Buf[2] = (Len >> 8) & 0xFF; Buf[3] = Len & 0xFF;
-	FMemory::Memcpy(Buf.GetData() + 4, Utf8.Get(), Len);
-
+	MCPBuildFrameBytes(Frame, Buf);
 	FScopeLock Lock(&PeerCS);
 	if (!PeerSocket) return false;
 	int32 Sent = 0;
 	return PeerSocket->Send(Buf.GetData(), Buf.Num(), Sent) && Sent == Buf.Num();
 }
 
-// Called from the rx thread for each inbound hello/rpc/control frame.
-void FMCPCockpitServer::HandleInboundFrame(const FString& Json)
+// Called from the rx thread for each inbound hello/rpc/control frame. Returns false to
+// stop reading (reject). Teardown of a rejected peer is deferred to the game thread via
+// bPeerRejected so the rx thread never self-joins.
+bool FMCPCockpitServer::HandleInboundFrame(const FString& Json)
 {
 	TSharedPtr<FJsonObject> F = MCPJsonParse(Json);
-	if (!F.IsValid()) return;
-	const FString Type = F->GetStringField(TEXT("type"));
+	if (!F.IsValid()) return true; // ignore a garbage frame, keep reading
+	FString Type;
+	F->TryGetStringField(TEXT("type"), Type);
 
 	if (Type == TEXT("hello"))
 	{
-		// Token check (loopback parity with StrictNode); reply welcome.
-		const FString PeerToken = F->GetStringField(TEXT("token"));
+		FString PeerToken;
+		F->TryGetStringField(TEXT("token"), PeerToken);
 		if (!Token.IsEmpty() && PeerToken != Token)
 		{
-			ClosePeer();
-			return;
+			bPeerRejected = true; // game thread will ClosePeer (§2.5 step 5, deadlock-free)
+			return false;
 		}
 		TSharedRef<FJsonObject> W = MakeShared<FJsonObject>();
 		W->SetStringField(TEXT("type"), TEXT("welcome"));
 		W->SetStringField(TEXT("session_epoch"), SessionEpoch);
+		W->SetStringField(TEXT("manifest_digest"), ManifestDigest); // empty in A0; real in B2
 		W->SetNumberField(TEXT("protocol_version"), MCP_PROTOCOL_VERSION);
 		SendFrame(W);
-		// Serve any requested replay gap.
-		uint64 LastSeen = (uint64)F->GetNumberField(TEXT("last_seen_seq"));
-		if (LastSeen > 0) ServeReplayFrom(LastSeen);
+		double LastSeen = 0;
+		if (F->TryGetNumberField(TEXT("last_seen_seq"), LastSeen) && LastSeen > 0)
+		{
+			ServeReplayFrom((uint64)LastSeen);
+		}
+		return true;
 	}
-	else if (Type == TEXT("rpc"))
+	if (Type == TEXT("rpc"))
 	{
 		FPendingRpc Rpc;
-		Rpc.OpId = F->GetStringField(TEXT("op_id"));
-		Rpc.Op = F->GetStringField(TEXT("op"));
-		Rpc.Intent = F->GetStringField(TEXT("intent"));
-		Rpc.TaskId = F->GetStringField(TEXT("task_id"));
-		const TSharedPtr<FJsonObject>* ArgsObj;
-		if (F->TryGetObjectField(TEXT("args"), ArgsObj))
+		F->TryGetStringField(TEXT("op_id"), Rpc.OpId);
+		F->TryGetStringField(TEXT("op"), Rpc.Op);
+		F->TryGetStringField(TEXT("intent"), Rpc.Intent);
+		F->TryGetStringField(TEXT("task_id"), Rpc.TaskId);
+		const TSharedPtr<FJsonObject>* ArgsObj = nullptr;
+		if (F->TryGetObjectField(TEXT("args"), ArgsObj) && ArgsObj)
 		{
 			Rpc.ArgsJson = MCPJsonObjectToString((*ArgsObj).ToSharedRef());
 		}
 		// Bounded queue: reject beyond depth D with QUEUE_FULL (§5.6).
 		if (RpcQueueLen.Load() >= RpcQueueDepth)
 		{
-			TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
-			R->SetStringField(TEXT("type"), TEXT("rpc_result"));
-			R->SetStringField(TEXT("op_id"), Rpc.OpId);
-			R->SetBoolField(TEXT("ok"), false);
-			R->SetStringField(TEXT("code"), TEXT("QUEUE_FULL"));
-			R->SetStringField(TEXT("error"), TEXT("rpc queue full"));
-			SendFrame(R);
-			return;
+			SendErrorResult(Rpc.OpId, TEXT("QUEUE_FULL"), TEXT("rpc queue full"));
+			return true;
 		}
 		RpcQueueLen.IncrementExchange();
 		RpcQueue.Enqueue(MoveTemp(Rpc));
+		return true;
 	}
-	else if (Type == TEXT("control"))
+	if (Type == TEXT("control"))
 	{
-		const FString Ctrl = F->GetStringField(TEXT("control"));
+		FString Ctrl;
+		F->TryGetStringField(TEXT("control"), Ctrl);
 		if (Ctrl == TEXT("stop"))
 		{
 			bStopRequested = true; // off-thread-immediate latch (§2.4)
 		}
 		else if (Ctrl == TEXT("replay_from"))
 		{
-			ServeReplayFrom((uint64)F->GetNumberField(TEXT("from_seq")));
+			double FromSeq = 0;
+			F->TryGetNumberField(TEXT("from_seq"), FromSeq);
+			ServeReplayFrom((uint64)FromSeq);
 		}
 		// cancel/pause/approve/… are wired in Phase C.
+		return true;
 	}
+	return true;
+}
+
+void FMCPCockpitServer::SendErrorResult(const FString& OpId, const FString& Code, const FString& Error)
+{
+	TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
+	R->SetStringField(TEXT("type"), TEXT("rpc_result"));
+	R->SetStringField(TEXT("op_id"), OpId);
+	R->SetBoolField(TEXT("ok"), false);
+	R->SetStringField(TEXT("code"), Code);
+	R->SetStringField(TEXT("error"), Error);
+	SendFrame(R);
 }
 
 // Exactly one rpc executes at a time (§5.6). Popped + dispatched on the game thread.
 bool FMCPCockpitServer::GameThreadTick(float Dt)
 {
 	if (!bRunning) return false;
+	if (bPeerRejected.Exchange(false))
+	{
+		ClosePeer(); // deferred teardown of a token-rejected peer, safely on the game thread
+	}
 	if (bRpcExecuting.Load()) return true;
 	FPendingRpc Rpc;
 	if (RpcQueue.Dequeue(Rpc))
@@ -269,13 +323,7 @@ bool FMCPCockpitServer::GameThreadTick(float Dt)
 		RpcQueueLen.DecrementExchange();
 		if (bStopRequested.Load())
 		{
-			// Drain queued rpcs as CANCELLED while a stop is latched.
-			TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
-			R->SetStringField(TEXT("type"), TEXT("rpc_result"));
-			R->SetStringField(TEXT("op_id"), Rpc.OpId);
-			R->SetBoolField(TEXT("ok"), false);
-			R->SetStringField(TEXT("code"), TEXT("CANCELLED"));
-			SendFrame(R);
+			SendErrorResult(Rpc.OpId, TEXT("CANCELLED"), TEXT("stop latched")); // drain queue on stop
 			return true;
 		}
 		bRpcExecuting = true;
@@ -285,13 +333,7 @@ bool FMCPCockpitServer::GameThreadTick(float Dt)
 		}
 		else
 		{
-			// A0: no dispatcher wired → a placeholder terminal result so nothing hangs.
-			TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
-			R->SetStringField(TEXT("type"), TEXT("rpc_result"));
-			R->SetStringField(TEXT("op_id"), Rpc.OpId);
-			R->SetBoolField(TEXT("ok"), false);
-			R->SetStringField(TEXT("code"), TEXT("NO_DISPATCHER"));
-			SendFrame(R);
+			SendErrorResult(Rpc.OpId, TEXT("NO_DISPATCHER"), TEXT("no op dispatcher (A0)"));
 		}
 		bRpcExecuting = false;
 	}
@@ -327,6 +369,8 @@ void FMCPCockpitServer::EmitProgress(const FString& OpId, const FString& Payload
 	SendFrame(E);
 }
 
+// EmitResult flattens the Python op envelope {ok,result,error,code,retryable,traceback}
+// to TOP-LEVEL frame fields so it matches the flat Go Frame exactly (§5.1).
 void FMCPCockpitServer::EmitResult(const FString& OpId, const FString& ResultEnvelopeJson)
 {
 	TSharedPtr<FJsonObject> Env = MCPJsonParse(ResultEnvelopeJson);
@@ -335,8 +379,33 @@ void FMCPCockpitServer::EmitResult(const FString& OpId, const FString& ResultEnv
 	R->SetStringField(TEXT("op_id"), OpId);
 	if (Env.IsValid())
 	{
-		R->SetBoolField(TEXT("ok"), Env->HasField(TEXT("error")) == false);
-		R->SetObjectField(TEXT("result"), Env);
+		bool bOk = true;
+		if (Env->HasTypedField<EJson::Boolean>(TEXT("ok"))) { bOk = Env->GetBoolField(TEXT("ok")); }
+		else { bOk = !Env->HasField(TEXT("error")); }
+		R->SetBoolField(TEXT("ok"), bOk);
+
+		const TSharedPtr<FJsonObject>* ResultObj = nullptr;
+		if (Env->TryGetObjectField(TEXT("result"), ResultObj) && ResultObj)
+		{
+			R->SetObjectField(TEXT("result"), *ResultObj);
+		}
+		else if (!Env->HasField(TEXT("ok")) && !Env->HasField(TEXT("error")))
+		{
+			// A bare payload with no envelope wrapper → treat the whole object as result.
+			R->SetObjectField(TEXT("result"), Env);
+		}
+		FString S;
+		if (Env->TryGetStringField(TEXT("error"), S)) R->SetStringField(TEXT("error"), S);
+		if (Env->TryGetStringField(TEXT("code"), S)) R->SetStringField(TEXT("code"), S);
+		if (Env->TryGetStringField(TEXT("traceback"), S)) R->SetStringField(TEXT("traceback"), S);
+		bool bRetry = false;
+		if (Env->TryGetBoolField(TEXT("retryable"), bRetry) && bRetry) R->SetBoolField(TEXT("retryable"), true);
+	}
+	else
+	{
+		R->SetBoolField(TEXT("ok"), false);
+		R->SetStringField(TEXT("code"), TEXT("EDITOR_EXEC_FAILED"));
+		R->SetStringField(TEXT("error"), TEXT("unparseable result envelope"));
 	}
 	SendFrame(R);
 }
@@ -361,21 +430,22 @@ void FMCPCockpitServer::PushToRing(uint64 Seq, const FString& FrameJson)
 
 void FMCPCockpitServer::ServeReplayFrom(uint64 FromSeq)
 {
-	TArray<FString> ToSend;
+	TArray<FRingEntry> Entries;
 	{
 		FScopeLock Lock(&RingCS);
 		for (int32 i = 0; i < Ring.Num(); ++i)
 		{
-			const FRingEntry& E = Ring[i];
-			if (E.Seq > FromSeq) ToSend.Add(E.Json);
+			if (Ring[i].Seq > FromSeq) Entries.Add(Ring[i]);
 		}
 	}
-	ToSend.Sort(); // seq is embedded; entries beyond the ring floor are lost (journal is B2)
+	// Ordered single-seq-space replay: sort NUMERICALLY by seq (not lexically).
+	Entries.Sort([](const FRingEntry& A, const FRingEntry& B) { return A.Seq < B.Seq; });
+
 	FScopeLock Lock(&PeerCS);
 	if (!PeerSocket) return;
-	for (const FString& Json : ToSend)
+	for (const FRingEntry& E : Entries)
 	{
-		FTCHARToUTF8 Utf8(*Json);
+		FTCHARToUTF8 Utf8(*E.Json);
 		const int32 Len = Utf8.Length();
 		TArray<uint8> Buf; Buf.SetNumUninitialized(4 + Len);
 		Buf[0] = (Len >> 24) & 0xFF; Buf[1] = (Len >> 16) & 0xFF; Buf[2] = (Len >> 8) & 0xFF; Buf[3] = Len & 0xFF;

@@ -197,11 +197,18 @@ func (c *Client) readLoop() {
 		}
 		switch f.Type {
 		case FrameRPCResult:
+			// Delete-on-delivery makes a duplicate rpc_result for the same op_id find no
+			// waiter (ch==nil), and the non-blocking send means even a live-but-departed
+			// waiter can never wedge the single read loop.
 			c.mu.Lock()
 			ch := c.pending[f.OpID]
+			delete(c.pending, f.OpID)
 			c.mu.Unlock()
 			if ch != nil {
-				ch <- f // buffered(1); RPC is guaranteed to be selecting or gone
+				select {
+				case ch <- f: // buffered(1)
+				default:
+				}
 			}
 		case FrameEvent:
 			c.bumpSeq(f.Seq)
