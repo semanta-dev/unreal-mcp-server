@@ -44,6 +44,11 @@ func EnumerateTokenProcesses(exeSubstr, flag string) []TokenProc {
 	return out
 }
 
+// ProcessCommandLine returns a process's full command line from its PEB (empty on any
+// failure). Used to tell a deliberately-configured sibling server (a custom -command-addr)
+// apart from a same-port orphan, so killOrphanSiblings doesn't nuke a concurrent project.
+func ProcessCommandLine(pid int) string { return readCommandLine(pid) }
+
 // ProcessToken returns the "<flag>=<token>" value on a single live process's command
 // line ("" if absent/unreadable). Used to RE-VERIFY, immediately before a kill, that
 // a pid still bears MY token — so a pid recycled since enumeration is never killed.

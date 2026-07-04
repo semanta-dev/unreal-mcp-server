@@ -35,8 +35,17 @@ func killOrphanSiblings(logger *slog.Logger) {
 	}
 	for {
 		if int(e.ProcessID) != self && strings.EqualFold(windows.UTF16ToString(e.ExeFile[:]), "unreal-mcp.exe") {
-			logger.Warn("terminating orphaned sibling unreal-mcp server so this process owns the reverse-connect port", "pid", e.ProcessID)
-			_ = lifecycle.Kill(int(e.ProcessID))
+			// Only a sibling ALSO on the default port is a same-port orphan competing for
+			// MY reverse-connect port. A sibling with its own -command-addr is a deliberate
+			// concurrent project server (e.g. another editor on a distinct port) — NEVER
+			// kill it, or we start a multi-project fratricide (the disconnection bug).
+			pid := int(e.ProcessID)
+			if strings.Contains(lifecycle.ProcessCommandLine(pid), "-command-addr") {
+				logger.Debug("leaving custom-port sibling untouched (deliberate concurrent server)", "pid", pid)
+			} else {
+				logger.Warn("terminating orphaned sibling unreal-mcp server so this process owns the reverse-connect port", "pid", pid)
+				_ = lifecycle.Kill(pid)
+			}
 		}
 		if err := windows.Process32Next(snap, &e); err != nil {
 			break
