@@ -49,6 +49,23 @@ static void MCPBuildFrameBytes(const TSharedRef<FJsonObject>& Frame, TArray<uint
 	FMemory::Memcpy(OutBuf.GetData() + 4, Utf8.Get(), Len);
 }
 
+// Loops on partial sends so a frame larger than one socket send buffer is never truncated
+// on the wire (a large rpc_result must arrive whole or the Go ReadFrame desyncs).
+static bool MCPSendAll(FSocket* Socket, const uint8* Data, int32 Num)
+{
+	int32 Total = 0;
+	while (Total < Num)
+	{
+		int32 Sent = 0;
+		if (!Socket->Send(Data + Total, Num - Total, Sent) || Sent <= 0)
+		{
+			return false;
+		}
+		Total += Sent;
+	}
+	return true;
+}
+
 // Rx thread: reads framed hello/rpc/control from the peer and hands them to the server.
 // It NEVER closes/destroys the socket or joins itself — teardown is owned by the server
 // on the listener/game thread (deadlock-free teardown). It only reads and hands off.
@@ -242,8 +259,7 @@ bool FMCPCockpitServer::SendFrame(const TSharedRef<FJsonObject>& Frame)
 	MCPBuildFrameBytes(Frame, Buf);
 	FScopeLock Lock(&PeerCS);
 	if (!PeerSocket) return false;
-	int32 Sent = 0;
-	return PeerSocket->Send(Buf.GetData(), Buf.Num(), Sent) && Sent == Buf.Num();
+	return MCPSendAll(PeerSocket, Buf.GetData(), Buf.Num());
 }
 
 // Called from the rx thread for each inbound hello/rpc/control frame. Returns false to
@@ -480,7 +496,6 @@ void FMCPCockpitServer::ServeReplayFrom(uint64 FromSeq)
 		TArray<uint8> Buf; Buf.SetNumUninitialized(4 + Len);
 		Buf[0] = (Len >> 24) & 0xFF; Buf[1] = (Len >> 16) & 0xFF; Buf[2] = (Len >> 8) & 0xFF; Buf[3] = Len & 0xFF;
 		FMemory::Memcpy(Buf.GetData() + 4, Utf8.Get(), Len);
-		int32 Sent = 0;
-		PeerSocket->Send(Buf.GetData(), Buf.Num(), Sent);
+		if (!MCPSendAll(PeerSocket, Buf.GetData(), Buf.Num())) break;
 	}
 }
