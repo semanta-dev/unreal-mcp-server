@@ -19,6 +19,11 @@
 			"Name": "MCPAuthoring",
 			"Type": "Editor",
 			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "MCPCore",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
 		}
 	]
 }
