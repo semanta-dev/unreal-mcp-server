@@ -47,6 +47,26 @@ type Options struct {
 	Logger     *slog.Logger // default: discard
 }
 
+// NativeResult is the flat op envelope returned by the native framed backend — the same
+// shape as the uexec dispatch envelope, delivered over the MCPCore socket (§5.1).
+type NativeResult struct {
+	OK        bool
+	Result    json.RawMessage
+	Error     string
+	Code      string
+	Retryable bool
+	Traceback string
+}
+
+// NativeDispatcher is the framed-transport backend a Bridge dispatches op RESULTS
+// through when the native cockpit channel is selected for a session (§5.4). The op body
+// still runs in the editor's Python (via MCPCore's _mcp_dispatch_native); only the result
+// transport changes. Kept as an interface so bridge does not import cockpit (no cycle);
+// an adapter over *cockpit.Client satisfies it at the daemon.
+type NativeDispatcher interface {
+	RPCNative(ctx context.Context, op string, args json.RawMessage, intent, taskID string) (NativeResult, error)
+}
+
 // Bridge is the semantic client. Safe for the single-flight use the Session enforces.
 type Bridge struct {
 	run     Runner
@@ -57,6 +77,24 @@ type Bridge struct {
 	mu           sync.Mutex
 	installed    bool
 	installedGen uint64
+
+	nativeMu sync.Mutex
+	native   NativeDispatcher // when set, op dispatch routes through the framed socket
+}
+
+// SetNative selects (or clears, with nil) the native framed backend for op dispatch. Per
+// §5.4 the selection is exclusive per session and one-way in practice: once the cockpit
+// channel is up, ops route through it while uexec stays the install/fallback channel.
+func (b *Bridge) SetNative(n NativeDispatcher) {
+	b.nativeMu.Lock()
+	b.native = n
+	b.nativeMu.Unlock()
+}
+
+func (b *Bridge) getNative() NativeDispatcher {
+	b.nativeMu.Lock()
+	defer b.nativeMu.Unlock()
+	return b.native
 }
 
 // New builds a Bridge over a Runner (a *uexec.Session in production).
@@ -117,6 +155,24 @@ func (b *Bridge) dispatch(ctx context.Context, op string, args any) (dispatchEnv
 	if err != nil {
 		return env, res, fmt.Errorf("marshal args for %q: %w", op, err)
 	}
+
+	// Native framed backend selected (§5.4): the op body still runs in the editor's Python
+	// (MCPCore's dispatcher calls _mcp_dispatch_native), so the module must still be
+	// installed — but the RESULT returns over the framed socket, not the stdout marker. We
+	// keep ensureInstalled (over uexec) as the install/reconnect floor; CallText's captured
+	// output entries are a separately-gated follow-on (§5.1), so res stays empty here.
+	if native := b.getNative(); native != nil {
+		if err := b.ensureInstalled(ctx); err != nil {
+			return env, res, err
+		}
+		nr, err := native.RPCNative(ctx, op, j, "", "")
+		if err != nil {
+			return env, res, err
+		}
+		env = dispatchEnvelope{OK: nr.OK, Result: nr.Result, Error: nr.Error, Code: nr.Code, Retryable: nr.Retryable, Traceback: nr.Traceback}
+		return env, res, nil
+	}
+
 	// base64 -> the arg literal is pure ASCII with no chars needing escaping and
 	// zero Python-injection surface (the editor does json.loads(base64.b64decode)).
 	code := fmt.Sprintf("_mcp_dispatch(%q, %q)", op, base64.StdEncoding.EncodeToString(j))

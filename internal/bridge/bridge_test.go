@@ -329,3 +329,64 @@ func TestParseDispatchHelper(t *testing.T) {
 		t.Fatalf("parseDispatch broken: op=%q args=%v", op, args)
 	}
 }
+
+// fakeNative is a stand-in NativeDispatcher (the framed cockpit backend).
+type fakeNative struct {
+	mu     sync.Mutex
+	calls  int
+	lastOp string
+	result NativeResult
+	err    error
+}
+
+func (f *fakeNative) RPCNative(_ context.Context, op string, _ json.RawMessage, _, _ string) (NativeResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	f.lastOp = op
+	return f.result, f.err
+}
+
+func TestBridgeNativeBackendRouting(t *testing.T) {
+	fake := newFakeEditor()
+	opDispatches := 0
+	fake.dispatch = func(op string, args map[string]any) (bool, any, string) {
+		opDispatches++ // guarded by fake.mu (dispatch is called under it); must stay 0 while native
+		return true, map[string]any{"echo": op}, ""
+	}
+	b := New(fake, Options{})
+	native := &fakeNative{result: NativeResult{OK: true, Result: json.RawMessage(`{"native":true}`)}}
+	b.SetNative(native)
+
+	// A successful op routes through native, NOT the uexec op-dispatch path.
+	res, err := b.Call(context.Background(), "spawn_actor", map[string]any{"class": "StaticMeshActor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(res) != `{"native":true}` {
+		t.Fatalf("result = %s, want native", res)
+	}
+	if native.calls != 1 || native.lastOp != "spawn_actor" {
+		t.Fatalf("native calls=%d op=%q", native.calls, native.lastOp)
+	}
+	if opDispatches != 0 {
+		t.Fatalf("op dispatched over uexec %d times; native must be exclusive", opDispatches)
+	}
+
+	// A native op-level failure surfaces as an *OpError (not a transport error).
+	native.result = NativeResult{OK: false, Error: "no such class", Code: "CLASS_UNRESOLVED"}
+	_, err = b.Call(context.Background(), "spawn_actor", map[string]any{})
+	var oe *OpError
+	if !errors.As(err, &oe) || oe.Code != "CLASS_UNRESOLVED" {
+		t.Fatalf("expected OpError CLASS_UNRESOLVED, got %v", err)
+	}
+
+	// Clearing native reverts to the uexec path (one op-dispatch now).
+	b.SetNative(nil)
+	if _, err := b.Call(context.Background(), "spawn_actor", map[string]any{}); err != nil {
+		t.Fatal(err)
+	}
+	if opDispatches != 1 {
+		t.Fatalf("after clearing native, expected 1 uexec dispatch, got %d", opDispatches)
+	}
+}

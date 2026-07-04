@@ -73,9 +73,15 @@ public:
 	};
 
 	/** The dispatcher runs one rpc on the game thread and MUST guarantee exactly one
-	 *  terminal EmitResult(OpId,...) per call (reconciliation is layered in B1). */
+	 *  terminal EmitResult(OpId,...) per call. */
 	using FDispatcher = TFunction<void(const FPendingRpc&)>;
 	void SetDispatcher(FDispatcher InDispatcher) { Dispatcher = MoveTemp(InDispatcher); }
+
+	/** Wire the default Tier-P dispatcher (B1): run the op body in-process via
+	 *  ExecPythonCommandEx('_mcp_dispatch_native(...)'), whose _emit routes the result to
+	 *  the native sink; if no emit_result fired (a failure before the op body), synthesize
+	 *  EDITOR_EXEC_FAILED so the rpc always terminates (§5.1 reconciliation). */
+	void WireDefaultDispatcher();
 
 	/** Drop-oldest ring depth + queue depth (tunable via UMCPSettings later). */
 	static constexpr int32 EventRingCapacity = 4096;
@@ -136,4 +142,11 @@ private:
 
 	FDispatcher Dispatcher;
 	FTSTicker::FDelegateHandle TickHandle;
+
+	// B1 reconciliation state (game-thread only: one op dispatches at a time). The default
+	// dispatcher sets CurrentDispatchOpId + clears bCurrentEmitted before ExecPythonCommandEx;
+	// EmitResult sets bCurrentEmitted when called for that op; after the sync call returns,
+	// an unset flag means the op died without emitting → synthesize EDITOR_EXEC_FAILED.
+	FString CurrentDispatchOpId;
+	bool bCurrentEmitted = false;
 };

@@ -23,10 +23,11 @@ public class MCPCore : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
-			"Sockets",      // FSocket, ISocketSubsystem
-			"Networking",   // FTcpListener
-			"UnrealEd",     // GEditor guard, editor lifetime
+			"Sockets",            // FSocket, ISocketSubsystem
+			"Networking",         // FTcpListener
+			"UnrealEd",           // GEditor guard, editor lifetime
 			"EditorSubsystem",
+			"PythonScriptPlugin", // IPythonScriptPlugin::ExecPythonCommandEx (B1 native dispatch)
 		});
 	}
 }

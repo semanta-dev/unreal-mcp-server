@@ -13,6 +13,9 @@
 #include "Misc/Guid.h"
 #include "Misc/EngineVersion.h"
 #include "Misc/Paths.h"
+#include "Misc/Base64.h"
+#include "IPythonScriptPlugin.h"
+#include "PythonScriptTypes.h"
 
 static const int32 MCP_PROTOCOL_VERSION = 1;
 static constexpr uint32 MCP_MAX_FRAME_BYTES = 64u << 20; // matches Go MaxFrameBytes
@@ -163,9 +166,78 @@ bool FMCPCockpitServer::Start()
 	TickHandle = FTSTicker::GetCoreTicker().AddTicker(
 		FTickerDelegate::CreateRaw(this, &FMCPCockpitServer::GameThreadTick), 0.0f);
 
+	WireDefaultDispatcher(); // B1: run Tier-P op bodies in-process
 	bRunning = true;
 	bStopRequested = false;
 	return true;
+}
+
+// A Python single-quoted string literal from a safe token (op name / op_id / base64):
+// these charsets never contain a quote, but we defensively strip quotes/backslashes/
+// newlines so a hostile op_id can never break out of the literal.
+static FString MCPPyLiteral(const FString& In)
+{
+	FString S = In;
+	S.ReplaceInline(TEXT("\\"), TEXT(""));
+	S.ReplaceInline(TEXT("'"), TEXT(""));
+	S.ReplaceInline(TEXT("\n"), TEXT(""));
+	S.ReplaceInline(TEXT("\r"), TEXT(""));
+	return FString::Printf(TEXT("'%s'"), *S);
+}
+
+void FMCPCockpitServer::WireDefaultDispatcher()
+{
+	SetDispatcher([this](const FPendingRpc& Rpc)
+	{
+		IPythonScriptPlugin* Py = IPythonScriptPlugin::Get();
+		if (!Py || !Py->IsPythonAvailable())
+		{
+			SendErrorResult(Rpc.OpId, TEXT("EDITOR_EXEC_FAILED"), TEXT("python unavailable"));
+			return;
+		}
+		// base64 the JSON args (exactly how the uexec path frames them), so the command is
+		// pure ASCII with no injection surface — Python does json.loads(base64.b64decode()).
+		const FString ArgsJson = Rpc.ArgsJson.IsEmpty() ? TEXT("{}") : Rpc.ArgsJson;
+		FTCHARToUTF8 ArgsUtf8(*ArgsJson);
+		const FString B64 = FBase64::Encode(reinterpret_cast<const uint8*>(ArgsUtf8.Get()), ArgsUtf8.Length());
+
+		// The bridge is exec'd into __main__ globals (not a module), and ExecPythonCommandEx
+		// runs in __main__ too, so _mcp_dispatch_native is reachable as a bare global (§2.1).
+		const FString Cmd = FString::Printf(TEXT("_mcp_dispatch_native(%s, %s, %s)"),
+			*MCPPyLiteral(Rpc.Op), *MCPPyLiteral(B64), *MCPPyLiteral(Rpc.OpId));
+
+		CurrentDispatchOpId = Rpc.OpId;
+		bCurrentEmitted = false;
+
+		FPythonCommandEx PyCmd;
+		PyCmd.Command = Cmd;
+		PyCmd.ExecutionMode = EPythonCommandExecutionMode::ExecuteStatement;
+		const bool bOk = Py->ExecPythonCommandEx(PyCmd);
+
+		// Reconciliation: the op body emits its result from inside Python via emit_result.
+		// If that never fired (an exception before _emit, a binding error), synthesize a
+		// terminal failure so the rpc can never silently hang (§5.1, fix #10).
+		if (!bCurrentEmitted)
+		{
+			FString Err = TEXT("op did not emit a result");
+			for (const FPythonLogOutputEntry& E : PyCmd.LogOutput)
+			{
+				if (E.Type == EPythonLogOutputType::Error)
+				{
+					Err = E.Output;
+				}
+			}
+			TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
+			R->SetStringField(TEXT("type"), TEXT("rpc_result"));
+			R->SetStringField(TEXT("op_id"), Rpc.OpId);
+			R->SetBoolField(TEXT("ok"), false);
+			R->SetStringField(TEXT("code"), TEXT("EDITOR_EXEC_FAILED"));
+			R->SetStringField(TEXT("error"), Err);
+			R->SetStringField(TEXT("traceback"), bOk ? TEXT("") : TEXT("ExecPythonCommandEx returned failure"));
+			SendFrame(R);
+		}
+		CurrentDispatchOpId.Reset();
+	});
 }
 
 void FMCPCockpitServer::Stop()
@@ -419,6 +491,12 @@ void FMCPCockpitServer::EmitProgress(const FString& OpId, const FString& Payload
 // to TOP-LEVEL frame fields so it matches the flat Go Frame exactly (§5.1).
 void FMCPCockpitServer::EmitResult(const FString& OpId, const FString& ResultEnvelopeJson)
 {
+	// Reconciliation bookkeeping: a real emit for the in-flight op cancels the synthesized
+	// EDITOR_EXEC_FAILED (both run on the game thread, so no atomicity needed).
+	if (!CurrentDispatchOpId.IsEmpty() && OpId == CurrentDispatchOpId)
+	{
+		bCurrentEmitted = true;
+	}
 	TSharedPtr<FJsonObject> Env = MCPJsonParse(ResultEnvelopeJson);
 	TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
 	R->SetStringField(TEXT("type"), TEXT("rpc_result"));

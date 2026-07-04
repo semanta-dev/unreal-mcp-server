@@ -13,7 +13,7 @@
 # Text-style ops return a "message" field carrying the exact string the Python
 # server produced, so the A/B parity harness can assert text equality.
 
-_MCP_BRIDGE_VERSION = 20
+_MCP_BRIDGE_VERSION = 21
 
 import unreal
 import json
@@ -60,9 +60,34 @@ def _actor_ref(a):
     }
 
 
+# --- native cockpit sink (Phase B1, EDITOR_PLUGIN_PLAN.md §5.1) -------------
+# When MCPCore drives a dispatch it sets _MCP_NATIVE_SINK to the current op_id so _emit
+# routes the result to the native framed channel instead of the stdout marker. This is
+# strictly PER-DISPATCH (set/cleared around one op by _mcp_dispatch_native), deliberately
+# DECOUPLED from the cockpit_info presence probe, so a session that fell back to uexec can
+# never mis-route a result into the native ring and hang.
+_MCP_NATIVE_SINK = None
+
+
+def _mcp_cockpit_bridge():
+    """The UMCPCockpitBridge editor subsystem, or None if MCPCore is not loaded."""
+    try:
+        return unreal.get_editor_subsystem(unreal.MCPCockpitBridge)
+    except Exception:
+        return None
+
+
 def _emit(payload):
     # default=_jsonable guarantees an op's result can never poison the marker
     # (a single non-serializable field would otherwise fail the whole dispatch).
+    if _MCP_NATIVE_SINK is not None:
+        b = _mcp_cockpit_bridge()
+        if b is not None:
+            try:
+                b.emit_result(_MCP_NATIVE_SINK, json.dumps(payload, default=_jsonable))
+                return
+            except Exception:
+                pass  # fall through to the marker (belt-and-suspenders per §5.1)
     print(_MARKER + json.dumps(payload, default=_jsonable))
 
 
@@ -2480,12 +2505,21 @@ def _emit_event(etype, data=None):
     """Append a structured event to Saved/PyMCP/events.ndjson so the Go side can
     observe failures/transitions via a cheap file tail even while the single-flight
     command channel is busy."""
-    p = _events_path()
-    if not p:
-        return
     rec = {"type": etype, "t": time.time()}
     if data:
         rec.update(data)
+    # Native push when MCPCore is present (ambient — no-ops if no Go peer is connected).
+    # Events are lower-stakes than results, so this is gated on presence, not per-dispatch.
+    b = _mcp_cockpit_bridge()
+    if b is not None:
+        try:
+            b.emit_event(etype, json.dumps(rec, default=_jsonable))
+        except Exception:
+            pass
+    # Durable file floor (the uexec tail path + the journal). Kept even on the native path.
+    p = _events_path()
+    if not p:
+        return
     try:
         with open(p, "a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")
@@ -2503,6 +2537,20 @@ def _op_editor_ping(args):
     except Exception:
         pass
     return {"ok": True, "version": _MCP_BRIDGE_VERSION, "pie": pie, "t": time.time()}
+
+
+def _op_cockpit_info(args):
+    """Native-presence probe (§2.5). If MCPCore is loaded, return its transport coords
+    {cockpit_port, session_epoch, token, protocol_version}; otherwise the explicit
+    not_present sentinel so the Go backend selector stays on the uexec/Python fallback.
+    This is a plain uexec-channel op — it is how Go discovers the native port to dial."""
+    b = _mcp_cockpit_bridge()
+    if b is None:
+        return {"cockpit": "not_present"}
+    try:
+        return json.loads(b.cockpit_info())
+    except Exception:
+        return {"cockpit": "not_present"}
 
 
 def _op_scene_restore(args):
@@ -2744,6 +2792,7 @@ _OPS = {
     "actor_transforms": _op_actor_transforms,
     # P5 robustness
     "editor_ping": _op_editor_ping,
+    "cockpit_info": _op_cockpit_info,
     "scene_restore": _op_scene_restore,
     # P7 plugin-backed input synthesis
     "pie_input": _op_pie_input,
@@ -2822,3 +2871,18 @@ def _mcp_dispatch(op, b64args):
         code = _classify_error(e)
         _emit({"ok": False, "error": str(e), "code": code,
                "retryable": code in _RETRYABLE_CODES, "traceback": traceback.format_exc()})
+
+
+def _mcp_dispatch_native(op, b64args, op_id):
+    """Native dispatch entry (Phase B1). MCPCore's game-thread Dispatcher calls this via
+    ExecPythonCommandEx. It sets the per-dispatch native sink so the op's single _emit
+    routes its result to the framed channel keyed by op_id, then always clears it — so a
+    later uexec dispatch on the same interpreter is never mis-routed. MCPCore reconciles:
+    if this never reaches _emit (an import/binding failure before the op body), no
+    emit_result(op_id) fires and the native side synthesizes EDITOR_EXEC_FAILED (§5.1)."""
+    global _MCP_NATIVE_SINK
+    _MCP_NATIVE_SINK = op_id
+    try:
+        _mcp_dispatch(op, b64args)
+    finally:
+        _MCP_NATIVE_SINK = None
