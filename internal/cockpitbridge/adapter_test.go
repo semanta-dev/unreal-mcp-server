@@ -27,7 +27,8 @@ func tinyEditor(t *testing.T, reply func(op string) *cockpit.Frame) string {
 		if _, err := cockpit.ReadFrame(conn); err != nil { // hello
 			return
 		}
-		_ = cockpit.WriteFrame(conn, &cockpit.Frame{Type: cockpit.FrameWelcome, SessionEpoch: "e", ProtocolVersion: cockpit.ProtocolVersion})
+		// welcome epoch matches the cockpit_info probe epoch (both are MCPCore's in reality)
+		_ = cockpit.WriteFrame(conn, &cockpit.Frame{Type: cockpit.FrameWelcome, SessionEpoch: "ep-1", ProtocolVersion: cockpit.ProtocolVersion})
 		for {
 			f, err := cockpit.ReadFrame(conn)
 			if err != nil {
