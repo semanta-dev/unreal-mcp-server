@@ -39,9 +39,6 @@ type dataassetCreateIn struct {
 	Dest  string `json:"dest"`
 	Class string `json:"class" jsonschema:"the DataAsset (sub)class"`
 }
-type widgetCreateIn struct {
-	Dest string `json:"dest"`
-}
 type classPathIn struct {
 	ClassPath string `json:"class_path"`
 }
@@ -124,11 +121,6 @@ func registerAuthoring2Tools(s *mcp.Server, d Deps) {
 		"Create a DataAsset instance of a class.",
 		structHandler[dataassetCreateIn](b, "dataasset_create", func(in dataassetCreateIn) map[string]any {
 			return map[string]any{"dest": in.Dest, "class": in.Class}
-		}))
-	add(s, "widget_create",
-		"Create a Widget Blueprint asset (the tree/binding authoring itself needs the C++ plugin).",
-		structHandler[widgetCreateIn](b, "widget_create", func(in widgetCreateIn) map[string]any {
-			return map[string]any{"dest": in.Dest}
 		}))
 	add(s, "set_world_gamemode",
 		"Set the current level's WorldSettings GameMode override (a per-map override; use set_gamemode for the project default).",

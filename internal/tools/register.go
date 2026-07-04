@@ -55,6 +55,7 @@ func RegisterAll(s *mcp.Server, d Deps) {
 	registerRobustnessTools(s, d)
 	registerHeadlessTools(s, d)
 	registerControlTools(s, d)
+	registerHUDTools(s, d)
 }
 
 // registerParityTools adds the 16 frozen parity tools.
