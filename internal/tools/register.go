@@ -27,6 +27,11 @@ type Deps struct {
 	// instance token, and re-pins the lease. In single-project stdio mode it is nil and
 	// tools relaunch the editor directly (a fresh process is fine — no lease to keep).
 	Restart func(ctx context.Context, buildStep func(context.Context) error) error
+
+	// CockpitURL, when non-nil, returns the current browser-cockpit URL and whether it is
+	// live (the cockpit_url tool surfaces it to the agent/user). Nil when the cockpit
+	// launcher isn't wired.
+	CockpitURL func() (string, bool)
 }
 
 // RegisterAll adds all tools to the server: the 16 frozen parity tools plus the
@@ -56,6 +61,25 @@ func RegisterAll(s *mcp.Server, d Deps) {
 	registerHeadlessTools(s, d)
 	registerControlTools(s, d)
 	registerHUDTools(s, d)
+	registerCockpitTools(s, d)
+}
+
+// registerCockpitTools adds cockpit_url, which returns the browser control+observability
+// URL the launcher opens once an editor with the MCPCore plugin is reachable.
+func registerCockpitTools(s *mcp.Server, d Deps) {
+	if d.CockpitURL == nil {
+		return
+	}
+	add(s, "cockpit_url",
+		"Return the MCP Cockpit URL — a browser page for live control + observability of the editor (feed, gates, STOP). Open it in a browser. Empty with ready=false until an editor with the UnrealMCP (MCPCore) plugin is running.",
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, map[string]any, error) {
+			url, ready := d.CockpitURL()
+			out := map[string]any{"url": url, "ready": ready}
+			if !ready {
+				out["note"] = "cockpit not open yet — start the Unreal editor with the UnrealMCP plugin compiled, then retry"
+			}
+			return nil, out, nil
+		})
 }
 
 // registerParityTools adds the 16 frozen parity tools.

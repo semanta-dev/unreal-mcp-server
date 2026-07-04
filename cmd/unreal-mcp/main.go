@@ -16,6 +16,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
+	"github.com/jdziat/unreal-mcp-server/internal/cockpitlaunch"
 	"github.com/jdziat/unreal-mcp-server/internal/config"
 	"github.com/jdziat/unreal-mcp-server/internal/jobs"
 	"github.com/jdziat/unreal-mcp-server/internal/tools"
@@ -80,6 +81,12 @@ func main() {
 		os.Exit(runSelfTest(ctx, b, logger))
 	}
 
+	// The cockpit (browser control+observability surface) opens itself once the editor's
+	// native MCPCore channel is reachable; the launcher surfaces its URL via a log line, a
+	// Saved/PyMCP/cockpit_url.txt file, and the cockpit_url tool.
+	launcher := cockpitlaunch.New()
+	go launcher.Run(ctx, b, cockpitlaunch.Config{Project: cfg.ProjectDir, ProjectDir: cfg.ProjectDir}, logger)
+
 	srv := mcp.NewServer(&mcp.Implementation{Name: "unreal", Version: version.Version}, &mcp.ServerOptions{Logger: logger})
 	tools.InstallMiddleware(srv, logger)
 	tools.RegisterAll(srv, tools.Deps{
@@ -87,6 +94,7 @@ func main() {
 		Jobs:       jobs.NewRegistry(),
 		ProjectDir: cfg.ProjectDir,
 		EngineDir:  cfg.EngineDir,
+		CockpitURL: launcher.URL,
 	})
 
 	logger.Info("unreal-mcp starting",
