@@ -27,10 +27,23 @@ Branch: `feat/multi-project-daemon`. Everything below is committed.
      _tree/_describe` + helpers in `mcp_bridge.py` (bridge v19→v20): flat primitive
      authoring (`new_object` + universal `add_child` + slot/prop apply after all adds),
      canonical digest, interim compile. Syntax-clean; **UMG-correctness gate in flight.**
+   - **Phase 0a UMG-correctness gate → 6 real bugs found + ALL FIXED.** The gate caught
+     what a headless review can't guess: `wt.find_widget` and `is_child_of` are NOT
+     reflected UFUNCTIONs in 5.7 (adopt + composite-detection paths were dead), the root
+     was never repointed, and `remove`/`prune` were silent no-ops. All fixed (walk the
+     tree for a name index; repoint on root change; detect composites by asset type +
+     route to the C++ module; real removal). This is exactly why gating the
+     un-runnable-here code matters.
    - **Phase 0b C++ `MCPAuthoring` Editor module — SCAFFOLDED (committed).**
      `UMCPAuthoringSubsystem` (`AddChildWidget` composite `ConstructWidget`,
      `CompileWidget` structured `FCompilerResultsLog`→JSON, `DescribeBindWidgets`) +
-     `.uplugin` entry. **Needs a `Build.bat` compile** (deferred — the editor may be running).
+     `.uplugin` entry.
+   - **Phase 1 C++ runtime bases — WRITTEN (committed).** `UMCPButton` (Command-carrying
+     click) + `UMCPHUDWidget` (push setters with the live-Slate `SynchronizeProperties`
+     apply contract; `FMCPFieldSourceBinding`/`FMCPWorldTrackBinding`; `NativeTick` pull
+     eval for ratio/format_text + DPI-correct world tracking; `RunNamedCommand`) in
+     `MCPCapture` (which gained the `UMG` dep). **All C++ needs a `Build.bat` compile**
+     (deferred — the editor may be running). A C++-correctness gate is verifying it.
    - **The "perfect HUD" → `HUD_BUILD_DEMO.md`.** A full game HUD (composite health bar,
      ammo, RT minimap, tracked marker, controller-nav menu) as the exact tool sequence.
      Every step maps to a shipped tool; no missing verb was found.

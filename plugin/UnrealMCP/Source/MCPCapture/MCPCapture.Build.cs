@@ -19,6 +19,7 @@ public class MCPCapture : ModuleRules
 			"SlateCore",
 			"ApplicationCore",
 			"ImageWrapper",   // PNG compression backing FImageUtils
+			"UMG",            // UMCPHUDWidget : UUserWidget, UMCPButton : UButton, UWidgetLayoutLibrary, UCanvasPanelSlot
 		});
 	}
 }
