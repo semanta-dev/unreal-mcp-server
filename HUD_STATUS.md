@@ -48,6 +48,16 @@ Branch: `feat/multi-project-daemon`. Everything below is committed.
      ammo, RT minimap, tracked marker, controller-nav menu) as the exact tool sequence.
      Every step maps to a shipped tool; no missing verb was found.
 
+4. **Two implementation gates passed (with fixes):**
+   - *Phase 0a Python* — **A-**, all 6 reflection bugs fixed + the composite root-repoint
+     timing.
+   - *C++ correctness* — the reviewer verified every API against the **installed UE 5.7
+     source tree** and found only **two compile blockers**, both now fixed: the `UMG`
+     dep on `MCPCapture`, and a missing `#include "EngineUtils.h"` for `TActorIterator`.
+     Everything else (`FKismetEditorUtilities::CompileBlueprint`, `ConstructWidget`,
+     `FCompilerResultsLog`, `SynchronizeProperties`, `ProjectWorldLocationToWidgetPosition`,
+     the delegate + reflection code) checked out exactly. **The C++ should now compile.**
+
 ## The honest constraint
 
 I cannot drive a live UE editor headlessly, so the **Python ops and C++ module are
