@@ -139,6 +139,7 @@ if %q not in sys.path:
 import mcp_bridge as _mcpb
 importlib.reload(_mcpb)
 globals()['_mcp_dispatch'] = _mcpb._mcp_dispatch
+globals()['_mcp_dispatch_native'] = _mcpb._mcp_dispatch_native
 globals()['_MCP_BRIDGE_VERSION'] = _mcpb._MCP_BRIDGE_VERSION`, pyDir, pyDir)
 	res, err := b.run.RunCommand(ctx, boot, uexec.ModeExecFile)
 	if err != nil {

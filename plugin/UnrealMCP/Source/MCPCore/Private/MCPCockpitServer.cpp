@@ -219,22 +219,41 @@ void FMCPCockpitServer::WireDefaultDispatcher()
 		// terminal failure so the rpc can never silently hang (§5.1, fix #10).
 		if (!bCurrentEmitted)
 		{
-			FString Err = TEXT("op did not emit a result");
+			// Belt-and-suspenders (§5.1): if _emit fell back to the stdout marker (its
+			// native emit_result raised), the REAL result is in the Info log as
+			// "__MCP_JSON__<json>". Forward it rather than inverting a success into a
+			// failure. Otherwise accumulate the full Error traceback into EDITOR_EXEC_FAILED.
+			static const FString Marker(TEXT("__MCP_JSON__"));
+			FString MarkerJson;
+			FString ErrLines;
 			for (const FPythonLogOutputEntry& E : PyCmd.LogOutput)
 			{
+				const int32 MPos = E.Output.Find(Marker);
+				if (MPos != INDEX_NONE)
+				{
+					MarkerJson = E.Output.Mid(MPos + Marker.Len());
+				}
 				if (E.Type == EPythonLogOutputType::Error)
 				{
-					Err = E.Output;
+					if (!ErrLines.IsEmpty()) { ErrLines += TEXT("\n"); }
+					ErrLines += E.Output;
 				}
 			}
-			TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
-			R->SetStringField(TEXT("type"), TEXT("rpc_result"));
-			R->SetStringField(TEXT("op_id"), Rpc.OpId);
-			R->SetBoolField(TEXT("ok"), false);
-			R->SetStringField(TEXT("code"), TEXT("EDITOR_EXEC_FAILED"));
-			R->SetStringField(TEXT("error"), Err);
-			R->SetStringField(TEXT("traceback"), bOk ? TEXT("") : TEXT("ExecPythonCommandEx returned failure"));
-			SendFrame(R);
+			if (!MarkerJson.IsEmpty())
+			{
+				EmitResult(Rpc.OpId, MarkerJson); // real result recovered from the marker fallback
+			}
+			else
+			{
+				TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
+				R->SetStringField(TEXT("type"), TEXT("rpc_result"));
+				R->SetStringField(TEXT("op_id"), Rpc.OpId);
+				R->SetBoolField(TEXT("ok"), false);
+				R->SetStringField(TEXT("code"), TEXT("EDITOR_EXEC_FAILED"));
+				R->SetStringField(TEXT("error"), ErrLines.IsEmpty() ? TEXT("op did not emit a result") : ErrLines);
+				R->SetStringField(TEXT("traceback"), bOk ? TEXT("") : TEXT("ExecPythonCommandEx returned failure"));
+				SendFrame(R);
+			}
 		}
 		CurrentDispatchOpId.Reset();
 	});
