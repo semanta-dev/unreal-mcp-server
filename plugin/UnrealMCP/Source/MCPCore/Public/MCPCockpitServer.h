@@ -105,9 +105,10 @@ private:
 	// --- game-thread rpc pump ---
 	bool GameThreadTick(float Dt);  // FTSTicker: pop one rpc, dispatch (exactly one at a time)
 
-	// --- ring ---
+	// --- ring + journal ---
 	void PushToRing(uint64 Seq, const FString& FrameJson);
 	void ServeReplayFrom(uint64 FromSeq);
+	void AppendJournal(const FString& FrameJson); // durable ndjson floor beyond the ring (§4.6/§6.2)
 
 	FTcpListener* Listener = nullptr;
 	FSocket* PeerSocket = nullptr;              // the single connected Go peer (game-thread owned)
@@ -149,6 +150,13 @@ private:
 	int32 RingHead = 0;
 	uint64 RingFloor = 0;                        // lowest seq still in the ring
 	uint64 DroppedSinceEmit = 0;                 // ring drop-oldest counter (§6.2)
+
+	// Durable journal: every event line appended so replay can reach beyond the ring's
+	// floor. Guarded by JournalCS; capped + rotated (current + one .old generation).
+	FString JournalPath;
+	FCriticalSection JournalCS;
+	int64 JournalBytes = 0;
+	static constexpr int64 JournalCapBytes = 16 * 1024 * 1024; // rotate past 16 MiB
 
 	FDispatcher Dispatcher;
 	FTSTicker::FDelegateHandle TickHandle;

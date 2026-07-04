@@ -15,6 +15,8 @@
 #include "Misc/Paths.h"
 #include "Misc/Base64.h"
 #include "Misc/SecureHash.h"
+#include "Misc/FileHelper.h"
+#include "HAL/FileManager.h"
 #include "IPythonScriptPlugin.h"
 #include "PythonScriptTypes.h"
 
@@ -146,6 +148,15 @@ bool FMCPCockpitServer::Start()
 		RingHead = 0;
 		RingFloor = 0;
 		DroppedSinceEmit = 0;
+	}
+	{
+		// Fresh journal per session (the epoch changed, so old entries are irrelevant).
+		FScopeLock Lock(&JournalCS);
+		JournalPath = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("PyMCP"), TEXT("cockpit_journal.ndjson"));
+		IFileManager::Get().MakeDirectory(*FPaths::GetPath(JournalPath), true);
+		IFileManager::Get().Delete(*JournalPath, false, true);
+		IFileManager::Get().Delete(*(JournalPath + TEXT(".old")), false, true);
+		JournalBytes = 0;
 	}
 
 	// Ephemeral loopback listener (127.0.0.1:0). FTcpListener creates+binds+listens on
@@ -590,7 +601,9 @@ void FMCPCockpitServer::EmitEvent(const FString& EventType, const FString& Paylo
 		FScopeLock Lock(&RingCS);
 		if (DroppedSinceEmit > 0) { E->SetNumberField(TEXT("dropped"), (double)DroppedSinceEmit); DroppedSinceEmit = 0; }
 	}
-	PushToRing(Seq, MCPJsonObjectToString(E));
+	const FString Json = MCPJsonObjectToString(E);
+	PushToRing(Seq, Json);
+	AppendJournal(Json); // durable floor for replay beyond the ring
 	SendFrame(E);
 }
 
@@ -671,14 +684,65 @@ void FMCPCockpitServer::PushToRing(uint64 Seq, const FString& FrameJson)
 	}
 }
 
+// Parse the "seq" field out of a journal line without a full JSON deserialize (replay is
+// rare; this is a cheap scan for the leading {"type":...,"seq":N,...} shape).
+static uint64 MCPParseSeq(const FString& Line)
+{
+	int32 Idx = Line.Find(TEXT("\"seq\":"));
+	if (Idx == INDEX_NONE) return 0;
+	Idx += 6;
+	FString Num;
+	while (Idx < Line.Len() && FChar::IsDigit(Line[Idx])) { Num.AppendChar(Line[Idx]); ++Idx; }
+	return (uint64)FCString::Strtoui64(*Num, nullptr, 10);
+}
+
+void FMCPCockpitServer::AppendJournal(const FString& FrameJson)
+{
+	FScopeLock Lock(&JournalCS);
+	if (JournalPath.IsEmpty()) return;
+	const FString Line = FrameJson + TEXT("\n");
+	FFileHelper::SaveStringToFile(Line, *JournalPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM,
+		&IFileManager::Get(), FILEWRITE_Append);
+	JournalBytes += FTCHARToUTF8(*Line).Length();
+	if (JournalBytes > JournalCapBytes)
+	{
+		// Rotate one generation: current -> .old, start fresh. Replay reads .old then current.
+		const FString Old = JournalPath + TEXT(".old");
+		IFileManager::Get().Delete(*Old, false, true);
+		IFileManager::Get().Move(*Old, *JournalPath);
+		JournalBytes = 0;
+	}
+}
+
 void FMCPCockpitServer::ServeReplayFrom(uint64 FromSeq)
 {
 	TArray<FRingEntry> Entries;
+	uint64 Floor;
 	{
 		FScopeLock Lock(&RingCS);
+		Floor = RingFloor;
 		for (int32 i = 0; i < Ring.Num(); ++i)
 		{
 			if (Ring[i].Seq > FromSeq) Entries.Add(Ring[i]);
+		}
+	}
+	// If the request reaches BELOW the ring's floor, fill the gap from the durable journal
+	// (drop-oldest evicted those seqs from the in-memory ring). Dedup by seq vs the ring.
+	if (Floor == 0 || FromSeq + 1 < Floor)
+	{
+		TSet<uint64> Have;
+		for (const FRingEntry& E : Entries) { Have.Add(E.Seq); }
+		FScopeLock JLock(&JournalCS);
+		const FString Paths[2] = { JournalPath + TEXT(".old"), JournalPath };
+		for (const FString& Path : Paths)
+		{
+			TArray<FString> Lines;
+			FFileHelper::LoadFileToStringArray(Lines, *Path);
+			for (const FString& Line : Lines)
+			{
+				const uint64 S = MCPParseSeq(Line);
+				if (S > FromSeq && !Have.Contains(S)) { Entries.Add({ S, Line }); Have.Add(S); }
+			}
 		}
 	}
 	// Ordered single-seq-space replay: sort NUMERICALLY by seq (not lexically).
