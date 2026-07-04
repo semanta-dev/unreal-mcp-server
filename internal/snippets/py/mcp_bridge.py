@@ -1964,7 +1964,7 @@ def _widget_prim_class(name):
         cname = str(cls.get_name())
     except Exception:
         cname = ""
-    is_composite = cname.endswith("_C") or "UserWidget" in cname or isinstance(asset, unreal.WidgetBlueprint)
+    is_composite = cname.endswith("_C") or "UserWidget" in cname
     return cls, is_composite
 
 
@@ -2195,11 +2195,14 @@ def _widget_reconcile_node(wt, parent, node, index, built, issues):
             return None
         widget = _widget_index_find(wt, name)
         built[name] = widget
-        for child in node.get("children") or []:
-            pass  # composite subtree is opaque; not expanded
-        return widget
+        return widget  # composite subtree is opaque; not expanded
     else:
         widget = unreal.new_object(cls, outer=wt, name=unreal.Name(name))
+    # Repoint the root the moment the top-level node exists — BEFORE recursing — so a
+    # composite child (C++ AddChildWidget resolves its parent via root-anchored
+    # FindWidget) can reach a parent that lives in the new subtree.
+    if parent is None and wt.get_editor_property("root_widget") != widget:
+        wt.set_editor_property("root_widget", widget)
     if node.get("is_variable"):
         try:
             widget.set_editor_property("is_variable", True)

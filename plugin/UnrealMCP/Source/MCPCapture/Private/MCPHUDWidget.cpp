@@ -11,6 +11,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "Kismet/GameplayStatics.h"
+#include "EngineUtils.h" // TActorIterator
 #include "UObject/UnrealType.h"
 #include "UObject/TextProperty.h"
 
