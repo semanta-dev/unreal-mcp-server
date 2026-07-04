@@ -66,7 +66,18 @@ func (h *Hub) Publish(seq uint64, etype string, data json.RawMessage) {
 	for _, s := range h.subs {
 		select {
 		case s.ch <- ev:
-		default: // subscriber is behind; drop — it will resume via Last-Event-ID
+		default:
+			// Genuine drop-OLDEST: a live control surface must show the freshest state,
+			// so discard the oldest buffered event to make room for this one. The browser
+			// sees the seq gap and can reconnect with Last-Event-ID to replay from the ring.
+			select {
+			case <-s.ch:
+			default:
+			}
+			select {
+			case s.ch <- ev:
+			default:
+			}
 		}
 	}
 }

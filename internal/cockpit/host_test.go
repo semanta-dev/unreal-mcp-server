@@ -2,6 +2,7 @@ package cockpit
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -55,6 +56,58 @@ func TestHubFanoutAndUnsubscribe(t *testing.T) {
 		t.Fatal("subscriber not removed")
 	}
 }
+
+func TestHubDropOldest(t *testing.T) {
+	h := NewHub(64)
+	// Subscribe with a tiny buffer and DON'T drain, so the fan-out overflows.
+	_, ch, _ := h.Subscribe(0, 2)
+	for i := uint64(1); i <= 4; i++ {
+		h.Publish(i, "e", json.RawMessage(`{}`))
+	}
+	// drop-oldest: buffer holds the NEWEST two (seq 3,4), not the oldest (1,2).
+	var got []uint64
+	for len(ch) > 0 {
+		got = append(got, (<-ch).Seq)
+	}
+	if len(got) != 2 || got[0] != 3 || got[1] != 4 {
+		t.Fatalf("drop-oldest retained %v, want [3 4]", got)
+	}
+}
+
+func TestSSECompactsPrettyPayload(t *testing.T) {
+	// A pretty-printed editor payload (newlines + tabs) must not break SSE framing.
+	pretty := json.RawMessage("{\n\t\"name\": \"crate\",\n\t\"mass\": 100\n}")
+	var buf bytes.Buffer
+	rec := &flushRecorder{&buf}
+	if !writeSSE(rec, HubEvent{Seq: 9, Type: "prop", Data: pretty}) {
+		t.Fatal("writeSSE failed")
+	}
+	out := buf.String()
+	// exactly one data: line, terminated by the blank-line frame delimiter, no stray newlines
+	if strings.Count(out, "data: ") != 1 {
+		t.Fatalf("expected one data line, got:\n%q", out)
+	}
+	dataLine := out[strings.Index(out, "data: ")+len("data: "):]
+	dataLine = dataLine[:strings.Index(dataLine, "\n")]
+	if strings.ContainsAny(dataLine, "\t") || !strings.Contains(dataLine, `"mass":100`) {
+		t.Fatalf("data not compacted: %q", dataLine)
+	}
+}
+
+func TestDefaultSPAHasControls(t *testing.T) {
+	s := string(defaultSPA)
+	for _, want := range []string{"POST", "/control", `"control":"stop"`, "Last-Event-ID", "lastId", "reconnecting"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("default SPA missing %q (STOP + reconnect + resume must be present)", want)
+		}
+	}
+}
+
+type flushRecorder struct{ buf *bytes.Buffer }
+
+func (f *flushRecorder) Header() http.Header         { return http.Header{} }
+func (f *flushRecorder) Write(p []byte) (int, error) { return f.buf.Write(p) }
+func (f *flushRecorder) WriteHeader(int)             {}
 
 func newTestHost(t *testing.T, control ControlFunc) (*httptest.Server, *Hub) {
 	t.Helper()
