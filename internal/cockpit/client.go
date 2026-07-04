@@ -28,6 +28,7 @@ type Handlers struct {
 	OnProgress  func(*Frame)      // progress frames for a long op
 	OnGate      func(*Frame)      // an op parked pending human approval
 	OnRPCCancel func(opID string) // an in-flight RPC's ctx cancelled → its parked gate must sever (§4.2)
+	OnResult    func(opID string) // a terminal rpc_result arrived (any op) → resolve its gate/tombstone
 }
 
 // Client is one framed socket to one editor's MCPCore listener. It handshakes, then
@@ -225,6 +226,11 @@ func (c *Client) readLoop() {
 				case ch <- f: // buffered(1)
 				default:
 				}
+			}
+			// Feedback edge: resolve any gate/tombstone for this op, even if the waiter is
+			// gone (a departed agent's DENIED still clears the registry, no leak).
+			if c.handlers.OnResult != nil {
+				c.handlers.OnResult(f.OpID)
 			}
 		case FrameEvent:
 			c.bumpSeq(f.Seq)

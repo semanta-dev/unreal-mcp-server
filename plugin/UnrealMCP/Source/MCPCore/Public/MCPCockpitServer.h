@@ -139,7 +139,9 @@ private:
 	TMap<FString, FPendingRpc> ParkedGates; // gate_id -> parked rpc
 	TMap<FString, FString> OpToGate;         // op_id -> gate_id (for cancel/sever)
 	void ParkGate(const FPendingRpc& Rpc, const FString& Classification);
-	void ResolveGate(const FString& GateId, bool bApprove); // approve→enqueue, deny→DENIED
+	// GateId is BY VALUE on purpose: the cancel path passes a reference INTO OpToGate, which
+	// ResolveGate erases — a by-ref param would dangle (use-after-free). Copy decouples it.
+	void ResolveGate(FString GateId, bool bApprove); // approve→enqueue, deny→DENIED
 
 	// bounded lossy event ring
 	struct FRingEntry { uint64 Seq; FString Json; };

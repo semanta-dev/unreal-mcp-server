@@ -48,6 +48,7 @@ type SessionConfig struct {
 	CockpitListen string        // loopback listen addr; default 127.0.0.1:0 (ephemeral)
 	HubCapacity   int           // feed ring depth; default 4096
 	DialTimeout   time.Duration // editor dial/handshake timeout
+	GateTimeout   time.Duration // reap a still-pending gate after this (0 = never); should be < the MCP call timeout (§4.2)
 	SPA           []byte        // optional custom cockpit SPA
 }
 
@@ -73,6 +74,7 @@ func OpenSession(ctx context.Context, cfg SessionConfig) (*Session, error) {
 			s.publish("gate", gateEnvelope(f))
 		},
 		OnRPCCancel: func(opID string) { s.gates.Sever(opID) },
+		OnResult:    func(opID string) { s.gates.ResolveByOp(opID) }, // feedback edge: no gate leak
 	}
 	client, err := Dial(ctx, cfg.EditorAddr, DialConfig{
 		Token: cfg.EditorToken, LastSeenSeq: cfg.LastSeenSeq, KnownEpoch: cfg.KnownEpoch, Timeout: cfg.DialTimeout,
@@ -98,7 +100,33 @@ func OpenSession(ctx context.Context, cfg SessionConfig) (*Session, error) {
 	s.publish("session", mustJSON(map[string]any{
 		"epoch": client.Epoch(), "manifest_digest": client.ManifestDigest(),
 	}))
+
+	// Reap still-pending gates past GateTimeout (§4.2): cancel the parked op so the agent's
+	// call resolves before the MCP client gives up, rather than hanging on a gate no human
+	// ever answers.
+	if cfg.GateTimeout > 0 {
+		go s.sweepGates(cfg.GateTimeout)
+	}
 	return s, nil
+}
+
+func (s *Session) sweepGates(ttl time.Duration) {
+	interval := ttl / 4
+	if interval < time.Second {
+		interval = time.Second
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-s.client.Done(): // Session.Close closes the client → sweeper exits
+			return
+		case <-t.C:
+			for _, opID := range s.gates.Expire(time.Now().UnixMilli(), ttl.Milliseconds()) {
+				_ = s.client.Cancel(opID) // editor drops the parked gate → DENIED → OnResult reaps it
+			}
+		}
+	}
 }
 
 func (s *Session) publish(etype string, data json.RawMessage) {
@@ -115,12 +143,20 @@ func (s *Session) handleControl(f *Frame) error {
 		if _, ok := s.gates.Approve(f.GateID); !ok {
 			return ErrGateNotApprovable
 		}
-		return s.client.Control(f) // forward → editor runs the parked op
+		if err := s.client.Control(f); err != nil {
+			s.gates.revert(f.GateID) // forward failed → keep it retryable, don't strand Approved
+			return err
+		}
+		return nil // forwarded → editor runs the parked op
 	case CtrlDeny:
 		if _, ok := s.gates.Deny(f.GateID); !ok {
 			return ErrGateNotApprovable
 		}
-		return s.client.Control(f) // forward → editor drops the parked op
+		if err := s.client.Control(f); err != nil {
+			s.gates.revert(f.GateID)
+			return err
+		}
+		return nil // forwarded → editor drops the parked op
 	default:
 		return s.client.Control(f)
 	}

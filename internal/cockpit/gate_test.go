@@ -96,8 +96,48 @@ func TestGateResolveClearsIndex(t *testing.T) {
 	if _, ok := r.Get("g6"); ok {
 		t.Fatal("resolved gate should be gone")
 	}
-	// op index cleared → a stray sever finds nothing.
-	if r.Sever("op-g6") {
-		t.Fatal("sever on a resolved op should be a no-op")
+	// a resolved gate can't be approved (no gate to run)
+	if _, ok := r.Approve("g6"); ok {
+		t.Fatal("a resolved gate can't be approved")
+	}
+}
+
+// TestGateSeverBeforeRegister covers the cross-goroutine ordering hole: the agent's cancel
+// (Sever) can race AHEAD of the gate frame (Register). The durable tombstone must make the
+// gate land SEVERED, so a later human approve is void — never a run-after-departure.
+func TestGateSeverBeforeRegister(t *testing.T) {
+	r := NewGateRegistry()
+	// sever arrives first (no gate yet) → tombstone recorded
+	if !r.Sever("op-g7") {
+		t.Fatal("sever before register should be handled (tombstone)")
+	}
+	// then the gate frame arrives → must land severed, NOT pending
+	r.Register(mkGate("g7", "console"), 2000)
+	g, _ := r.Get("g7")
+	if g.State != GateSevered {
+		t.Fatalf("gate landed %s; a pre-severed op must land severed", g.State)
+	}
+	if _, ok := r.Approve("g7"); ok {
+		t.Fatal("a pre-severed gate must not be approvable (AGENT_SEVERED)")
+	}
+	// the terminal result clears the tombstone (no leak)
+	r.ResolveByOp("op-g7")
+	// a fresh op with a new tombstone-free id registers pending again
+	r.Register(mkGate("g8", "delete_actor"), 3000)
+	g8, _ := r.Get("g8")
+	if g8.State != GatePending {
+		t.Fatalf("unrelated gate should be pending, got %s", g8.State)
+	}
+}
+
+func TestGateRegisterIgnoresDuplicateID(t *testing.T) {
+	r := NewGateRegistry()
+	r.Register(mkGate("g9", "delete_actor"), 1000)
+	r.Approve("g9")
+	// a duplicate gate_id must NOT resurrect the decided gate as pending
+	r.Register(mkGate("g9", "delete_actor"), 2000)
+	g, _ := r.Get("g9")
+	if g.State != GateApproved {
+		t.Fatalf("duplicate register clobbered a decided gate: %s", g.State)
 	}
 }

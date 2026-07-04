@@ -343,6 +343,11 @@ void FMCPCockpitServer::ClosePeer()
 	{
 		ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(Sock);
 	}
+	// The rx thread (sole owner of the parked-gate maps) is now joined, so clearing them is
+	// race-free. Drop this session's parked gates so a reconnect doesn't leak them or later
+	// resolve a stale op into the game thread (the agent sees EDITOR_RESET on reconnect).
+	ParkedGates.Empty();
+	OpToGate.Empty();
 }
 
 bool FMCPCockpitServer::SendFrame(const TSharedRef<FJsonObject>& Frame)
@@ -478,8 +483,22 @@ void FMCPCockpitServer::SendErrorResult(const FString& OpId, const FString& Code
 // rx-thread only, so the maps need no lock. The before→after diff is a follow-on.
 void FMCPCockpitServer::ParkGate(const FPendingRpc& Rpc, const FString& Classification)
 {
+	// Reject a duplicate op_id so cancel-by-op_id can always reach the right gate and we
+	// never orphan a parked entry.
+	if (OpToGate.Contains(Rpc.OpId))
+	{
+		SendErrorResult(Rpc.OpId, TEXT("DUP_OP"), TEXT("op_id already parked"));
+		return;
+	}
 	const FString GateId = FGuid::NewGuid().ToString(EGuidFormats::Digits);
-	const FString ArgsHash = FMD5::HashAnsiString(*Rpc.ArgsJson);
+	// Hash the UTF-8 bytes (not TCHAR_TO_ANSI, which collapses non-ASCII to '?') so distinct
+	// Unicode asset names produce distinct args_hashes.
+	FTCHARToUTF8 ArgsUtf8(*Rpc.ArgsJson);
+	FMD5 Md5;
+	Md5.Update(reinterpret_cast<const uint8*>(ArgsUtf8.Get()), ArgsUtf8.Length());
+	uint8 Digest[16];
+	Md5.Final(Digest);
+	const FString ArgsHash = BytesToHex(Digest, 16);
 	ParkedGates.Add(GateId, Rpc);
 	OpToGate.Add(Rpc.OpId, GateId);
 
@@ -494,8 +513,9 @@ void FMCPCockpitServer::ParkGate(const FPendingRpc& Rpc, const FString& Classifi
 }
 
 // ResolveGate runs (approve → enqueue for the game thread) or drops (deny → DENIED) a
-// parked gate. rx-thread only. A missing gate_id is a no-op (already resolved/severed).
-void FMCPCockpitServer::ResolveGate(const FString& GateId, bool bApprove)
+// parked gate. rx-thread only. GateId is by VALUE (the cancel path's ref lives inside
+// OpToGate, which we erase). A missing gate_id is a no-op (already resolved/severed).
+void FMCPCockpitServer::ResolveGate(FString GateId, bool bApprove)
 {
 	FPendingRpc* Found = ParkedGates.Find(GateId);
 	if (!Found)
