@@ -7,6 +7,7 @@ package snippets
 import (
 	_ "embed"
 	"regexp"
+	"sort"
 	"strconv"
 )
 
@@ -36,3 +37,22 @@ func Version() int { return version }
 
 // Source is the full companion module Python source.
 func Source() string { return source }
+
+var opsBlockRe = regexp.MustCompile(`(?s)\n_OPS\s*=\s*\{(.*?)\n\}`)
+var opKeyRe = regexp.MustCompile(`(?m)^\s*"([a-z_][a-z0-9_]*)"\s*:`)
+
+// OpNames returns the sorted op names registered in the module's _OPS table — the
+// authoritative op list the Cockpit capability manifest must classify (the §5.3 bijection
+// conformance test keys off this, so a new op that lacks a classification fails CI).
+func OpNames() []string {
+	block := opsBlockRe.FindStringSubmatch(source)
+	if block == nil {
+		panic("snippets: _OPS block not found in py/mcp_bridge.py")
+	}
+	var names []string
+	for _, m := range opKeyRe.FindAllStringSubmatch(block[1], -1) {
+		names = append(names, m[1])
+	}
+	sort.Strings(names)
+	return names
+}
