@@ -1938,20 +1938,34 @@ _ANCHOR_PRESETS = {
 
 
 def _widget_prim_class(name):
-    """Resolve a friendly/primitive widget class name to the unreal type, or None
-    for a composite (a /Game WBP or a UserWidget subclass — Phase 0b C++ path)."""
+    """Resolve a widget class name to (unreal_class, is_composite). Friendly names are
+    the primitives; anything that loads as a WidgetBlueprint (a /Game WBP) or resolves
+    to a WidgetBlueprintGeneratedClass is a COMPOSITE (needs the C++ ConstructWidget
+    path). is_child_of is NOT a reflected UFUNCTION in 5.7, so detection is by asset
+    type + generated-class name, never by is_child_of."""
     friendly = _WIDGET_CLASSES.get(name)
     if friendly is not None:
         return getattr(unreal, friendly, None), False
+    # A /Game path: composite iff the asset is a WidgetBlueprint.
+    asset = None
+    try:
+        asset = unreal.load_asset(name)
+    except Exception:
+        asset = None
+    if isinstance(asset, unreal.WidgetBlueprint):
+        return asset.generated_class(), True
     cls = _resolve_class(name)
     if cls is None:
         return None, False
-    # A UserWidget-derived class is a composite child (not a primitive).
+    # A WidgetBlueprintGeneratedClass (name ends _C) or a class whose name flags a
+    # UserWidget base is a composite; a bare /Script UWidget subclass is primitive.
+    cname = ""
     try:
-        is_uw = bool(cls.is_child_of(unreal.UserWidget))
+        cname = str(cls.get_name())
     except Exception:
-        is_uw = False
-    return cls, is_uw
+        cname = ""
+    is_composite = cname.endswith("_C") or "UserWidget" in cname or isinstance(asset, unreal.WidgetBlueprint)
+    return cls, is_composite
 
 
 def _widget_apply_slot(child, slot_body):
@@ -1994,10 +2008,12 @@ def _widget_apply_slot(child, slot_body):
                 slot.set_row(int(slot_body["row"]))
             if "col" in slot_body:
                 slot.set_column(int(slot_body["col"]))
-            if "row_span" in slot_body:
-                slot.set_row_span(int(slot_body["row_span"]))
-            if "col_span" in slot_body:
-                slot.set_column_span(int(slot_body["col_span"]))
+            # Spans exist only on GridSlot; UniformGridSlot cells are single.
+            if isinstance(slot, unreal.GridSlot):
+                if "row_span" in slot_body:
+                    slot.set_row_span(int(slot_body["row_span"]))
+                if "col_span" in slot_body:
+                    slot.set_column_span(int(slot_body["col_span"]))
         else:
             issues.append(_issue("SLOT_TYPE_UNHANDLED", tn, "no slot recipe for " + tn))
     except Exception as e:
@@ -2023,6 +2039,8 @@ def _widget_apply_props(widget, props):
         try:
             if k == "Text" and isinstance(v, str):
                 widget.set_editor_property("text", unreal.Text.from_string(v))
+            elif k == "Visibility" and isinstance(v, str):
+                widget.set_editor_property("visibility", getattr(unreal.SlateVisibility, v.upper(), unreal.SlateVisibility.VISIBLE))
             else:
                 widget.set_editor_property(_snake(k), _maybe_asset(v))
         except Exception as e:
@@ -2079,33 +2097,83 @@ def _op_widget_compose(args):
     spec = args.get("tree") or {}
     issues = []
     restore_token = None
-    if args.get("prune") or args.get("remove"):
+    destructive = bool(args.get("prune") or args.get("remove"))
+    if destructive:
         restore_token = _widget_snapshot(bp_path, wt)
+
+    # Index existing nodes by name (UWidgetTree.find_widget is NOT reflected in 5.7,
+    # so walk root_widget explicitly). This drives adopt/patch + idempotence.
+    index = {}
+    cur_root = wt.get_editor_property("root_widget")
+    if cur_root is not None:
+        _widget_index(cur_root, index)
 
     # PASS 1 — build/adopt every node by name (structure first: adds, no slot yet).
     built = {}
-    root = _widget_reconcile_node(wt, None, spec, built, issues)
-    if root is not None and wt.get_editor_property("root_widget") is None:
+    root = _widget_reconcile_node(wt, None, spec, index, built, issues)
+    # Repoint the root whenever the reconciled spec root differs from the current one
+    # (widget_create leaves a RootPanel; a spec with its own root must be adopted).
+    if root is not None and wt.get_editor_property("root_widget") != root:
         wt.set_editor_property("root_widget", root)
 
     # PASS 2 — apply slot + props to every node (after all adds mint their slots).
     _widget_apply_all(spec, built, issues)
+
+    # remove / prune (destructive; snapshotted above).
+    removed = []
+    to_remove = list(args.get("remove") or [])
+    if args.get("prune"):
+        spec_names = set()
+        _widget_spec_names(spec, spec_names)
+        for nm in index:
+            if nm not in spec_names and nm not in built:
+                to_remove.append(nm)
+    for nm in to_remove:
+        w = built.get(nm) or index.get(nm)
+        if w is not None and w != root:
+            try:
+                w.remove_from_parent()
+                removed.append(nm)
+            except Exception as e:
+                issues.append(_issue("REMOVE_FAILED", nm, str(e)))
 
     if not args.get("defer"):
         unreal.BlueprintEditorLibrary.compile_blueprint(wbp)
         unreal.EditorAssetLibrary.save_asset(bp_path)
     tree = _widget_canon(wt)
     out = {"blueprint": bp_path, "tree": tree, "digest": _widget_digest(tree),
+           "removed": removed, "mode": args.get("mode") or "full",
            "compile_log": {"compiled": not args.get("defer"), "structured": False},  # structured log is 0b
            "issues": issues}
-    if restore_token:
+    if restore_token and (removed or destructive):
         out["restore_token"] = restore_token
     return out
 
 
-def _widget_reconcile_node(wt, parent, node, built, issues):
-    """Construct or adopt a primitive node by name and add it under parent. Returns
-    the UWidget (recurses children). Composite children are rejected in Phase 0a."""
+def _widget_index(w, out):
+    """Recursively map node-name -> UWidget over the live tree (get_children_count/
+    get_child_at + get_content are reflected; find_widget is not)."""
+    out[str(w.get_name())] = w
+    if isinstance(w, unreal.PanelWidget):
+        for i in range(w.get_children_count()):
+            _widget_index(w.get_child_at(i), out)
+    elif isinstance(w, unreal.ContentWidget):
+        c = w.get_content()
+        if c is not None:
+            _widget_index(c, out)
+
+
+def _widget_spec_names(node, out):
+    if node.get("name"):
+        out.add(node["name"])
+    for c in node.get("children") or []:
+        _widget_spec_names(c, out)
+
+
+def _widget_reconcile_node(wt, parent, node, index, built, issues):
+    """Construct or adopt a node by name (from the pre-built index) and add it under
+    parent. Returns the UWidget (recurses children). A composite (UserWidget/WBP) child
+    needs the MCPAuthoring C++ AddChildWidget path — call it if present, else issue."""
     name = node.get("name")
     cls_name = node.get("class")
     if not name or not cls_name:
@@ -2115,11 +2183,23 @@ def _widget_reconcile_node(wt, parent, node, built, issues):
     if cls is None:
         issues.append(_issue("CLASS_UNRESOLVED", cls_name, "unknown widget class"))
         return None
-    if is_composite:
-        issues.append(_issue("COMPOSITE_NEEDS_PLUGIN", name, "UserWidget/WBP child needs the MCPAuthoring C++ module (Phase 0b)"))
-        return None
-    existing = wt.find_widget(unreal.Name(name)) if hasattr(wt, "find_widget") else None
-    widget = existing if existing is not None else unreal.new_object(cls, outer=wt, name=unreal.Name(name))
+    existing = index.get(name)
+    if existing is not None:
+        widget = existing
+    elif is_composite:
+        # Composite construction is the C++ ConstructWidget path (Phase 0b).
+        auth = _mcp_authoring()
+        parent_name = str(parent.get_name()) if parent is not None else ""
+        if auth is None or parent is None or not auth.add_child_widget(wt.get_outer(), unreal.Name(parent_name), cls, unreal.Name(name), bool(node.get("is_variable"))):
+            issues.append(_issue("COMPOSITE_NEEDS_PLUGIN", name, "composite child needs the MCPAuthoring C++ module (Phase 0b) loaded + compiled"))
+            return None
+        widget = _widget_index_find(wt, name)
+        built[name] = widget
+        for child in node.get("children") or []:
+            pass  # composite subtree is opaque; not expanded
+        return widget
+    else:
+        widget = unreal.new_object(cls, outer=wt, name=unreal.Name(name))
     if node.get("is_variable"):
         try:
             widget.set_editor_property("is_variable", True)
@@ -2132,8 +2212,24 @@ def _widget_reconcile_node(wt, parent, node, built, issues):
         except Exception as e:
             issues.append(_issue("ADD_CHILD_FAILED", name, str(e)))
     for child in node.get("children") or []:
-        _widget_reconcile_node(wt, widget, child, built, issues)
+        _widget_reconcile_node(wt, widget, child, index, built, issues)
     return widget
+
+
+def _mcp_authoring():
+    """The MCPAuthoring editor subsystem, or None if the module isn't compiled/loaded."""
+    try:
+        return unreal.get_editor_subsystem(unreal.MCPAuthoringSubsystem)
+    except Exception:
+        return None
+
+
+def _widget_index_find(wt, name):
+    idx = {}
+    root = wt.get_editor_property("root_widget")
+    if root is not None:
+        _widget_index(root, idx)
+    return idx.get(name)
 
 
 def _widget_apply_all(node, built, issues):
