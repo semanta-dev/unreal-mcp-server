@@ -13,7 +13,7 @@
 # Text-style ops return a "message" field carrying the exact string the Python
 # server produced, so the A/B parity harness can assert text equality.
 
-_MCP_BRIDGE_VERSION = 19
+_MCP_BRIDGE_VERSION = 20
 
 import unreal
 import json
@@ -1904,14 +1904,321 @@ def _op_dataasset_create(args):
     return {"created": args["dest"], "class": args["class"]}
 
 
+# ---------------------------------------------------------------------------
+# HUD / UMG authoring — Phase 0a (flat primitive authoring, Python-first).
+# Composite (WBP-in-WBP), structured FCompilerResultsLog compile, BindWidget
+# enumeration, and FWidgetRenderer capture are Phase 0b/1 (the MCPAuthoring C++
+# Editor module). See HUD_TOOLING_PLAN.md. The reflected recipe here (new_object
+# for primitives + universal add_child + bare-UPROPERTY setters) is the one the
+# plan's Spike 0 validates first; any op a UE point-release stops reflecting
+# moves to the C++ subsystem without changing this contract.
+# ---------------------------------------------------------------------------
+
+# Friendly widget-class names -> the unreal.* type. Primitive UWidget subclasses
+# only; a /Game WBP or UserWidget subclass is a COMPOSITE (Phase 0b, C++).
+_WIDGET_CLASSES = {
+    "CanvasPanel": "CanvasPanel", "Overlay": "Overlay", "VerticalBox": "VerticalBox",
+    "HorizontalBox": "HorizontalBox", "ScrollBox": "ScrollBox", "GridPanel": "GridPanel",
+    "UniformGridPanel": "UniformGridPanel", "SizeBox": "SizeBox", "Border": "Border",
+    "ScaleBox": "ScaleBox", "WidgetSwitcher": "WidgetSwitcher", "SafeZone": "SafeZone",
+    "TextBlock": "TextBlock", "RichTextBlock": "RichTextBlock", "Image": "Image",
+    "Button": "Button", "ProgressBar": "ProgressBar", "Slider": "Slider",
+    "CheckBox": "CheckBox", "EditableText": "EditableText", "EditableTextBox": "EditableTextBox",
+    "Spacer": "Spacer", "NamedSlot": "NamedSlot",
+}
+# Anchor presets -> (min[x,y], max[x,y], alignment[x,y]) — the single highest-leverage
+# layout-correctness lever (coherent anchors+alignment, per the plan §3.b).
+_ANCHOR_PRESETS = {
+    "TopLeft": ((0, 0), (0, 0), (0, 0)), "TopCenter": ((0.5, 0), (0.5, 0), (0.5, 0)),
+    "TopRight": ((1, 0), (1, 0), (1, 0)), "CenterLeft": ((0, 0.5), (0, 0.5), (0, 0.5)),
+    "Center": ((0.5, 0.5), (0.5, 0.5), (0.5, 0.5)), "CenterRight": ((1, 0.5), (1, 0.5), (1, 0.5)),
+    "BottomLeft": ((0, 1), (0, 1), (0, 1)), "BottomCenter": ((0.5, 1), (0.5, 1), (0.5, 1)),
+    "BottomRight": ((1, 1), (1, 1), (1, 1)), "Fill": ((0, 0), (1, 1), (0, 0)),
+}
+
+
+def _widget_prim_class(name):
+    """Resolve a friendly/primitive widget class name to the unreal type, or None
+    for a composite (a /Game WBP or a UserWidget subclass — Phase 0b C++ path)."""
+    friendly = _WIDGET_CLASSES.get(name)
+    if friendly is not None:
+        return getattr(unreal, friendly, None), False
+    cls = _resolve_class(name)
+    if cls is None:
+        return None, False
+    # A UserWidget-derived class is a composite child (not a primitive).
+    try:
+        is_uw = bool(cls.is_child_of(unreal.UserWidget))
+    except Exception:
+        is_uw = False
+    return cls, is_uw
+
+
+def _widget_apply_slot(child, slot_body):
+    """Apply a slot-class-aware layout body to a child's (already-added) UPanelSlot.
+    Must run AFTER add_child (which mints a fresh slot). Returns [issue,...]."""
+    issues = []
+    slot = child.slot
+    if slot is None or not slot_body:
+        return issues
+    tn = type(slot).__name__
+    try:
+        if isinstance(slot, unreal.CanvasPanelSlot):
+            preset = slot_body.get("anchor_preset")
+            if preset and preset in _ANCHOR_PRESETS:
+                mn, mx, al = _ANCHOR_PRESETS[preset]
+                slot.set_anchors(unreal.Anchors(unreal.Vector2D(*mn), unreal.Vector2D(*mx)))
+                slot.set_alignment(unreal.Vector2D(*al))
+            elif slot_body.get("anchors"):
+                a = slot_body["anchors"]
+                slot.set_anchors(unreal.Anchors(unreal.Vector2D(*a[0]), unreal.Vector2D(*a[1])))
+            if slot_body.get("alignment") and not preset:
+                slot.set_alignment(unreal.Vector2D(*slot_body["alignment"]))
+            off = slot_body.get("offsets")
+            if off:
+                slot.set_offsets(unreal.Margin(off[0], off[1], off[2], off[3]))
+            if "z" in slot_body:
+                slot.set_z_order(int(slot_body["z"]))
+            if slot_body.get("size_to_content"):
+                slot.set_auto_size(True)
+        elif isinstance(slot, (unreal.HorizontalBoxSlot, unreal.VerticalBoxSlot)):
+            sz = slot_body.get("size")
+            if sz:
+                rule = unreal.SlateSizeRule.FILL if sz.get("fill") or sz.get("value") else unreal.SlateSizeRule.AUTOMATIC
+                slot.set_size(unreal.SlateChildSize(value=float(sz.get("value", 1.0)), size_rule=rule))
+            _widget_slot_common(slot, slot_body)
+        elif isinstance(slot, (unreal.OverlaySlot, unreal.BorderSlot)):
+            _widget_slot_common(slot, slot_body)
+        elif isinstance(slot, (unreal.GridSlot, unreal.UniformGridSlot)):
+            if "row" in slot_body:
+                slot.set_row(int(slot_body["row"]))
+            if "col" in slot_body:
+                slot.set_column(int(slot_body["col"]))
+            if "row_span" in slot_body:
+                slot.set_row_span(int(slot_body["row_span"]))
+            if "col_span" in slot_body:
+                slot.set_column_span(int(slot_body["col_span"]))
+        else:
+            issues.append(_issue("SLOT_TYPE_UNHANDLED", tn, "no slot recipe for " + tn))
+    except Exception as e:
+        issues.append(_issue("SLOT_SET_FAILED", tn, str(e)))
+    return issues
+
+
+def _widget_slot_common(slot, body):
+    if body.get("padding"):
+        p = body["padding"]
+        slot.set_padding(unreal.Margin(p[0], p[1], p[2], p[3]) if isinstance(p, list) else unreal.Margin(p, p, p, p))
+    if body.get("h_align"):
+        slot.set_horizontal_alignment(getattr(unreal.HorizontalAlignment, "H_ALIGN_" + body["h_align"].upper(), unreal.HorizontalAlignment.H_ALIGN_FILL))
+    if body.get("v_align"):
+        slot.set_vertical_alignment(getattr(unreal.VerticalAlignment, "V_ALIGN_" + body["v_align"].upper(), unreal.VerticalAlignment.V_ALIGN_FILL))
+
+
+def _widget_apply_props(widget, props):
+    """Reflection-set leaf props (Text as FText, colors, sizes, visibility). Partial
+    failure: accumulate per-prop issues rather than aborting."""
+    issues = []
+    for k, v in (props or {}).items():
+        try:
+            if k == "Text" and isinstance(v, str):
+                widget.set_editor_property("text", unreal.Text.from_string(v))
+            else:
+                widget.set_editor_property(_snake(k), _maybe_asset(v))
+        except Exception as e:
+            issues.append(_issue("PROPERTY_SET_FAILED", k, str(e)))
+    return issues
+
+
+def _snake(name):
+    """CamelCase -> snake_case for set_editor_property (UMG props are exposed snake)."""
+    out = []
+    for i, ch in enumerate(name):
+        if ch.isupper() and i > 0 and not name[i - 1].isupper():
+            out.append("_")
+        out.append(ch.lower())
+    return "".join(out)
+
+
 def _op_widget_create(args):
+    """Create a WidgetBlueprint shell with a chosen parent class + root panel."""
     pkg_path, name = args["dest"].rsplit("/", 1)
     factory = unreal.WidgetBlueprintFactory()
+    parent_path = args.get("parent_class") or "/Script/UMG.UserWidget"
+    parent_cls = _resolve_class(parent_path)
+    if parent_cls is not None:
+        try:
+            factory.set_editor_property("parent_class", parent_cls)
+        except Exception:
+            pass
     wbp = unreal.AssetToolsHelpers.get_asset_tools().create_asset(name, pkg_path, unreal.WidgetBlueprint, factory)
     if not wbp:
         return {"error": "widget create failed", "code": "SPAWN_FAILED"}
+    root_panel = args.get("root_panel") or "CanvasPanel"
+    wt = wbp.get_editor_property("widget_tree")
+    root_cls, _ = _widget_prim_class(root_panel)
+    root_name = "RootPanel"
+    if root_cls is not None and wt.get_editor_property("root_widget") is None:
+        root = unreal.new_object(root_cls, outer=wt, name=root_name)
+        wt.set_editor_property("root_widget", root)
+    unreal.BlueprintEditorLibrary.compile_blueprint(wbp)
     unreal.EditorAssetLibrary.save_asset(args["dest"])
-    return {"created": args["dest"], "note": "widget tree/binding authoring needs the UnrealMCP C++ plugin (P7)"}
+    return {"created": args["dest"], "root": root_name, "parent_class": parent_path,
+            "required_bindwidgets": []}  # BindWidget enumeration is Phase 0b (C++)
+
+
+def _op_widget_compose(args):
+    """Phase 0a flat reconcile: build the spec tree of PRIMITIVE nodes, apply
+    slots/props (after all adds), interim-compile, and echo the read-back tree +
+    digest. Composite (UserWidget) children => COMPOSITE_NEEDS_PLUGIN (Phase 0b)."""
+    bp_path = args["blueprint"]
+    wbp = unreal.load_asset(bp_path)
+    if not isinstance(wbp, unreal.WidgetBlueprint):
+        return {"error": "not a WidgetBlueprint: " + str(bp_path), "code": "ASSET_NOT_FOUND"}
+    wt = wbp.get_editor_property("widget_tree")
+    spec = args.get("tree") or {}
+    issues = []
+    restore_token = None
+    if args.get("prune") or args.get("remove"):
+        restore_token = _widget_snapshot(bp_path, wt)
+
+    # PASS 1 — build/adopt every node by name (structure first: adds, no slot yet).
+    built = {}
+    root = _widget_reconcile_node(wt, None, spec, built, issues)
+    if root is not None and wt.get_editor_property("root_widget") is None:
+        wt.set_editor_property("root_widget", root)
+
+    # PASS 2 — apply slot + props to every node (after all adds mint their slots).
+    _widget_apply_all(spec, built, issues)
+
+    if not args.get("defer"):
+        unreal.BlueprintEditorLibrary.compile_blueprint(wbp)
+        unreal.EditorAssetLibrary.save_asset(bp_path)
+    tree = _widget_canon(wt)
+    out = {"blueprint": bp_path, "tree": tree, "digest": _widget_digest(tree),
+           "compile_log": {"compiled": not args.get("defer"), "structured": False},  # structured log is 0b
+           "issues": issues}
+    if restore_token:
+        out["restore_token"] = restore_token
+    return out
+
+
+def _widget_reconcile_node(wt, parent, node, built, issues):
+    """Construct or adopt a primitive node by name and add it under parent. Returns
+    the UWidget (recurses children). Composite children are rejected in Phase 0a."""
+    name = node.get("name")
+    cls_name = node.get("class")
+    if not name or not cls_name:
+        issues.append(_issue("NODE_INVALID", str(name), "every node needs name+class"))
+        return None
+    cls, is_composite = _widget_prim_class(cls_name)
+    if cls is None:
+        issues.append(_issue("CLASS_UNRESOLVED", cls_name, "unknown widget class"))
+        return None
+    if is_composite:
+        issues.append(_issue("COMPOSITE_NEEDS_PLUGIN", name, "UserWidget/WBP child needs the MCPAuthoring C++ module (Phase 0b)"))
+        return None
+    existing = wt.find_widget(unreal.Name(name)) if hasattr(wt, "find_widget") else None
+    widget = existing if existing is not None else unreal.new_object(cls, outer=wt, name=unreal.Name(name))
+    if node.get("is_variable"):
+        try:
+            widget.set_editor_property("is_variable", True)
+        except Exception as e:
+            issues.append(_issue("IS_VARIABLE_NOT_MATERIALIZED", name, str(e)))
+    built[name] = widget
+    if parent is not None and existing is None:
+        try:
+            parent.add_child(widget)
+        except Exception as e:
+            issues.append(_issue("ADD_CHILD_FAILED", name, str(e)))
+    for child in node.get("children") or []:
+        _widget_reconcile_node(wt, widget, child, built, issues)
+    return widget
+
+
+def _widget_apply_all(node, built, issues):
+    w = built.get(node.get("name"))
+    if w is not None:
+        issues.extend(_widget_apply_props(w, node.get("props")))
+        if node.get("slot"):
+            issues.extend(_widget_apply_slot(w, node["slot"]))
+    for child in node.get("children") or []:
+        _widget_apply_all(child, built, issues)
+
+
+def _widget_canon(wt):
+    """Canonical in-memory tree JSON (child order preserved) — the layer-1 oracle."""
+    root = wt.get_editor_property("root_widget")
+    return _widget_canon_node(root) if root is not None else {}
+
+
+def _widget_canon_node(w):
+    d = {"name": str(w.get_name()), "class": type(w).__name__}
+    children = []
+    if isinstance(w, unreal.PanelWidget):
+        for i in range(w.get_children_count()):
+            children.append(_widget_canon_node(w.get_child_at(i)))
+    elif isinstance(w, unreal.ContentWidget):
+        c = w.get_content()
+        if c is not None:
+            children.append(_widget_canon_node(c))
+    if children:
+        d["children"] = children
+    return d
+
+
+def _widget_digest(canon):
+    import hashlib
+    return hashlib.sha256(json.dumps(canon, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:16]
+
+
+def _widget_snapshot(bp_path, wt):
+    """Dump the tree to Saved/MCP/widget_snapshots and return a restore token."""
+    import os
+    proj = unreal.Paths.project_saved_dir()
+    d = os.path.join(proj, "MCP", "widget_snapshots", bp_path.replace("/", "_"))
+    os.makedirs(d, exist_ok=True)
+    token = str(int(time.time() * 1000))
+    with open(os.path.join(d, token + ".json"), "w") as f:
+        json.dump(_widget_canon(wt), f)
+    return token
+
+
+def _op_widget_compile(args):
+    """Phase 0a interim compile (unstructured pass/fail). The structured
+    FCompilerResultsLog log is Phase 0b (C++ widget_compile)."""
+    bp_path = args["blueprint"]
+    wbp = unreal.load_asset(bp_path)
+    if not isinstance(wbp, unreal.WidgetBlueprint):
+        return {"error": "not a WidgetBlueprint", "code": "ASSET_NOT_FOUND"}
+    unreal.BlueprintEditorLibrary.compile_blueprint(wbp)
+    unreal.EditorAssetLibrary.save_asset(bp_path)
+    tree = _widget_canon(wbp.get_editor_property("widget_tree"))
+    return {"compiled": True, "digest": _widget_digest(tree),
+            "compile_log": {"structured": False, "note": "structured log is Phase 0b"}}
+
+
+def _op_widget_tree(args):
+    bp_path = args["blueprint"]
+    wbp = unreal.load_asset(bp_path)
+    if not isinstance(wbp, unreal.WidgetBlueprint):
+        return {"error": "not a WidgetBlueprint", "code": "ASSET_NOT_FOUND"}
+    mode = args.get("mode") or "get"
+    if mode == "restore":
+        return {"error": "restore is not yet implemented in Phase 0a", "code": "NOT_IMPLEMENTED",
+                "restore_token": args.get("restore_token")}
+    tree = _widget_canon(wbp.get_editor_property("widget_tree"))
+    return {"blueprint": bp_path, "tree": tree, "digest": _widget_digest(tree)}
+
+
+def _op_widget_describe(args):
+    """Phase 0a: the authorable palette (friendly names) or a class's reflected
+    props via reflect_class. BindWidget/handler enumeration is Phase 0b (C++)."""
+    wc = args.get("widget_class")
+    if not wc:
+        return {"palette": sorted(_WIDGET_CLASSES.keys()),
+                "anchor_presets": sorted(_ANCHOR_PRESETS.keys())}
+    return _op_reflect_class({"class_path": wc})
 
 
 def _op_set_world_gamemode(args):
@@ -2323,6 +2630,10 @@ _OPS = {
     "datatable_import": _op_datatable_import,
     "dataasset_create": _op_dataasset_create,
     "widget_create": _op_widget_create,
+    "widget_compose": _op_widget_compose,
+    "widget_compile": _op_widget_compile,
+    "widget_tree": _op_widget_tree,
+    "widget_describe": _op_widget_describe,
     "set_world_gamemode": _op_set_world_gamemode,
     "pie_set_property": _op_pie_set_property,
     "pie_destroy": _op_pie_destroy,
