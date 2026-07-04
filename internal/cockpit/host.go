@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -201,6 +202,11 @@ func (h *Host) handleControl(w http.ResponseWriter, r *http.Request) {
 	}
 	f := &Frame{Type: FrameControl, Control: ControlKind(req.Control), OpID: req.OpID, GateID: req.GateID, FromSeq: req.FromSeq}
 	if err := h.control(f); err != nil {
+		if errors.Is(err, ErrGateNotApprovable) {
+			// A late click on a severed/expired/decided gate — the op did NOT run.
+			http.Error(w, "gate not approvable (severed/expired/decided)", http.StatusConflict)
+			return
+		}
 		http.Error(w, "editor unreachable", http.StatusBadGateway)
 		return
 	}

@@ -133,6 +133,14 @@ private:
 	TSpscQueue<FPendingRpc> RpcQueue;
 	TAtomic<int32> RpcQueueLen{ 0 };
 
+	// Parked gates (§4.2). A gate-flagged rpc is NOT queued; it is held here and a gate
+	// frame is sent, until a control approve→enqueue / deny→DENIED / cancel→drop. All three
+	// (park on rpc, resolve on control) run on the rx thread, so this needs no lock.
+	TMap<FString, FPendingRpc> ParkedGates; // gate_id -> parked rpc
+	TMap<FString, FString> OpToGate;         // op_id -> gate_id (for cancel/sever)
+	void ParkGate(const FPendingRpc& Rpc, const FString& Classification);
+	void ResolveGate(const FString& GateId, bool bApprove); // approve→enqueue, deny→DENIED
+
 	// bounded lossy event ring
 	struct FRingEntry { uint64 Seq; FString Json; };
 	TArray<FRingEntry> Ring;                     // circular; RingCS-guarded

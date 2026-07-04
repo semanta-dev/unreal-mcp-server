@@ -24,9 +24,10 @@ var (
 // Handlers receive pushed frames off the client's read loop. They MUST NOT block (the
 // read loop is single-threaded); hand off to a buffered channel if work is needed.
 type Handlers struct {
-	OnEvent    func(*Frame) // event frames (observations); Frame.Dropped>0 signals a ring drop
-	OnProgress func(*Frame) // progress frames for a long op
-	OnGate     func(*Frame) // an op parked pending human approval
+	OnEvent     func(*Frame)      // event frames (observations); Frame.Dropped>0 signals a ring drop
+	OnProgress  func(*Frame)      // progress frames for a long op
+	OnGate      func(*Frame)      // an op parked pending human approval
+	OnRPCCancel func(opID string) // an in-flight RPC's ctx cancelled → its parked gate must sever (§4.2)
 }
 
 // Client is one framed socket to one editor's MCPCore listener. It handshakes, then
@@ -128,9 +129,20 @@ func (c *Client) writeFrame(f *Frame) error {
 	return WriteFrame(c.conn, f)
 }
 
-// RPC invokes op on the editor and blocks until its rpc_result, ctx cancellation, or
-// the client closing. It mints a unique op_id and matches the result by it.
+// RPC invokes op on the editor and blocks until its rpc_result, ctx cancellation, or the
+// client closing. It mints a unique op_id and matches the result by it.
 func (c *Client) RPC(ctx context.Context, op string, args json.RawMessage, intent, taskID string) (*Frame, error) {
+	return c.rpc(ctx, op, args, intent, taskID, false)
+}
+
+// RPCGated is RPC but flags the op for human approval — the editor parks it and emits a
+// gate frame instead of running it immediately (§4.2). The call blocks until approve→run
+// (a real result), deny (a DENIED result), or ctx cancel (which severs the parked gate).
+func (c *Client) RPCGated(ctx context.Context, op string, args json.RawMessage, intent, taskID string) (*Frame, error) {
+	return c.rpc(ctx, op, args, intent, taskID, true)
+}
+
+func (c *Client) rpc(ctx context.Context, op string, args json.RawMessage, intent, taskID string, gate bool) (*Frame, error) {
 	opID := c.nonce + "-" + strconv.FormatUint(c.opSeq.Add(1), 36)
 	ch := make(chan *Frame, 1)
 	c.mu.Lock()
@@ -148,15 +160,19 @@ func (c *Client) RPC(ctx context.Context, op string, args json.RawMessage, inten
 		c.mu.Unlock()
 	}()
 
-	if err := c.writeFrame(&Frame{Type: FrameRPC, OpID: opID, Op: op, Args: args, Intent: intent, TaskID: taskID}); err != nil {
+	if err := c.writeFrame(&Frame{Type: FrameRPC, OpID: opID, Op: op, Args: args, Intent: intent, TaskID: taskID, Gate: gate}); err != nil {
 		return nil, err
 	}
 	select {
 	case res := <-ch:
 		return res, nil
 	case <-ctx.Done():
-		// The op keeps running editor-side; a caller cancel doesn't cancel the op.
-		// Send a cancel control so the editor can drop it if still queued (§2.4).
+		// The op keeps running editor-side; a caller cancel doesn't cancel the op. Notify
+		// so a parked gate for this op severs (a late human approve is then void, §4.2),
+		// then send a cancel control so the editor can drop it if still queued (§2.4).
+		if c.handlers.OnRPCCancel != nil {
+			c.handlers.OnRPCCancel(opID)
+		}
 		_ = c.Control(&Frame{Type: FrameControl, Control: CtrlCancel, OpID: opID})
 		return nil, ctx.Err()
 	case <-c.closed:

@@ -14,6 +14,7 @@
 #include "Misc/EngineVersion.h"
 #include "Misc/Paths.h"
 #include "Misc/Base64.h"
+#include "Misc/SecureHash.h"
 #include "IPythonScriptPlugin.h"
 #include "PythonScriptTypes.h"
 
@@ -399,6 +400,17 @@ bool FMCPCockpitServer::HandleInboundFrame(const FString& Json)
 		{
 			Rpc.ArgsJson = MCPJsonObjectToString((*ArgsObj).ToSharedRef());
 		}
+		// Human-in-the-loop: a gate-flagged op is PARKED (not run) until a control
+		// approve/deny/cancel resolves it (§4.2). Go sets gate=true from the manifest+policy.
+		bool bGate = false;
+		F->TryGetBoolField(TEXT("gate"), bGate);
+		if (bGate)
+		{
+			FString Classification;
+			F->TryGetStringField(TEXT("classification"), Classification);
+			ParkGate(Rpc, Classification);
+			return true;
+		}
 		// Bounded queue: reject beyond depth D with QUEUE_FULL (§5.6).
 		if (RpcQueueLen.Load() >= RpcQueueDepth)
 		{
@@ -423,7 +435,29 @@ bool FMCPCockpitServer::HandleInboundFrame(const FString& Json)
 			F->TryGetNumberField(TEXT("from_seq"), FromSeq);
 			ServeReplayFrom((uint64)FromSeq);
 		}
-		// cancel/pause/approve/… are wired in Phase C.
+		else if (Ctrl == TEXT("approve"))
+		{
+			FString GateId;
+			F->TryGetStringField(TEXT("gate_id"), GateId);
+			ResolveGate(GateId, /*bApprove=*/true); // run the parked op now
+		}
+		else if (Ctrl == TEXT("deny"))
+		{
+			FString GateId;
+			F->TryGetStringField(TEXT("gate_id"), GateId);
+			ResolveGate(GateId, /*bApprove=*/false); // drop with DENIED
+		}
+		else if (Ctrl == TEXT("cancel"))
+		{
+			// A parked gate whose agent departed (sever) is dropped; a queued/running op
+			// cannot be preempted mid-flight (§2.6), so cancel only affects parked gates.
+			FString OpId;
+			F->TryGetStringField(TEXT("op_id"), OpId);
+			if (const FString* GateId = OpToGate.Find(OpId))
+			{
+				ResolveGate(*GateId, /*bApprove=*/false);
+			}
+		}
 		return true;
 	}
 	return true;
@@ -438,6 +472,52 @@ void FMCPCockpitServer::SendErrorResult(const FString& OpId, const FString& Code
 	R->SetStringField(TEXT("code"), Code);
 	R->SetStringField(TEXT("error"), Error);
 	SendFrame(R);
+}
+
+// ParkGate holds a gate-flagged rpc (not run) and emits a gate frame for the human (§4.2).
+// rx-thread only, so the maps need no lock. The before→after diff is a follow-on.
+void FMCPCockpitServer::ParkGate(const FPendingRpc& Rpc, const FString& Classification)
+{
+	const FString GateId = FGuid::NewGuid().ToString(EGuidFormats::Digits);
+	const FString ArgsHash = FMD5::HashAnsiString(*Rpc.ArgsJson);
+	ParkedGates.Add(GateId, Rpc);
+	OpToGate.Add(Rpc.OpId, GateId);
+
+	TSharedRef<FJsonObject> G = MakeShared<FJsonObject>();
+	G->SetStringField(TEXT("type"), TEXT("gate"));
+	G->SetStringField(TEXT("gate_id"), GateId);
+	G->SetStringField(TEXT("op_id"), Rpc.OpId);
+	G->SetStringField(TEXT("op"), Rpc.Op);
+	G->SetStringField(TEXT("classification"), Classification);
+	G->SetStringField(TEXT("args_hash"), ArgsHash);
+	SendFrame(G);
+}
+
+// ResolveGate runs (approve → enqueue for the game thread) or drops (deny → DENIED) a
+// parked gate. rx-thread only. A missing gate_id is a no-op (already resolved/severed).
+void FMCPCockpitServer::ResolveGate(const FString& GateId, bool bApprove)
+{
+	FPendingRpc* Found = ParkedGates.Find(GateId);
+	if (!Found)
+	{
+		return;
+	}
+	FPendingRpc Rpc = *Found; // copy before erasing
+	OpToGate.Remove(Rpc.OpId);
+	ParkedGates.Remove(GateId);
+
+	if (!bApprove)
+	{
+		SendErrorResult(Rpc.OpId, TEXT("DENIED"), TEXT("gate denied"));
+		return;
+	}
+	if (RpcQueueLen.Load() >= RpcQueueDepth)
+	{
+		SendErrorResult(Rpc.OpId, TEXT("QUEUE_FULL"), TEXT("rpc queue full at approve"));
+		return;
+	}
+	RpcQueueLen.IncrementExchange();
+	RpcQueue.Enqueue(MoveTemp(Rpc)); // dispatched on the next game-thread tick
 }
 
 // Exactly one rpc executes at a time (§5.6). Popped + dispatched on the game thread.

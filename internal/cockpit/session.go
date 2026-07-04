@@ -3,11 +3,18 @@ package cockpit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"sync/atomic"
 	"time"
 )
+
+// ErrGateNotApprovable is returned by the control path when an approve/deny targets a gate
+// that is no longer pending — severed (agent departed → AGENT_SEVERED), expired, already
+// decided, or unknown. The Host surfaces it as a distinct 409 so the human isn't told the
+// action succeeded when the op was never run.
+var ErrGateNotApprovable = errors.New("cockpit: gate not approvable (severed/expired/decided)")
 
 // Session ties one editor's framed transport (Client) to the human cockpit (Hub + Host).
 // It is the integration that makes A0 (transport) and A1 (cockpit) run together
@@ -27,6 +34,7 @@ type Session struct {
 	httpAddr string
 	token    string
 	feedSeq  atomic.Uint64
+	gates    *GateRegistry
 }
 
 // SessionConfig parametrizes OpenSession. EditorAddr/EditorToken come from the
@@ -52,14 +60,19 @@ func OpenSession(ctx context.Context, cfg SessionConfig) (*Session, error) {
 	if cfg.CockpitListen == "" {
 		cfg.CockpitListen = "127.0.0.1:0"
 	}
-	s := &Session{hub: NewHub(cfg.HubCapacity), token: cfg.CockpitToken}
+	s := &Session{hub: NewHub(cfg.HubCapacity), token: cfg.CockpitToken, gates: NewGateRegistry()}
 
 	// Editor → Hub: every pushed observation becomes a feed item (with a fresh feed seq;
-	// the editor's own seq is carried inside the payload).
+	// the editor's own seq is carried inside the payload). A gate frame is also registered
+	// so approve/deny can be authorized + a departed agent's gate severed.
 	handlers := Handlers{
 		OnEvent:    func(f *Frame) { s.publish("event", eventEnvelope(f)) },
 		OnProgress: func(f *Frame) { s.publish("progress", progressEnvelope(f)) },
-		OnGate:     func(f *Frame) { s.publish("gate", gateEnvelope(f)) },
+		OnGate: func(f *Frame) {
+			s.gates.Register(Gate{ID: f.GateID, OpID: f.OpID, Op: f.Op, Classification: f.Classification, ArgsHash: f.ArgsHash, Diff: f.Diff}, time.Now().UnixMilli())
+			s.publish("gate", gateEnvelope(f))
+		},
+		OnRPCCancel: func(opID string) { s.gates.Sever(opID) },
 	}
 	client, err := Dial(ctx, cfg.EditorAddr, DialConfig{
 		Token: cfg.EditorToken, LastSeenSeq: cfg.LastSeenSeq, KnownEpoch: cfg.KnownEpoch, Timeout: cfg.DialTimeout,
@@ -69,10 +82,8 @@ func OpenSession(ctx context.Context, cfg SessionConfig) (*Session, error) {
 	}
 	s.client = client
 
-	// Browser control → editor. The Host has already authenticated the request.
-	s.host = NewHost(HostConfig{Token: cfg.CockpitToken, SPA: cfg.SPA}, s.hub, func(f *Frame) error {
-		return s.client.Control(f)
-	})
+	// Browser control → editor, gate-authorized. The Host has already authenticated.
+	s.host = NewHost(HostConfig{Token: cfg.CockpitToken, SPA: cfg.SPA}, s.hub, s.handleControl)
 
 	ln, err := net.Listen("tcp", cfg.CockpitListen)
 	if err != nil {
@@ -93,6 +104,30 @@ func OpenSession(ctx context.Context, cfg SessionConfig) (*Session, error) {
 func (s *Session) publish(etype string, data json.RawMessage) {
 	s.hub.Publish(s.feedSeq.Add(1), etype, data)
 }
+
+// handleControl authorizes browser control before forwarding to the editor. Approve/deny
+// must target a still-pending gate: a severed/expired/decided/unknown gate is rejected
+// with ErrGateNotApprovable, so a late click on an abandoned gate can never run the op.
+// Other controls (stop/pause/resume/replay) forward directly.
+func (s *Session) handleControl(f *Frame) error {
+	switch f.Control {
+	case CtrlApprove:
+		if _, ok := s.gates.Approve(f.GateID); !ok {
+			return ErrGateNotApprovable
+		}
+		return s.client.Control(f) // forward → editor runs the parked op
+	case CtrlDeny:
+		if _, ok := s.gates.Deny(f.GateID); !ok {
+			return ErrGateNotApprovable
+		}
+		return s.client.Control(f) // forward → editor drops the parked op
+	default:
+		return s.client.Control(f)
+	}
+}
+
+// Gates exposes the registry (for a cockpit gate-list endpoint / tests).
+func (s *Session) Gates() *GateRegistry { return s.gates }
 
 // CockpitURL is the browser entry point; the token rides the URL fragment (never sent to
 // the server) and the SPA promotes it to an Authorization: Bearer header (§3.2).

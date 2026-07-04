@@ -77,6 +77,7 @@ type Frame struct {
 	Args   json.RawMessage `json:"args,omitempty"`
 	Intent string          `json:"intent,omitempty"`  // agent rationale -> feed headline (§3.4)
 	TaskID string          `json:"task_id,omitempty"` // grouping
+	Gate   bool            `json:"gate,omitempty"`    // Go->UE: park this op for human approval (§4.2)
 
 	// rpc_result envelope (same shape as the uexec/Python result, no marker)
 	OK        *bool           `json:"ok,omitempty"`

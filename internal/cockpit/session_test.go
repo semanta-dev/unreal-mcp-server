@@ -157,6 +157,76 @@ func TestSessionEndToEnd(t *testing.T) {
 	})
 }
 
+// TestSessionGateFlow proves the human-in-the-loop wiring: an editor gate reaches the
+// browser + the registry, an approve is authorized + forwarded to the editor, and a
+// severed gate's approve is rejected 409 (never executed).
+func TestSessionGateFlow(t *testing.T) {
+	fe := newTCPFakeEditor(t)
+	sess, err := OpenSession(context.Background(), SessionConfig{EditorAddr: fe.addr(), CockpitToken: "tok", DialTimeout: 2 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { sess.Close() })
+
+	// browser SSE
+	req, _ := http.NewRequest("GET", "http://"+sess.HTTPAddr()+"/events", nil)
+	req.Header.Set("Authorization", "Bearer tok")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	events := make(chan sseEvent, 32)
+	go readSSE(resp.Body, events)
+
+	// editor parks a destructive op → gate frame
+	fe.push(&Frame{Type: FrameGate, GateID: "g1", OpID: "op-x", Op: "delete_actor", Classification: "destructive", ArgsHash: "h", Diff: json.RawMessage(`{"n":{"before":1,"after":0}}`)})
+	if !waitEvent(t, events, func(ev sseEvent) bool { return ev.event == "gate" && strings.Contains(ev.data, `"gate_id":"g1"`) }) {
+		t.Fatal("gate never reached the browser")
+	}
+	waitFor(t, func() bool { return len(sess.Gates().Pending()) == 1 })
+
+	// browser approves → 202 + the editor receives the approve control
+	if code := postControl(t, sess, `{"control":"approve","gate_id":"g1"}`); code != http.StatusAccepted {
+		t.Fatalf("approve = %d, want 202", code)
+	}
+	waitFor(t, func() bool {
+		for _, c := range fe.recvControls() {
+			if c.Control == CtrlApprove && c.GateID == "g1" {
+				return true
+			}
+		}
+		return false
+	})
+
+	// a second gate, then the agent departs (sever) → a late approve is rejected 409 and
+	// is NOT forwarded to the editor.
+	fe.push(&Frame{Type: FrameGate, GateID: "g2", OpID: "op-y", Op: "console", Classification: "exec", ArgsHash: "h2"})
+	waitFor(t, func() bool { _, ok := sess.Gates().Get("g2"); return ok })
+	sess.Gates().Sever("op-y") // same effect as the OnRPCCancel hook when the agent's ctx cancels
+	if code := postControl(t, sess, `{"control":"approve","gate_id":"g2"}`); code != http.StatusConflict {
+		t.Fatalf("severed-gate approve = %d, want 409", code)
+	}
+	// the editor must NOT have received an approve for g2
+	for _, c := range fe.recvControls() {
+		if c.Control == CtrlApprove && c.GateID == "g2" {
+			t.Fatal("a severed gate's approve was forwarded to the editor — must not run")
+		}
+	}
+}
+
+func postControl(t *testing.T, sess *Session, body string) int {
+	t.Helper()
+	req, _ := http.NewRequest("POST", "http://"+sess.HTTPAddr()+"/control", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer tok")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
 func TestSessionCockpitURL(t *testing.T) {
 	fe := newTCPFakeEditor(t)
 	sess, err := OpenSession(context.Background(), SessionConfig{EditorAddr: fe.addr(), CockpitToken: "tok123", DialTimeout: 2 * time.Second})
