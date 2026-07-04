@@ -299,8 +299,8 @@ void UMCPHUDWidget::NativeTick(const FGeometry& MyGeometry, float DeltaTime)
 			continue;
 		}
 		UWidget* Marker = ResolveWidget(T.MarkerWidget);
-		UCanvasPanelSlot* Slot = Marker ? Cast<UCanvasPanelSlot>(Marker->Slot) : nullptr;
-		if (!Slot)
+		UCanvasPanelSlot* MarkerSlot = Marker ? Cast<UCanvasPanelSlot>(Marker->Slot) : nullptr;
+		if (!MarkerSlot)
 		{
 			continue;
 		}
@@ -308,7 +308,7 @@ void UMCPHUDWidget::NativeTick(const FGeometry& MyGeometry, float DeltaTime)
 		const FVector WorldLoc = TargetActor->GetActorLocation() + T.WorldOffset;
 		if (UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(GetOwningPlayer(), WorldLoc, ScreenPos, /*bPlayerViewportRelative=*/false))
 		{
-			Slot->SetPosition(ScreenPos); // slot writes push to live Slate directly
+			MarkerSlot->SetPosition(ScreenPos); // slot writes push to live Slate directly
 		}
 	}
 }
