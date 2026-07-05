@@ -13,7 +13,7 @@
 # Text-style ops return a "message" field carrying the exact string the Python
 # server produced, so the A/B parity harness can assert text equality.
 
-_MCP_BRIDGE_VERSION = 22
+_MCP_BRIDGE_VERSION = 23
 
 import unreal
 import json
@@ -512,6 +512,157 @@ def _op_asset_info(args):
         except Exception:
             pass
     return info
+
+
+def _op_asset_thumbnail(args):
+    # AGENTIC_GAMEDEV_PLAN.md §3.1 — the keystone perception primitive: render any
+    # browser StaticMesh into a PNG from a canonical 3/4 angle, plus the hard facts
+    # (tri/vert count, material slot names, LOD count, bounds). Fixes RC2 (the agent
+    # cannot see an asset before using it). Runtime path uses SceneCapture2D +
+    # RenderingLibrary.create_render_target2d(RTF_RGBA8) + export_to_disk — validated
+    # against UE 5.7 (KismetRenderingLibrary is NOT exposed to Python; float render
+    # targets export EXR-only, so the target MUST be RTF_RGBA8).
+    import math
+    path = args["asset_path"]
+    size = int(args.get("size", 512))
+    mesh = unreal.EditorAssetLibrary.load_asset(path)
+    if not mesh:
+        return {"error": "asset not found: " + str(path)}
+    if not isinstance(mesh, unreal.StaticMesh):
+        return {"error": "asset_thumbnail v1 supports StaticMesh only; got " + mesh.get_class().get_name()}
+
+    facts = {"path": path, "class": "StaticMesh"}
+    try:
+        facts["num_tris_lod0"] = mesh.get_num_triangles(0)
+        facts["num_verts_lod0"] = mesh.get_num_vertices(0)
+        facts["num_lods"] = mesh.get_num_lods()
+    except Exception as e:
+        facts["facts_error"] = str(e)
+    try:
+        facts["material_slots"] = [str(s.material_slot_name) for s in mesh.get_editor_property("static_materials")]
+    except Exception:
+        pass
+    b = mesh.get_bounds()
+    facts["bounds_origin"] = [b.origin.x, b.origin.y, b.origin.z]
+    facts["bounds_extent"] = [b.box_extent.x, b.box_extent.y, b.box_extent.z]
+
+    out_dir = os.path.join(unreal.Paths.project_saved_dir(), "MCP", "AssetThumbs")
+    os.makedirs(out_dir, exist_ok=True)
+    fname = path.strip("/").replace("/", "_") + ".png"
+    out_path = os.path.join(out_dir, fname)
+
+    world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
+    actsys = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    org, ext = b.origin, b.box_extent
+    dist = max(ext.x, ext.y, ext.z, 1.0) * 3.2
+    dl = math.sqrt(2.36)
+    cam = unreal.Vector(org.x + dist / dl, org.y + dist / dl, org.z + 0.35 * dist / dl)
+    look = unreal.MathLibrary.find_look_at_rotation(cam, org)
+    mesh_actor = capture_actor = None
+    temp_lights = []
+    try:
+        mesh_actor = actsys.spawn_actor_from_object(mesh, unreal.Vector(0, 0, 0))
+        # Supply the thumbnail's own lighting so it renders correctly regardless of the
+        # editor's current map (a startup/empty map has no lights -> a black capture).
+        try:
+            # Key light aimed along the camera's view direction (pitched down a bit) so it
+            # lights the faces the thumbnail sees; a softer fill from the opposite side
+            # opens the shadows. Independent of the editor's current map lighting.
+            key_rot = unreal.Rotator(look.pitch - 25.0, look.yaw, 0.0)
+            sun = actsys.spawn_actor_from_class(
+                unreal.DirectionalLight, unreal.Vector(0, 0, org.z + ext.z + 500.0), key_rot)
+            sun.directional_light_component.set_intensity(12.0)
+            temp_lights.append(sun)
+            fill = actsys.spawn_actor_from_class(
+                unreal.DirectionalLight, unreal.Vector(0, 0, org.z + ext.z + 500.0),
+                unreal.Rotator(-20.0, look.yaw + 150.0, 0.0))
+            fill.directional_light_component.set_intensity(4.0)
+            temp_lights.append(fill)
+        except Exception as le:
+            facts["light_warn"] = str(le)
+        rt = unreal.RenderingLibrary.create_render_target2d(world, size, size, unreal.TextureRenderTargetFormat.RTF_RGBA8)
+        capture_actor = actsys.spawn_actor_from_class(unreal.SceneCapture2D, cam, look)
+        comp = capture_actor.capture_component2d
+        comp.texture_target = rt
+        comp.capture_source = unreal.SceneCaptureSource.SCS_FINAL_COLOR_LDR
+        comp.fov_angle = 40.0
+        comp.capture_scene()
+        comp.capture_scene()
+        opts = unreal.ImageWriteOptions()
+        opts.format = unreal.DesiredImageFormat.PNG
+        opts.overwrite_file = True
+        # export_to_disk writes asynchronously; poll briefly so `rendered` is accurate.
+        try:
+            os.remove(out_path)
+        except OSError:
+            pass
+        rt.export_to_disk(out_path, opts)
+        import time as _t
+        for _ in range(40):  # up to ~4s
+            if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+                break
+            _t.sleep(0.1)
+    except Exception as re:
+        # A mid-render UE exception must not discard the hard facts already gathered.
+        facts["render_error"] = str(re)
+    finally:
+        if mesh_actor:
+            actsys.destroy_actor(mesh_actor)
+        if capture_actor:
+            actsys.destroy_actor(capture_actor)
+        for lt in temp_lights:
+            try:
+                actsys.destroy_actor(lt)
+            except Exception:
+                pass
+    facts["thumbnail_path"] = out_path
+    facts["rendered"] = os.path.exists(out_path) and os.path.getsize(out_path) > 0
+    return facts
+
+
+def _op_audio_capture_start(args):
+    # AGENTIC_GAMEDEV_PLAN.md §6.3 — start the ISubmixBufferListener tap on the main
+    # submix (C++ UMCPCaptureSubsystem). Audio only renders in PIE, so a play session
+    # must be running.
+    world = _pick_world(args.get("world", "auto"))
+    if not world:
+        return {"error": "no world to tap (start PIE first)"}
+    sub = unreal.MCPCaptureSubsystem.get(world)
+    if not sub:
+        return {"error": "MCPCaptureSubsystem unavailable in this world"}
+    session = sub.start_audio_capture(args.get("session", ""))
+    if not session:
+        return {"error": "audio capture failed to start (no active audio device, or already tapping)"}
+    return {"session": session, "running": True}
+
+
+def _op_audio_capture_stop(args):
+    world = _pick_world(args.get("world", "auto"))
+    if not world:
+        return {"error": "no world"}
+    sub = unreal.MCPCaptureSubsystem.get(world)
+    if not sub:
+        return {"error": "MCPCaptureSubsystem unavailable in this world"}
+    summary = sub.stop_audio_capture(args.get("out_dir", ""))
+    if not summary:
+        return {"error": "audio capture not running"}
+    try:
+        return json.loads(summary)
+    except Exception:
+        return {"summary": summary}
+
+
+def _op_play_test_sound(args):
+    # Test helper (audio-tap validation): play a sound cue into the PIE world so the
+    # submix tap has a known non-silent signal to certify.
+    world = _pick_world(args.get("world", "auto"))
+    if not world:
+        return {"error": "no world (start PIE first)"}
+    sound = unreal.load_asset(args["sound"])
+    if not sound:
+        return {"error": "sound not found: " + str(args.get("sound"))}
+    unreal.GameplayStatics.play_sound2d(world, sound, float(args.get("volume", 1.0)))
+    return {"played": True, "sound": args["sound"]}
 
 
 def _op_asset_reimport(args):
@@ -2747,6 +2898,10 @@ _OPS = {
     "level_diff": _op_level_diff,
     "apply_level_recipe": _op_apply_level_recipe,
     "asset_info": _op_asset_info,
+    "asset_thumbnail": _op_asset_thumbnail,
+    "audio_capture_start": _op_audio_capture_start,
+    "audio_capture_stop": _op_audio_capture_stop,
+    "play_test_sound": _op_play_test_sound,
     "asset_reimport": _op_asset_reimport,
     "create_material_instance": _op_create_material_instance,
     # v7 additions

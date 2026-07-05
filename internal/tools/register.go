@@ -50,6 +50,8 @@ func RegisterAll(s *mcp.Server, d Deps) {
 	// editor integration, and the playtest orchestrator.
 	registerReflectTools(s, d.Bridge)
 	registerCaptureTools(s, d)
+	registerDesignTools(s)
+	registerPerceptionTools(s, d.Bridge)
 	registerSceneTools(s, d.Bridge)
 	registerViewportTools(s, d.Bridge)
 	registerPlaytestTools(s, d)

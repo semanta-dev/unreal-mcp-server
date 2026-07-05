@@ -70,6 +70,24 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "MCP|Capture")
 	bool IsCapturing() const { return bRunning; }
 
+	// --- Audio submix tap (AGENTIC_GAMEDEV_PLAN.md §6.3, RC9) ---------------------
+	// Registers an ISubmixBufferListener on the main output submix and reduces the
+	// PCM stream to an RMS/peak envelope so a build can be certified non-silent (the
+	// audio half of "you get what you measure"). StopAudioCapture writes the envelope
+	// as JSONL ({t,rms,peak} per submix buffer) the server's audio_audit consumes.
+
+	/** Begin tapping the main submix. Returns the session id, or empty on failure. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Audio")
+	FString StartAudioCapture(const FString& InSession);
+
+	/** Stop the tap and write <Session>_audio.jsonl to InOutDir. Returns a JSON summary
+	 *  ({path,points,max_rms,duration}) or empty if not running. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Audio")
+	FString StopAudioCapture(const FString& InOutDir);
+
+	UFUNCTION(BlueprintCallable, Category = "MCP|Audio")
+	bool IsAudioCapturing() const { return AudioListener.IsValid(); }
+
 	// USubsystem
 	virtual void Deinitialize() override;
 
@@ -96,6 +114,12 @@ private:
 	USceneCaptureComponent2D* CaptureComp = nullptr;
 
 	FTimerHandle CaptureTimer;
+
+	// Audio submix tap: the listener is held alive here (the audio device also holds a
+	// shared ref while registered). AudioSession names the output JSONL.
+	TSharedPtr<class FMCPSubmixListener, ESPMode::ThreadSafe> AudioListener;
+	FString AudioSession;
+	void StopAudioTapInternal();
 
 	bool bRunning = false;
 	bool bIncludeUI = false;

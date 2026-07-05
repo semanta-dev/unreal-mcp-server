@@ -24,6 +24,58 @@
 #include "IImageWrapper.h"
 #include "IImageWrapperModule.h"
 #include "Modules/ModuleManager.h"
+// Audio submix tap (§6.3, RC9)
+#include "AudioDevice.h"
+#include "AudioDeviceHandle.h"
+#include "ISubmixBufferListener.h"
+#include "Sound/SoundSubmix.h"
+
+// FMCPSubmixListener taps the main output submix and reduces each rendered PCM buffer
+// to one {t, rms, peak} envelope point. OnNewSubmixBuffer runs on the AUDIO RENDER
+// THREAD, so points are appended under a lock; the game thread drains them on stop.
+class FMCPSubmixListener : public ISubmixBufferListener
+{
+public:
+	struct FPoint
+	{
+		double T = 0.0;
+		float RMS = 0.f;
+		float Peak = 0.f;
+	};
+
+	virtual void OnNewSubmixBuffer(const USoundSubmix* /*OwningSubmix*/, float* AudioData, int32 NumSamples,
+	                               int32 /*NumChannels*/, const int32 /*SampleRate*/, double AudioClock) override
+	{
+		if (!AudioData || NumSamples <= 0)
+		{
+			return;
+		}
+		double SumSq = 0.0;
+		float Peak = 0.f;
+		for (int32 i = 0; i < NumSamples; ++i)
+		{
+			const float S = AudioData[i];
+			SumSq += static_cast<double>(S) * S;
+			const float A = FMath::Abs(S);
+			if (A > Peak)
+			{
+				Peak = A;
+			}
+		}
+		const float RMS = static_cast<float>(FMath::Sqrt(SumSq / NumSamples));
+		FScopeLock ScopeLock(&Lock);
+		Points.Add(FPoint{AudioClock, RMS, Peak});
+	}
+
+	virtual const FString& GetListenerName() const override
+	{
+		static const FString Name = TEXT("MCPSubmixListener");
+		return Name;
+	}
+
+	FCriticalSection Lock;
+	TArray<FPoint> Points;
+};
 
 // Encode a BGRA FColor array as a real PNG via the ImageWrapper module. UE's
 // FImageUtils::CompressImageArray emits JPEG in 5.7 (which our .png-named files
@@ -331,7 +383,93 @@ void UMCPCaptureSubsystem::Deinitialize()
 	{
 		SelfStop(TEXT("deinitialize"));
 	}
+	StopAudioTapInternal();
 	Super::Deinitialize();
+}
+
+// resolveAudioDevice returns this world's audio device, falling back to the main one.
+static FAudioDeviceHandle MCPResolveAudioDevice(const UWorld* World)
+{
+	if (World)
+	{
+		if (FAudioDeviceHandle H = World->GetAudioDevice())
+		{
+			return H;
+		}
+	}
+	return FAudioDevice::GetMainAudioDevice();
+}
+
+FString UMCPCaptureSubsystem::StartAudioCapture(const FString& InSession)
+{
+	if (AudioListener.IsValid())
+	{
+		return FString(); // already tapping
+	}
+	FAudioDeviceHandle Dev = MCPResolveAudioDevice(GetWorld());
+	if (!Dev.IsValid())
+	{
+		return FString();
+	}
+	AudioListener = MakeShared<FMCPSubmixListener, ESPMode::ThreadSafe>();
+	USoundSubmix& Main = Dev->GetMainSubmixObject();
+	Dev->RegisterSubmixBufferListener(AudioListener.ToSharedRef(), Main);
+	AudioSession = InSession.IsEmpty() ? FString::Printf(TEXT("a%lld"), (long long)(FPlatformTime::Seconds() * 1000.0)) : InSession;
+	return AudioSession;
+}
+
+void UMCPCaptureSubsystem::StopAudioTapInternal()
+{
+	if (!AudioListener.IsValid())
+	{
+		return;
+	}
+	FAudioDeviceHandle Dev = MCPResolveAudioDevice(GetWorld());
+	if (Dev.IsValid())
+	{
+		USoundSubmix& Main = Dev->GetMainSubmixObject();
+		Dev->UnregisterSubmixBufferListener(AudioListener.ToSharedRef(), Main);
+	}
+	AudioListener.Reset();
+}
+
+FString UMCPCaptureSubsystem::StopAudioCapture(const FString& InOutDir)
+{
+	if (!AudioListener.IsValid())
+	{
+		return FString();
+	}
+	// Snapshot the points before unregistering (audio thread may still be appending).
+	// Any buffers rendered between this snapshot and unregister completing (mixer
+	// unregistration is command-queued) are dropped — acceptable for a non-silence
+	// envelope, which only needs a representative window, not every last buffer.
+	TArray<FMCPSubmixListener::FPoint> Pts;
+	{
+		FScopeLock ScopeLock(&AudioListener->Lock);
+		Pts = AudioListener->Points;
+	}
+	StopAudioTapInternal();
+
+	const FString Dir = InOutDir.IsEmpty() ? (FPaths::ProjectSavedDir() / TEXT("MCP") / TEXT("audio")) : InOutDir;
+	IFileManager::Get().MakeDirectory(*Dir, true);
+	const FString Path = Dir / (AudioSession + TEXT("_audio.jsonl"));
+
+	const double T0 = Pts.Num() > 0 ? Pts[0].T : 0.0;
+	float MaxRMS = 0.f;
+	FString Content;
+	Content.Reserve(Pts.Num() * 48);
+	for (const FMCPSubmixListener::FPoint& P : Pts)
+	{
+		Content += FString::Printf(TEXT("{\"t\":%.4f,\"rms\":%.6f,\"peak\":%.6f}\n"), P.T - T0, P.RMS, P.Peak);
+		MaxRMS = FMath::Max(MaxRMS, P.RMS);
+	}
+	const bool bWritten = FFileHelper::SaveStringToFile(Content, *Path);
+
+	const double Duration = Pts.Num() > 0 ? (Pts.Last().T - T0) : 0.0;
+	FString JsonPath = Path;
+	JsonPath.ReplaceInline(TEXT("\\"), TEXT("/"));
+	return FString::Printf(TEXT("{\"path\":\"%s\",\"written\":%s,\"points\":%d,\"max_rms\":%.6f,\"duration\":%.3f}"),
+	                       *JsonPath, bWritten ? TEXT("true") : TEXT("false"), Pts.Num(), MaxRMS, Duration);
 }
 
 FString UMCPCaptureSubsystem::BuildManifestJson() const
