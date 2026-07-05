@@ -13,7 +13,7 @@
 # Text-style ops return a "message" field carrying the exact string the Python
 # server produced, so the A/B parity harness can assert text equality.
 
-_MCP_BRIDGE_VERSION = 26
+_MCP_BRIDGE_VERSION = 27
 
 import unreal
 import json
@@ -664,10 +664,10 @@ def _op_company_status(args):
         break
     if not mgr:
         return {"error": "no CompanyManager in world"}
-    sups = mgr.get_editor_property("suppliers")
-    mkts = mgr.get_editor_property("markets")
     blds = []
     for b in unreal.GameplayStatics.get_all_actors_of_class(world, unreal.ProductionBuilding):
+        sups = b.get_editor_property("suppliers")
+        mkts = b.get_editor_property("markets")
         si = b.get_editor_property("supplier_index")
         mi = b.get_editor_property("market_index")
         blds.append({
