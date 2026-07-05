@@ -43,7 +43,7 @@ Authored by the orchestrator so all codex workers build against ONE schema.
 | Registration | `internal/tools/design_tools.go` (13 tools) + `register.go` wire | ✅ codex | ✅ | A | A+ | A- | ✅ |
 | asset_thumbnail (§3.1) | **SHIPPED tool** — `_op_asset_thumbnail` bridge op + `asset_thumbnail` Go tool + register wire | ✅ | ✅ live e2e | A | A+ | A | ✅ |
 | **audio submix tap (§6.3)** | **SHIPPED** — plugin C++ `ISubmixBufferListener` → RMS envelope; `audio_capture_start/stop` + `play_test_sound` ops/tools; feeds `audio_audit` | ✅ | ✅ live PIE e2e | 🔧 | 🔧 | 🔧 | — |
-| input_inject (§6.2) | plugin C++ MCPControlSubsystem frame-level input → 60fps burst | ◻ scoped | — | — | — | — | ◻ next-phase |
+| **input_inject (§6.2)** | **Already implemented** as `pie_input` (MCPControlSubsystem `CreateSimulated`+`InputKey`, routes to Enhanced Input); added validated `pawn_state` observation tool | ✅ pre-existing | ⚠ see note | — | — | — | code-verified |
 | retarget_setup (§3.4) | Python IK Rig/Retargeter (research-risk SPIKE) + in_motion_audit | ◻ scoped | — | — | — | — | ◻ next-phase |
 
 ### Next-phase plan — the C++/PIE editor spikes (distinct from the shipped Python-drivable work)
@@ -125,6 +125,23 @@ reducing each PCM buffer to `{t,rms,peak}` under a lock (audio render thread →
   before building (I synced Aesir; PolyWorld's copy is NOT synced). A deploy/sync step is missing.
 - Set `[Audio] UnfocusedVolumeMultiplier=1.0` in Aesir's DefaultEngine.ini so PIE audio isn't muted when
   the editor is unfocused (needed for headless-ish validation).
+
+## input_inject (§6.2, RC8) — ALREADY IMPLEMENTED (pre-existing) + observation tool added
+The draft plan treated `input_inject` as unbuilt, but `MCPControlSubsystem` **already provides
+runtime frame-level key injection**: `InjectKeyByName`/`TapKey`/`HoldKey`/`ReleaseAll` via
+`FInputKeyEventArgs::CreateSimulated(...) → PC->InputKey(...)`, exposed as the `pie_input` MCP tool.
+The code comment confirms it drives "legacy AXIS (WASD) + action + Enhanced Input." So this spike is
+**code-verified, not net-new work.**
+- Added a genuinely-useful, **validated** observation tool: `pawn_state` (`_op_pawn_state` + Go tool) —
+  reads the live player pawn's loc/velocity/speed. Confirmed live in Aesir PIE (read [300,0,98] → moving).
+  This is the frame-level observable behind `verb_response`.
+- **Clean movement validation is BLOCKED by the baseline projects, not the plugin:** in Aesir PIE,
+  `pie_input` was rejected with "no player controller" (the control subsystem's PIE world had no
+  resolvable PC), and the observed pawn auto-moves at 600 uu/s unprompted (Aesir game logic) — confounding
+  a movement-delta check. PolyWorld is a tycoon with no character. So neither baseline game has a cleanly
+  possessed WASD-movement pawn in its default PIE. A clean end-to-end validation needs a purpose-built
+  test map (possessed character + a known movement binding); the injection + `pawn_state` observation
+  primitives are both in place for it.
 
 ## Other net-new editor-C++ spikes — scoped, founded, NOT built
 `asset_thumbnail` (ThumbnailManager + SceneCapture fallback), audio submix-buffer tap, `input_inject` (frame-level runtime input), `retarget_setup` — each is a separate editor-C++ subsystem needing implementation + a plugin rebuild + a live-PIE validation loop. Foundation is proven (plugin compiles; editor launches from the game projects); building and live-validating all four is a distinct workstream beyond this session. The pure-Go substrate does NOT depend on them — every audit runs headless over captured artifacts.

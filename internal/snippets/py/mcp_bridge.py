@@ -13,7 +13,7 @@
 # Text-style ops return a "message" field carrying the exact string the Python
 # server produced, so the A/B parity harness can assert text equality.
 
-_MCP_BRIDGE_VERSION = 23
+_MCP_BRIDGE_VERSION = 24
 
 import unreal
 import json
@@ -650,6 +650,21 @@ def _op_audio_capture_stop(args):
         return json.loads(summary)
     except Exception:
         return {"summary": summary}
+
+
+def _op_pawn_state(args):
+    # Read the player pawn's location + velocity (for input_inject / verb_response
+    # validation: sample this across an injected-input window to see the verb respond).
+    world = _pick_world(args.get("world", "auto"))
+    if not world:
+        return {"error": "no world (start PIE first)"}
+    pawn = unreal.GameplayStatics.get_player_pawn(world, int(args.get("player", 0)))
+    if not pawn:
+        return {"error": "no player pawn"}
+    loc = pawn.get_actor_location()
+    vel = pawn.get_velocity()
+    speed = (vel.x * vel.x + vel.y * vel.y + vel.z * vel.z) ** 0.5
+    return {"loc": [loc.x, loc.y, loc.z], "vel": [vel.x, vel.y, vel.z], "speed": speed}
 
 
 def _op_play_test_sound(args):
@@ -2902,6 +2917,7 @@ _OPS = {
     "audio_capture_start": _op_audio_capture_start,
     "audio_capture_stop": _op_audio_capture_stop,
     "play_test_sound": _op_play_test_sound,
+    "pawn_state": _op_pawn_state,
     "asset_reimport": _op_asset_reimport,
     "create_material_instance": _op_create_material_instance,
     # v7 additions

@@ -29,6 +29,11 @@ type playTestSoundIn struct {
 	World  string  `json:"world,omitempty"`
 }
 
+type pawnStateIn struct {
+	Player int    `json:"player,omitempty"`
+	World  string `json:"world,omitempty"`
+}
+
 // registerPerceptionTools adds the AGENTIC_GAMEDEV_PLAN.md §3.1 perception primitive:
 // asset_thumbnail renders a browser StaticMesh into a PNG from a canonical 3/4 angle
 // and returns the hard facts (tri/vert count, material slots, LOD count, bounds). It
@@ -78,6 +83,18 @@ func registerPerceptionTools(s *mcp.Server, b *bridge.Bridge) {
 			m := map[string]any{"sound": in.Sound}
 			if in.Volume > 0 {
 				m["volume"] = in.Volume
+			}
+			if in.World != "" {
+				m["world"] = in.World
+			}
+			return m
+		}))
+	add(s, "pawn_state",
+		"Read the player pawn's location, velocity, and speed in the running PIE world. Sample it across an injected-input window (pie_input) to observe the verb responding — the frame-level feel read behind verb_response.",
+		structHandler[pawnStateIn](b, "pawn_state", func(in pawnStateIn) map[string]any {
+			m := map[string]any{}
+			if in.Player > 0 {
+				m["player"] = in.Player
 			}
 			if in.World != "" {
 				m["world"] = in.World
