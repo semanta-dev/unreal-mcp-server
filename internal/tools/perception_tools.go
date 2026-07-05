@@ -102,3 +102,39 @@ func registerPerceptionTools(s *mcp.Server, b *bridge.Bridge) {
 			return m
 		}))
 }
+
+type companySelectIn struct {
+	Building int  `json:"building,omitempty"`
+	Supplier *int `json:"supplier,omitempty"`
+	Market   *int `json:"market,omitempty"`
+}
+
+// registerCompanyTools exposes the Company-MVP slice tools (read status + make the
+// Capitalism-2 selection: who you buy from / sell to).
+func registerCompanyTools(s *mcp.Server, b *bridge.Bridge) {
+	add(s, "company_status",
+		"Read the PolyWorld Company-MVP economy from the live PIE: company Capital + each production building's supplier/market and last-cycle profit.",
+		structHandler[struct {
+			World string `json:"world,omitempty"`
+		}](b, "company_status", func(in struct {
+			World string `json:"world,omitempty"`
+		}) map[string]any {
+			m := map[string]any{}
+			if in.World != "" {
+				m["world"] = in.World
+			}
+			return m
+		}))
+	add(s, "company_select",
+		"Set a production building's SUPPLIER (who you buy inputs from) and/or MARKET (who you sell the product to) by catalog index — the core Capitalism-2 choice. Profit updates next cycle.",
+		structHandler[companySelectIn](b, "company_select", func(in companySelectIn) map[string]any {
+			m := map[string]any{"building": in.Building}
+			if in.Supplier != nil {
+				m["supplier"] = *in.Supplier
+			}
+			if in.Market != nil {
+				m["market"] = *in.Market
+			}
+			return m
+		}))
+}

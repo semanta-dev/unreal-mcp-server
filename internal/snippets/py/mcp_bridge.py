@@ -13,7 +13,7 @@
 # Text-style ops return a "message" field carrying the exact string the Python
 # server produced, so the A/B parity harness can assert text equality.
 
-_MCP_BRIDGE_VERSION = 24
+_MCP_BRIDGE_VERSION = 26
 
 import unreal
 import json
@@ -650,6 +650,57 @@ def _op_audio_capture_stop(args):
         return json.loads(summary)
     except Exception:
         return {"summary": summary}
+
+
+def _op_company_status(args):
+    # Read the CompanyMVP economy from the live PIE world: company Capital + each
+    # production building's chosen supplier/market and last-cycle profit.
+    world = _pick_world(args.get("world", "auto"))
+    if not world:
+        return {"error": "no world (start PIE on L_CompanyCity)"}
+    mgr = None
+    for a in unreal.GameplayStatics.get_all_actors_of_class(world, unreal.CompanyManager):
+        mgr = a
+        break
+    if not mgr:
+        return {"error": "no CompanyManager in world"}
+    sups = mgr.get_editor_property("suppliers")
+    mkts = mgr.get_editor_property("markets")
+    blds = []
+    for b in unreal.GameplayStatics.get_all_actors_of_class(world, unreal.ProductionBuilding):
+        si = b.get_editor_property("supplier_index")
+        mi = b.get_editor_property("market_index")
+        blds.append({
+            "name": str(b.get_editor_property("building_name")),
+            "product": str(b.get_editor_property("product")),
+            "supplier": str(sups[si].get_editor_property("name")) if si < len(sups) else "?",
+            "buy_price": int(sups[si].get_editor_property("unit_price")) if si < len(sups) else 0,
+            "market": str(mkts[mi].get_editor_property("name")) if mi < len(mkts) else "?",
+            "sell_price": int(mkts[mi].get_editor_property("unit_price")) if mi < len(mkts) else 0,
+            "last_profit": int(b.get_editor_property("last_profit")),
+        })
+    return {"capital": int(mgr.get_editor_property("capital")), "buildings": blds}
+
+
+def _op_company_select(args):
+    # The Capitalism-2 selection: on a production building, choose the SUPPLIER to buy
+    # inputs from and the MARKET to sell the product to (indices into the manager's
+    # catalogs). Profit updates next cycle. This is the tool a HUD/player drives.
+    world = _pick_world(args.get("world", "auto"))
+    if not world:
+        return {"error": "no world (start PIE)"}
+    blds = list(unreal.GameplayStatics.get_all_actors_of_class(world, unreal.ProductionBuilding))
+    idx = int(args.get("building", 0))
+    if idx >= len(blds):
+        return {"error": "no production building %d" % idx}
+    b = blds[idx]
+    if args.get("supplier") is not None:
+        b.set_editor_property("supplier_index", int(args["supplier"]))
+    if args.get("market") is not None:
+        b.set_editor_property("market_index", int(args["market"]))
+    return {"ok": True, "building": str(b.get_editor_property("building_name")),
+            "supplier_index": int(b.get_editor_property("supplier_index")),
+            "market_index": int(b.get_editor_property("market_index"))}
 
 
 def _op_pawn_state(args):
@@ -2918,6 +2969,8 @@ _OPS = {
     "audio_capture_stop": _op_audio_capture_stop,
     "play_test_sound": _op_play_test_sound,
     "pawn_state": _op_pawn_state,
+    "company_status": _op_company_status,
+    "company_select": _op_company_select,
     "asset_reimport": _op_asset_reimport,
     "create_material_instance": _op_create_material_instance,
     # v7 additions
