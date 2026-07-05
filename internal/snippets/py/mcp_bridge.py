@@ -13,7 +13,7 @@
 # Text-style ops return a "message" field carrying the exact string the Python
 # server produced, so the A/B parity harness can assert text equality.
 
-_MCP_BRIDGE_VERSION = 27
+_MCP_BRIDGE_VERSION = 28
 
 import unreal
 import json
@@ -680,6 +680,26 @@ def _op_company_status(args):
             "last_profit": int(b.get_editor_property("last_profit")),
         })
     return {"capital": int(mgr.get_editor_property("capital")), "buildings": blds}
+
+
+def _op_company_build(args):
+    # Place a factory of Catalog[option] at a world location (what a HUD build-palette
+    # click does) — spends Capital. Returns the new capital + whether it built.
+    world = _pick_world(args.get("world", "auto"))
+    if not world:
+        return {"error": "no world (start PIE)"}
+    mgr = None
+    for a in unreal.GameplayStatics.get_all_actors_of_class(world, unreal.CompanyManager):
+        mgr = a
+        break
+    if not mgr:
+        return {"error": "no CompanyManager"}
+    loc = args.get("location", [0, 0, 0])
+    before = int(mgr.get_editor_property("capital"))
+    b = mgr.build(int(args.get("option", 0)), unreal.Vector(float(loc[0]), float(loc[1]), float(loc[2])))
+    return {"built": b is not None, "name": str(b.get_editor_property("building_name")) if b else None,
+            "spent": before - int(mgr.get_editor_property("capital")),
+            "capital": int(mgr.get_editor_property("capital"))}
 
 
 def _op_company_select(args):
@@ -2970,6 +2990,7 @@ _OPS = {
     "play_test_sound": _op_play_test_sound,
     "pawn_state": _op_pawn_state,
     "company_status": _op_company_status,
+    "company_build": _op_company_build,
     "company_select": _op_company_select,
     "asset_reimport": _op_asset_reimport,
     "create_material_instance": _op_create_material_instance,

@@ -125,6 +125,26 @@ func registerCompanyTools(s *mcp.Server, b *bridge.Bridge) {
 			}
 			return m
 		}))
+	add(s, "company_build",
+		"Place a factory from the build catalog (option index) at a world [x,y,z] location — what a HUD build-palette click does; spends Capital. Returns {built,name,spent,capital}.",
+		structHandler[struct {
+			Option   int       `json:"option"`
+			Location []float64 `json:"location,omitempty"`
+			World    string    `json:"world,omitempty"`
+		}](b, "company_build", func(in struct {
+			Option   int       `json:"option"`
+			Location []float64 `json:"location,omitempty"`
+			World    string    `json:"world,omitempty"`
+		}) map[string]any {
+			m := map[string]any{"option": in.Option}
+			if len(in.Location) == 3 {
+				m["location"] = in.Location
+			}
+			if in.World != "" {
+				m["world"] = in.World
+			}
+			return m
+		}))
 	add(s, "company_select",
 		"Set a production building's SUPPLIER (who you buy inputs from) and/or MARKET (who you sell the product to) by catalog index — the core Capitalism-2 choice. Profit updates next cycle.",
 		structHandler[companySelectIn](b, "company_select", func(in companySelectIn) map[string]any {
