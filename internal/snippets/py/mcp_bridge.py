@@ -13,7 +13,7 @@
 # Text-style ops return a "message" field carrying the exact string the Python
 # server produced, so the A/B parity harness can assert text equality.
 
-_MCP_BRIDGE_VERSION = 21
+_MCP_BRIDGE_VERSION = 22
 
 import unreal
 import json
@@ -978,11 +978,18 @@ def _game_scene_start(args, session, width, height):
     cam = args.get("camera") or {}
     mode = cam.get("mode", "player")
     cam_cls = getattr(unreal, "EMCPCaptureCamera", None)
-    cam_val = getattr(cam_cls, "PLAYER", 0) if cam_cls else 0
-    if mode == "fixed":
-        cam_val = getattr(cam_cls, "FIXED", cam_val)
-    elif mode == "actor":
-        cam_val = getattr(cam_cls, "ACTOR", cam_val)
+    if cam_cls is None:
+        return {"error": "game_scene capture needs the UnrealMCP plugin's EMCPCaptureCamera enum "
+                         "(recompile the plugin into the project)", "code": "PLUGIN_MISSING"}
+    # Resolve the camera to the ENUM instance — NEVER a bare int 0 (StartCapture's
+    # EMCPCaptureCamera param rejects an int). Use explicit None checks, not `or`: the
+    # 0-valued PLAYER member is falsy, so `getattr(...) or PLAYER` would misfire.
+    name = {"fixed": "FIXED", "actor": "ACTOR"}.get(mode, "PLAYER")
+    cam_val = getattr(cam_cls, name, None)
+    if cam_val is None:
+        cam_val = getattr(cam_cls, "PLAYER", None)
+    if cam_val is None:
+        return {"error": "EMCPCaptureCamera has no PLAYER member (stale plugin build)", "code": "PLUGIN_MISSING"}
     loc = cam.get("location") or [0, 0, 0]
     rot = cam.get("rotation_pyr") or [0, 0, 0]
     interval = max(float(args.get("interval_s", 0.25)), 0.05)
