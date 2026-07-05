@@ -60,6 +60,16 @@ phase. The live loop is proven, so the harness is ready; the work itself is:
 - **retarget:** drive IK Rig + IK Retargeter authoring from Python (present in `unreal.` APIs); validate the retargeted
   pawn's idle→walk→attack filmstrip through `in_motion_audit` (no foot-slide/snap). Plan flags this the flakiest.
 
+### Phase-4 calibration harnesses (the human-workstream machinery) — SHIPPED, gated
+- `internal/critique` — the critic calibration gate: Spearman + pairwise agreement + held-out
+  ≥0.70 per genre/dimension → versioned Trusted/Diagnostic Report (marshals to the plan's
+  `calibration.json`). Gate **A/A−/A**.
+- `internal/persona` — the player-persona calibration harness: AUC (Mann-Whitney) + the two
+  separately-gated bets (retention/delight; feel-quality, the hardest). Reuses `critique.Spearman`.
+- **`docs/HUMAN_WORKSTREAMS.md`** — the operator playbook: how to actually produce the visual
+  corpus, the two persona ladders, the pillar-feasibility sign-off, and the item-4 test content,
+  each tied to the harness data contract. (Answers "how do the humans do their part.")
+
 ### Deferred non-blocking nits (accepted batches, for a later polish pass)
 - explore: `repurpose` operator is a no-op eating ~1/3 of the eval budget — drop from the draw or bias away (all 3 reviewers).
 - explore: Gate-cache the plan implies is absent (`evaluate` runs a full sweep per candidate; runtime still 0.11s) — memoize on scaffold identity (CTO).
