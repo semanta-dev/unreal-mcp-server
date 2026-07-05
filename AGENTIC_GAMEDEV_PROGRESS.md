@@ -44,7 +44,7 @@ Authored by the orchestrator so all codex workers build against ONE schema.
 | asset_thumbnail (§3.1) | **SHIPPED tool** — `_op_asset_thumbnail` bridge op + `asset_thumbnail` Go tool + register wire | ✅ | ✅ live e2e | A | A+ | A | ✅ |
 | **audio submix tap (§6.3)** | **SHIPPED** — plugin C++ `ISubmixBufferListener` → RMS envelope; `audio_capture_start/stop` + `play_test_sound` ops/tools; feeds `audio_audit` | ✅ | ✅ live PIE e2e | 🔧 | 🔧 | 🔧 | — |
 | **input_inject (§6.2)** | **Already implemented** as `pie_input` (MCPControlSubsystem `CreateSimulated`+`InputKey`, routes to Enhanced Input); added validated `pawn_state` observation tool | ✅ pre-existing | ⚠ see note | — | — | — | code-verified |
-| retarget_setup (§3.4) | Python IK Rig/Retargeter (research-risk SPIKE) + in_motion_audit | ◻ scoped | — | — | — | — | ◻ next-phase |
+| **retarget_setup (§3.4)** | batch-retarget MECHANISM validated in Python (`duplicate_and_retarget` produced a real retargeted anim); IK-rig AUTHORING (the flaky part) remains | ⚠ partial | ✅ mechanism | — | — | — | see note |
 
 ### Next-phase plan — the C++/PIE editor spikes (distinct from the shipped Python-drivable work)
 All three need net-new UE C++ and/or PIE-with-audio/input validation — a heavier, version-sensitive
@@ -142,6 +142,22 @@ The code comment confirms it drives "legacy AXIS (WASD) + action + Enhanced Inpu
   possessed WASD-movement pawn in its default PIE. A clean end-to-end validation needs a purpose-built
   test map (possessed character + a known movement binding); the injection + `pawn_state` observation
   primitives are both in place for it.
+
+## retarget_setup (§3.4, RC6) — mechanism validated live; IK-rig authoring is the remaining flaky part
+The plan ranks this the research-risk, most-likely-to-fail spike. Findings (live, Aesir):
+- **The retarget tool-path EXISTS in Python** (`IKRetargetBatchOperation.duplicate_and_retarget`,
+  `IKRetargeterController`) — contra RC6's "skeleton mismatch / no retarget has NO tool path at all."
+- **Batch retarget VALIDATED end-to-end:** ran `duplicate_and_retarget([AS_walk], SK_body, SK_body,
+  RTG_UndeadDraugr)` → produced a real retargeted anim asset `/Game/AS_walk_RTValidate` (confirmed
+  exists=True; test asset then deleted). API quirks discovered: it wants `AssetData` (not loaded objects),
+  and `get_asset_by_object_path` wants a path string.
+- **What's NOT done (the valuable, flaky part):** a CROSS-skeleton retarget (making a bought character with
+  a foreign skeleton usable) needs a target IK Rig for a *different* skeleton, then a retargeter linking
+  source→target. Aesir has only ONE IK rig/retargeter, both same-skeleton (Draugr→Draugr), so there's no
+  cross-skeleton pair. Authoring a target IK rig + retarget chains programmatically is exactly the
+  "sparse, poorly-documented, commonly-soft-fails" surface the plan flags — it needs authored test content
+  (e.g. a Mannequin IK rig) and is the genuine research bet, not attempted here. The mechanism to *run* a
+  retarget is proven; the mechanism to *author* the rig for a foreign skeleton remains the open risk.
 
 ## Other net-new editor-C++ spikes — scoped, founded, NOT built
 `asset_thumbnail` (ThumbnailManager + SceneCapture fallback), audio submix-buffer tap, `input_inject` (frame-level runtime input), `retarget_setup` — each is a separate editor-C++ subsystem needing implementation + a plugin rebuild + a live-PIE validation loop. Foundation is proven (plugin compiles; editor launches from the game projects); building and live-validating all four is a distinct workstream beyond this session. The pure-Go substrate does NOT depend on them — every audit runs headless over captured artifacts.
