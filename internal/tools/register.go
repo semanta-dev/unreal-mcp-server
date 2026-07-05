@@ -53,6 +53,7 @@ func RegisterAll(s *mcp.Server, d Deps) {
 	registerDesignTools(s)
 	registerPerceptionTools(s, d.Bridge)
 	registerCompanyTools(s, d.Bridge)
+	registerWidgetRenderTool(s, d.Bridge)
 	registerSceneTools(s, d.Bridge)
 	registerViewportTools(s, d.Bridge)
 	registerPlaytestTools(s, d)

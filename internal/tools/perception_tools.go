@@ -158,3 +158,29 @@ func registerCompanyTools(s *mcp.Server, b *bridge.Bridge) {
 			return m
 		}))
 }
+
+// registerWidgetRenderTool exposes widget_render (offscreen UMG capture via FWidgetRenderer).
+func registerWidgetRenderTool(s *mcp.Server, b *bridge.Bridge) {
+	add(s, "widget_render",
+		"Render a UserWidget class (e.g. /Script/PolyWorld.CityBuildWidget) OFFSCREEN to a PNG at out_path (width x height) via FWidgetRenderer — no PIE. The UMG HUD visual-iteration loop.",
+		structHandler[struct {
+			WidgetClass string `json:"widget_class"`
+			OutPath     string `json:"out_path"`
+			Width       int    `json:"width,omitempty"`
+			Height      int    `json:"height,omitempty"`
+		}](b, "widget_render", func(in struct {
+			WidgetClass string `json:"widget_class"`
+			OutPath     string `json:"out_path"`
+			Width       int    `json:"width,omitempty"`
+			Height      int    `json:"height,omitempty"`
+		}) map[string]any {
+			m := map[string]any{"widget_class": in.WidgetClass, "out_path": in.OutPath}
+			if in.Width > 0 {
+				m["width"] = in.Width
+			}
+			if in.Height > 0 {
+				m["height"] = in.Height
+			}
+			return m
+		}))
+}

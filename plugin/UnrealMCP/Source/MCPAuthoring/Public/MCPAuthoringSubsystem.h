@@ -42,4 +42,11 @@ public:
 	 *  from Python reflection). */
 	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
 	FString DescribeBindWidgets(UClass* WidgetClass);
+
+	/** Render a UserWidget class (a WBP generated class OR a native UUserWidget) OFFSCREEN
+	 *  via FWidgetRenderer and write a PNG to OutPath at Width x Height. Uses the editor
+	 *  world, so NO PIE is needed — the multi-resolution HUD layout oracle Python can't
+	 *  reach (FWidgetRenderer is C++). Returns OutPath on success, empty on failure. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
+	FString CaptureWidget(const FString& WidgetClassPath, int32 Width, int32 Height, const FString& OutPath);
 };

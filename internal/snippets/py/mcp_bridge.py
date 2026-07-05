@@ -13,7 +13,7 @@
 # Text-style ops return a "message" field carrying the exact string the Python
 # server produced, so the A/B parity harness can assert text equality.
 
-_MCP_BRIDGE_VERSION = 28
+_MCP_BRIDGE_VERSION = 29
 
 import unreal
 import json
@@ -680,6 +680,17 @@ def _op_company_status(args):
             "last_profit": int(b.get_editor_property("last_profit")),
         })
     return {"capital": int(mgr.get_editor_property("capital")), "buildings": blds}
+
+
+def _op_widget_render(args):
+    # Render a UserWidget CLASS offscreen to a PNG via MCPAuthoringSubsystem::CaptureWidget
+    # (FWidgetRenderer) — the visual-iteration loop the Python WidgetTree path can't do in
+    # UE 5.7 (WidgetTree is protected). No PIE needed.
+    auth = unreal.get_editor_subsystem(unreal.MCPAuthoringSubsystem)
+    if not auth:
+        return {"error": "MCPAuthoring editor subsystem unavailable (module not compiled/loaded)"}
+    out = auth.capture_widget(args["widget_class"], int(args.get("width", 1280)), int(args.get("height", 720)), args["out_path"])
+    return {"ok": bool(out), "path": out}
 
 
 def _op_company_build(args):
@@ -2990,6 +3001,7 @@ _OPS = {
     "play_test_sound": _op_play_test_sound,
     "pawn_state": _op_pawn_state,
     "company_status": _op_company_status,
+    "widget_render": _op_widget_render,
     "company_build": _op_company_build,
     "company_select": _op_company_select,
     "asset_reimport": _op_asset_reimport,

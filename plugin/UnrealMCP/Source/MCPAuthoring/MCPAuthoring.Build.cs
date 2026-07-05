@@ -21,7 +21,8 @@ public class MCPAuthoring : ModuleRules
 			"UMG",             // UWidgetBlueprint, UWidgetTree, UWidget/UPanelWidget, UUserWidget
 			"Slate",
 			"SlateCore",
-			"RenderCore",      // FWidgetRenderer (widget_capture, Phase 1)
+			"RenderCore",
+			"ImageWrapper",      // FWidgetRenderer (widget_capture, Phase 1)
 			"Json",            // structured compile_log / describe payloads
 			"JsonUtilities",
 		});

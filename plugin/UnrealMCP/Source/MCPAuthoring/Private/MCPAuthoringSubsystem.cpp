@@ -11,6 +11,16 @@
 #include "UObject/UnrealType.h"
 #include "Serialization/JsonSerializer.h"
 #include "Dom/JsonObject.h"
+// CaptureWidget — offscreen widget render (FWidgetRenderer)
+#include "Slate/WidgetRenderer.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "TextureResource.h"
+#include "Editor.h"
+#include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
+#include "Modules/ModuleManager.h"
+#include "Misc/FileHelper.h"
+#include "RenderingThread.h"
 
 static FString MCPJsonToString(const TSharedRef<FJsonObject>& Obj)
 {
@@ -115,4 +125,72 @@ FString UMCPAuthoringSubsystem::DescribeBindWidgets(UClass* WidgetClass)
 	}
 	Root->SetArrayField(TEXT("bindwidgets"), Binds);
 	return MCPJsonToString(Root);
+}
+
+// PNG-encode a BGRA FColor array via the ImageWrapper module (FImageUtils emits JPEG in 5.7).
+static bool MCPAuthSavePNG(const FString& Path, const TArray<FColor>& Pixels, int32 W, int32 H)
+{
+	if (Pixels.Num() < W * H || W <= 0 || H <= 0)
+	{
+		return false;
+	}
+	IImageWrapperModule& Module = FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
+	TSharedPtr<IImageWrapper> Wrapper = Module.CreateImageWrapper(EImageFormat::PNG);
+	if (!Wrapper.IsValid() || !Wrapper->SetRaw(Pixels.GetData(), (int64)Pixels.Num() * sizeof(FColor), W, H, ERGBFormat::BGRA, 8))
+	{
+		return false;
+	}
+	const TArray64<uint8>& Png = Wrapper->GetCompressed(100);
+	return FFileHelper::SaveArrayToFile(Png, *Path);
+}
+
+FString UMCPAuthoringSubsystem::CaptureWidget(const FString& WidgetClassPath, int32 Width, int32 Height, const FString& OutPath)
+{
+	if (Width <= 0 || Height <= 0)
+	{
+		return FString();
+	}
+	UClass* Cls = LoadClass<UUserWidget>(nullptr, *WidgetClassPath);
+	if (!Cls)
+	{
+		return FString();
+	}
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!World)
+	{
+		return FString();
+	}
+	UUserWidget* Widget = CreateWidget<UUserWidget>(World, Cls);
+	if (!Widget)
+	{
+		return FString();
+	}
+	TSharedRef<SWidget> Slate = Widget->TakeWidget();
+
+	UTextureRenderTarget2D* RT = NewObject<UTextureRenderTarget2D>(this);
+	RT->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA8;
+	RT->ClearColor = FLinearColor(0.f, 0.f, 0.f, 0.f);
+	RT->InitAutoFormat(Width, Height);
+	RT->UpdateResourceImmediate(true);
+
+	FWidgetRenderer* Renderer = new FWidgetRenderer(/*bUseGammaCorrection=*/true);
+	// A few draws warm up fonts/layout so text isn't missing on the first frame.
+	for (int32 i = 0; i < 3; ++i)
+	{
+		Renderer->DrawWidget(RT, Slate, FVector2D(Width, Height), 0.f, false);
+		FlushRenderingCommands();
+	}
+
+	bool bOk = false;
+	if (FTextureRenderTargetResource* Res = RT->GameThread_GetRenderTargetResource())
+	{
+		TArray<FColor> Pixels;
+		FReadSurfaceDataFlags Flags(RCM_UNorm, CubeFace_MAX);
+		if (Res->ReadPixels(Pixels, Flags))
+		{
+			bOk = MCPAuthSavePNG(OutPath, Pixels, Width, Height);
+		}
+	}
+	BeginCleanup(Renderer);
+	return bOk ? OutPath : FString();
 }
