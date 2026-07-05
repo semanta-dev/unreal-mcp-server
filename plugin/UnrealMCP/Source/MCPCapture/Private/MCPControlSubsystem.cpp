@@ -47,7 +47,13 @@ bool UMCPControlSubsystem::DispatchKey(const FKey& Key, bool bPressed)
 	// frames, so this drives legacy AXIS (WASD movement) + action + Enhanced Input.
 	FInputKeyEventArgs Args = FInputKeyEventArgs::CreateSimulated(
 		Key, bPressed ? IE_Pressed : IE_Released, /*AmountDepressed=*/bPressed ? 1.0f : 0.0f);
-	return PC->InputKey(Args);
+	// InputKey's bool reports whether an ACTION binding CONSUMED the event. Axis-mapped
+	// keys (WASD movement) are never "consumed", so it returns false even though the axis
+	// RawValue IS set and the pawn moves (validated: a DefaultPawn goes 0 -> 1200 uu/s
+	// under injected W). Success here means the event was dispatched to a valid player
+	// controller — not that some action binding ate it — so we ignore the consumed-bool.
+	PC->InputKey(Args);
+	return true;
 }
 
 bool UMCPControlSubsystem::InjectKeyByName(const FString& KeyName, bool bPressed)

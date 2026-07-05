@@ -43,8 +43,8 @@ Authored by the orchestrator so all codex workers build against ONE schema.
 | Registration | `internal/tools/design_tools.go` (13 tools) + `register.go` wire | ✅ codex | ✅ | A | A+ | A- | ✅ |
 | asset_thumbnail (§3.1) | **SHIPPED tool** — `_op_asset_thumbnail` bridge op + `asset_thumbnail` Go tool + register wire | ✅ | ✅ live e2e | A | A+ | A | ✅ |
 | **audio submix tap (§6.3)** | **SHIPPED** — plugin C++ `ISubmixBufferListener` → RMS envelope; `audio_capture_start/stop` + `play_test_sound` ops/tools; feeds `audio_audit` | ✅ | ✅ live PIE e2e | 🔧 | 🔧 | 🔧 | — |
-| **input_inject (§6.2)** | **Already implemented** as `pie_input` (MCPControlSubsystem `CreateSimulated`+`InputKey`, routes to Enhanced Input); added validated `pawn_state` observation tool | ✅ pre-existing | ⚠ see note | — | — | — | code-verified |
-| **retarget_setup (§3.4)** | batch-retarget MECHANISM validated in Python (`duplicate_and_retarget` produced a real retargeted anim); IK-rig AUTHORING (the flaky part) remains | ⚠ partial | ✅ mechanism | — | — | — | see note |
+| **input_inject (§6.2)** | **FULLY VALIDATED** on an authored WASD test map (`L_InputTest`) + fixed a real return-value bug; `pie_input`/`pawn_state` | ✅ + bugfix | ✅ live PIE e2e | — | — | — | ✅ |
+| **retarget_setup (§3.4)** | **cross-skeleton retarget AUTHORED + validated live** — authored a Mannequin target IK rig + retargeter, retargeted a foreign (Draugr) walk anim onto it | ✅ authored | ✅ produced output | — | — | — | ✅ (in-motion QA remains) |
 
 ### Next-phase plan — the C++/PIE editor spikes (distinct from the shipped Python-drivable work)
 All three need net-new UE C++ and/or PIE-with-audio/input validation — a heavier, version-sensitive
@@ -153,7 +153,35 @@ The code comment confirms it drives "legacy AXIS (WASD) + action + Enhanced Inpu
   test map (possessed character + a known movement binding); the injection + `pawn_state` observation
   primitives are both in place for it.
 
-## retarget_setup (§3.4, RC6) — mechanism validated live; IK-rig authoring is the remaining flaky part
+## input_inject (§6.2) — FULLY VALIDATED + real bug fixed (authored test content)
+- **Test content authored:** `L_InputTest` (Aesir) — a `DefaultPawn` (built-in MoveForward/MoveRight
+  bindings) auto-possessed by Player 0 + PlayerStart + floor. Aesir already had legacy WASD axis
+  mappings, so injected keys drive it.
+- **Validated live end-to-end:** possessed pawn at standstill (speed 0) → under injected `pie_input
+  {key:"W", action:"hold"}` moved forward at **1200 uu/s** (its max), displacing ~2419 units. The only
+  input source is the injection, so this is decisive.
+- **Real bug found+fixed via validation:** `MCPControlSubsystem::DispatchKey` returned
+  `PC->InputKey()`'s bool, which is FALSE for axis-mapped keys (axis input is never "consumed" like an
+  action), so `pie_input` falsely reported `INPUT_FAILED` even though the pawn moved. Fixed to return
+  success when the event is dispatched to a valid PC. Now returns `ok:true`. Synced to Aesir + rebuilt.
+
+## retarget_setup (§3.4, RC6) — CROSS-SKELETON retarget authored + validated live
+The plan's most-likely-to-fail spike — and it **worked** end-to-end (further than the plan expected):
+- **Authored the flaky part live:** created a target IK Rig for the UE `PlayerMannequin` skeleton
+  (`unreal.IKRigController`: `set_skeletal_mesh` + `add_retarget_chain` for Spine/LeftArm/RightArm/
+  LeftLeg/RightLeg + `set_retarget_root("pelvis")`), then an IK Retargeter (`IKRetargetFactory`) with
+  source=`IK_UndeadDraugr`, target=the new rig, `auto_map_chains(FUZZY)`.
+- **Retargeted a foreign character live:** `duplicate_and_retarget([AS_walk], DraugrMesh, MannequinMesh,
+  retargeter)` → produced `/Game/AS_walk_ToMann` (exists=True) — the Draugr's walk on the Mannequin.
+  Test assets cleaned up. Both source rig + Mannequin happen to share standard UE bone names, which is
+  why the authored chains mapped.
+- **Honest caveats:** one of the 5 chains didn't map (4/5) — a quality flag; and the in-motion
+  foot-slide QA (`in_motion_audit` on the played retargeted anim) is the remaining last-mile check (the
+  "soft-fails in ways that look broken in motion" part). The PIPELINE (author rig → author retargeter →
+  retarget foreign anim → real output) is validated; production-quality rig authoring per character
+  remains a designer/senior task per the plan.
+
+## (earlier) retarget_setup — mechanism validated live; IK-rig authoring is the remaining flaky part
 The plan ranks this the research-risk, most-likely-to-fail spike. Findings (live, Aesir):
 - **The retarget tool-path EXISTS in Python** (`IKRetargetBatchOperation.duplicate_and_retarget`,
   `IKRetargeterController`) — contra RC6's "skeleton mismatch / no retarget has NO tool path at all."
