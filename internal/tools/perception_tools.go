@@ -184,3 +184,25 @@ func registerWidgetRenderTool(s *mcp.Server, b *bridge.Bridge) {
 			return m
 		}))
 }
+
+// registerDemolishTool exposes company_demolish (bulldoze nearest building + refund).
+func registerDemolishTool(s *mcp.Server, b *bridge.Bridge) {
+	add(s, "company_demolish",
+		"Bulldoze the building nearest a world [x,y,z] location — refunds half its cost and destroys it (frees its grid cells). Returns {demolished,name,refund,capital}.",
+		structHandler[struct {
+			Location []float64 `json:"location,omitempty"`
+			World    string    `json:"world,omitempty"`
+		}](b, "company_demolish", func(in struct {
+			Location []float64 `json:"location,omitempty"`
+			World    string    `json:"world,omitempty"`
+		}) map[string]any {
+			m := map[string]any{}
+			if len(in.Location) == 3 {
+				m["location"] = in.Location
+			}
+			if in.World != "" {
+				m["world"] = in.World
+			}
+			return m
+		}))
+}

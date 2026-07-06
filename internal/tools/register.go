@@ -54,6 +54,7 @@ func RegisterAll(s *mcp.Server, d Deps) {
 	registerPerceptionTools(s, d.Bridge)
 	registerCompanyTools(s, d.Bridge)
 	registerWidgetRenderTool(s, d.Bridge)
+	registerDemolishTool(s, d.Bridge)
 	registerSceneTools(s, d.Bridge)
 	registerViewportTools(s, d.Bridge)
 	registerPlaytestTools(s, d)

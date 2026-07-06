@@ -13,7 +13,7 @@
 # Text-style ops return a "message" field carrying the exact string the Python
 # server produced, so the A/B parity harness can assert text equality.
 
-_MCP_BRIDGE_VERSION = 29
+_MCP_BRIDGE_VERSION = 34
 
 import unreal
 import json
@@ -691,6 +691,35 @@ def _op_widget_render(args):
         return {"error": "MCPAuthoring editor subsystem unavailable (module not compiled/loaded)"}
     out = auth.capture_widget(args["widget_class"], int(args.get("width", 1280)), int(args.get("height", 720)), args["out_path"])
     return {"ok": bool(out), "path": out}
+
+
+def _op_company_demolish(args):
+    # Bulldoze the building nearest a world location: refund half its catalog cost + destroy
+    # it (EndPlay frees its grid cells). Mirrors the controller's bulldoze click.
+    world = _pick_world(args.get("world", "auto"))
+    if not world:
+        return {"error": "no world (start PIE)"}
+    loc = args.get("location", [0, 0, 0])
+    target = unreal.Vector(float(loc[0]), float(loc[1]), float(loc[2]))
+    best, bd = None, 1e12
+    for b in unreal.GameplayStatics.get_all_actors_of_class(world, unreal.ProductionBuilding):
+        p = b.get_actor_location()
+        d = ((p.x - target.x) ** 2 + (p.y - target.y) ** 2) ** 0.5
+        if d < bd:
+            bd, best = d, b
+    n = len(list(unreal.GameplayStatics.get_all_actors_of_class(world, unreal.ProductionBuilding)))
+    if not best or bd > 2400:
+        bl = [[round(b.get_actor_location().x), round(b.get_actor_location().y)] for b in unreal.GameplayStatics.get_all_actors_of_class(world, unreal.ProductionBuilding)]
+        return {"demolished": False, "count": n, "nearest": round(bd, 1), "target": [round(target.x), round(target.y)], "locs": bl}
+    name = str(best.get_editor_property("building_name"))
+    refund = int(best.get_editor_property("build_cost")) // 2  # stored on the building
+    cap = None
+    for a in unreal.GameplayStatics.get_all_actors_of_class(world, unreal.CompanyManager):
+        a.add_capital(refund)
+        cap = int(a.get_editor_property("capital"))
+        break
+    best.destroy_actor()
+    return {"demolished": True, "name": name, "refund": refund, "capital": cap}
 
 
 def _op_company_build(args):
@@ -3002,6 +3031,7 @@ _OPS = {
     "pawn_state": _op_pawn_state,
     "company_status": _op_company_status,
     "widget_render": _op_widget_render,
+    "company_demolish": _op_company_demolish,
     "company_build": _op_company_build,
     "company_select": _op_company_select,
     "asset_reimport": _op_asset_reimport,
