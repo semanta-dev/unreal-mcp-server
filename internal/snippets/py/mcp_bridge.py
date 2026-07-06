@@ -13,7 +13,7 @@
 # Text-style ops return a "message" field carrying the exact string the Python
 # server produced, so the A/B parity harness can assert text equality.
 
-_MCP_BRIDGE_VERSION = 34
+_MCP_BRIDGE_VERSION = 37
 
 import unreal
 import json
@@ -678,6 +678,7 @@ def _op_company_status(args):
             "market": str(mkts[mi].get_editor_property("name")) if mi < len(mkts) else "?",
             "sell_price": int(mkts[mi].get_editor_property("unit_price")) if mi < len(mkts) else 0,
             "last_profit": int(b.get_editor_property("last_profit")),
+            "has_road": _try_bool(b, "b_has_road", "has_road", default=True),
         })
     return {"capital": int(mgr.get_editor_property("capital")), "buildings": blds}
 
@@ -691,6 +692,29 @@ def _op_widget_render(args):
         return {"error": "MCPAuthoring editor subsystem unavailable (module not compiled/loaded)"}
     out = auth.capture_widget(args["widget_class"], int(args.get("width", 1280)), int(args.get("height", 720)), args["out_path"])
     return {"ok": bool(out), "path": out}
+
+
+def _try_bool(obj, *names, default=False):
+    for n in names:
+        try:
+            return bool(obj.get_editor_property(n))
+        except Exception:
+            continue
+    return default
+
+
+def _op_company_road(args):
+    # Drag-build a road line start->end (X-first L), clamped to the affordable/unblocked
+    # prefix. Cells are grid coords. Returns {placed, capital, road_cells}.
+    world = _pick_world(args.get("world", "auto"))
+    if not world:
+        return {"error": "no world (start PIE)"}
+    s = args.get("start", [0, 0]); e = args.get("end", [0, 0])
+    for a in unreal.GameplayStatics.get_all_actors_of_class(world, unreal.CompanyManager):
+        placed = a.place_road_line(unreal.IntPoint(int(s[0]), int(s[1])), unreal.IntPoint(int(e[0]), int(e[1])))
+        return {"placed": int(placed), "capital": int(a.get_editor_property("capital")),
+                "road_cells": len(a.get_editor_property("road_cells"))}
+    return {"error": "no CompanyManager"}
 
 
 def _op_company_demolish(args):
@@ -3031,6 +3055,7 @@ _OPS = {
     "pawn_state": _op_pawn_state,
     "company_status": _op_company_status,
     "widget_render": _op_widget_render,
+    "company_road": _op_company_road,
     "company_demolish": _op_company_demolish,
     "company_build": _op_company_build,
     "company_select": _op_company_select,

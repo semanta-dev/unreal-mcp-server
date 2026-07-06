@@ -206,3 +206,24 @@ func registerDemolishTool(s *mcp.Server, b *bridge.Bridge) {
 			return m
 		}))
 }
+
+// registerRoadTool exposes company_road (drag-build a clamped road line).
+func registerRoadTool(s *mcp.Server, b *bridge.Bridge) {
+	add(s, "company_road",
+		"Drag-build a road line from grid cell start=[x,y] to end=[x,y] (X-first L), clamped to the affordable/unblocked prefix. Returns {placed,capital,road_cells}.",
+		structHandler[struct {
+			Start []int  `json:"start"`
+			End   []int  `json:"end"`
+			World string `json:"world,omitempty"`
+		}](b, "company_road", func(in struct {
+			Start []int  `json:"start"`
+			End   []int  `json:"end"`
+			World string `json:"world,omitempty"`
+		}) map[string]any {
+			m := map[string]any{"start": in.Start, "end": in.End}
+			if in.World != "" {
+				m["world"] = in.World
+			}
+			return m
+		}))
+}
