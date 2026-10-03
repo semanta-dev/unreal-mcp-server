@@ -57,12 +57,3 @@ func TestReportToJSON(t *testing.T) {
 		t.Errorf("evidence frame = %v, want 3", ev["frame"])
 	}
 }
-
-func TestToVec3(t *testing.T) {
-	if v := toVec3([]float64{1, 2, 3, 4}); v != [3]float64{1, 2, 3} {
-		t.Errorf("toVec3 overrun = %v", v)
-	}
-	if v := toVec3([]float64{7}); v != [3]float64{7, 0, 0} {
-		t.Errorf("toVec3 short = %v", v)
-	}
-}

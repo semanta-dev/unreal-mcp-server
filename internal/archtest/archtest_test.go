@@ -27,7 +27,7 @@ var allowed = map[string][]string{
 	"supervisor":        {"lifecycle", "bridge", "uexec", "config"},
 	"cockpit/attach":    {"cockpit", "bridge"},
 	"bridge":            {"uexec"},
-	"bridge/bridgetest": {"uexec/uexectest"},
+	"bridge/bridgetest": {"uexec/uexectest", "bridge"}, // bridge: the emulator is also a NativeDispatcher
 	"config":            {"uexec"},
 	"visual":            {"audit"},
 	// envelope maps bridge.OpError and uexec sentinel errors onto the closed code set.
@@ -38,7 +38,6 @@ var allowed = map[string][]string{
 		"session", "bridge", "uexec", "jobs", "lifecycle", "logs", "build", "headless", "desktop",
 		"crash", "perf", "projectconfig", "projectmap", "scenespec", "audit", "visual", "eval",
 		"design", "snapshot",
-		"affordances", // removed in P3 (subsumed by the spec table)
 	},
 }
 

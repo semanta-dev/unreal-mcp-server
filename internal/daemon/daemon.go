@@ -22,7 +22,7 @@ import (
 
 // Daemon is the assembled Model-A runtime (MULTI_PROJECT_SYSTEM.md §0/§3): one
 // shared discovery + editor pool + router + liveness loop, plus a per-session Deps
-// resolver and the project_attach/release/list tools. It ties the tested daemon
+// resolver and the project tool (attach/list/release). It ties the tested daemon
 // core to real editors (via Spawner) and to the tool surface (via the context Deps
 // resolution the tools opted into for MP3).
 type Daemon struct {
@@ -174,7 +174,11 @@ func (dm *Daemon) RestartLease(ctx context.Context, sessionID string, plan sessi
 	if plan.Build != nil {
 		buildErr = plan.Build(ctx)
 	}
-	newEd, newPID, newIdentity, serr := dm.spawner.Spawn(ctx, info.Project, info.Token)
+	// The old editor is gone: relaunch and re-pin even if the caller was cancelled
+	// meanwhile, so a cancelled restart never strands the session without an editor.
+	up, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
+	defer cancel()
+	newEd, newPID, newIdentity, serr := dm.spawner.Spawn(up, info.Project, info.Token)
 	if serr != nil {
 		dm.Router.Teardown(info.ID)
 		return errors.Join(buildErr, fmt.Errorf("relaunch after restart failed: %w", serr))
@@ -190,7 +194,7 @@ func (dm *Daemon) RestartLease(ctx context.Context, sessionID string, plan sessi
 	}
 	if plan.Map != "" {
 		if eh, ok := newEd.(*supervisor.EditorHandle); ok {
-			if _, oerr := eh.Bridge().Call(ctx, "open_level", map[string]any{"level_path": plan.Map}); oerr != nil {
+			if _, oerr := eh.Bridge().Call(up, "open_level", map[string]any{"level_path": plan.Map}); oerr != nil {
 				dm.logger.Warn("reopening the map after a restart failed", "map", plan.Map, "err", oerr)
 			}
 		}
@@ -232,7 +236,7 @@ func (dm *Daemon) PruneProjectJobs() {
 // DepsResolver returns the per-session Deps resolver for session.InstallMiddleware:
 // it maps the request's MCP session to its editor lease's bridge/project/jobs. Returns
 // (Deps{}, false) for an unattached session (its tool calls then get NO_PROJECT_ATTACHED
-// via the nil bridge, prompting a project_attach).
+// via the nil bridge, prompting project op=attach).
 func (dm *Daemon) DepsResolver() func(ctx context.Context, req mcp.Request) (session.Deps, bool) {
 	return func(ctx context.Context, req mcp.Request) (session.Deps, bool) {
 		sid := sessionID(req)

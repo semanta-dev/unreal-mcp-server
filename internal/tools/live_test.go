@@ -1,7 +1,7 @@
 //go:build live
 
 // Live end-to-end test against a running editor (aesir-wave-defense open).
-// Exercises the write path + structHandler + CallText text tool:
+// Exercises the v2 write path (actor_edit spawn/delete) and actor_query:
 //
 //	go test -tags live -run TestLiveSpawnGetDelete ./internal/tools/
 //
@@ -57,48 +57,29 @@ func TestLiveSpawnGetDelete(t *testing.T) {
 	defer cs.Close()
 
 	label := "MCP_LiveTest_Light"
-
-	// spawn_actor (structHandler) — a PointLight we can clean up.
-	sp, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "spawn_actor", Arguments: map[string]any{
-		"class_path": "/Script/Engine.PointLight", "x": 0, "y": 0, "z": 500, "label": label,
-	}})
-	if err != nil || sp.IsError {
-		t.Fatalf("spawn_actor failed: %v %+v", err, sp.Content)
-	}
-	var spawned map[string]any
-	structInto(t, sp, &spawned)
-	if spawned["label"] != label {
-		t.Fatalf("spawn returned unexpected label: %v", spawned)
-	}
-	t.Logf("spawned: %v", spawned)
-
-	// get_actor (structHandler) — verify it exists.
-	ga, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "get_actor", Arguments: map[string]any{"actor_label": label}})
-	if err != nil || ga.IsError {
-		t.Fatalf("get_actor failed: %v", err)
-	}
-	var got map[string]any
-	structInto(t, ga, &got)
-	if !strings.Contains(strings.ToLower(got["class"].(string)), "pointlight") {
-		t.Fatalf("get_actor class = %v, want a PointLight", got["class"])
-	}
-	t.Logf("get_actor: class=%v location=%v", got["class"], got["location"])
-
-	// delete_actor (textHandler -> CallText) — verify the message text.
-	da, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "delete_actor", Arguments: map[string]any{"actor_label": label}})
-	if err != nil || da.IsError {
-		t.Fatalf("delete_actor failed: %v", err)
-	}
-	txt := ""
-	for _, c := range da.Content {
-		if tc, ok := c.(*mcp.TextContent); ok {
-			txt = tc.Text
+	call := func(name string, args map[string]any) map[string]any {
+		t.Helper()
+		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+		if err != nil || res.IsError {
+			t.Fatalf("%s failed: %v %+v", name, err, res)
 		}
+		var out map[string]any
+		structInto(t, res, &out)
+		return out
 	}
-	if !strings.Contains(txt, "Deleted "+label) {
-		t.Fatalf("delete_actor text = %q, want it to contain 'Deleted %s'", txt, label)
+	spawned := call("actor_edit", map[string]any{"op": "spawn", "world": "editor", "class": "PointLight",
+		"label": label, "location": []any{0, 0, 500}})
+	if spawned["spawned"].(map[string]any)["label"] != label {
+		t.Fatalf("spawn returned %v", spawned)
 	}
-	t.Logf("delete_actor: %q", txt)
+	got := call("actor_query", map[string]any{"op": "get", "actor": label})
+	if !strings.Contains(strings.ToLower(got["actor"].(map[string]any)["class"].(string)), "pointlight") {
+		t.Fatalf("get = %v, want a PointLight", got)
+	}
+	call("actor_edit", map[string]any{"op": "delete", "world": "editor", "actor": label})
+	if left := call("actor_query", map[string]any{"op": "find", "filter": label}); left["count"] != 0.0 {
+		t.Fatalf("actor still present after delete: %v", left)
+	}
 }
 
 func structInto(t *testing.T, res *mcp.CallToolResult, out any) {

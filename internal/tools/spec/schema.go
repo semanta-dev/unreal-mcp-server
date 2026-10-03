@@ -20,6 +20,9 @@ func SchemaFor[T any](enums map[string][]any, required ...string) *jsonschema.Sc
 			panic(fmt.Sprintf("spec.SchemaFor: enum for unknown property %q", prop))
 		}
 		p.Enum = vals
+		if prop == "op" {
+			p.Description = "" // the enum and the tool description's per-op list say it all
+		}
 	}
 	for _, r := range required {
 		if _, ok := s.Properties[r]; !ok {
@@ -27,7 +30,31 @@ func SchemaFor[T any](enums map[string][]any, required ...string) *jsonschema.Sc
 		}
 	}
 	s.Required = required
+	dropNull(s)
 	return s
+}
+
+// dropNull turns the ["null", T] types jsonschema-go emits for slices, maps and
+// pointers into plain T: an optional field is simply omitted, never sent as null
+// (smaller tools/list, stricter validation).
+func dropNull(s *jsonschema.Schema) {
+	if s == nil {
+		return
+	}
+	if len(s.Types) == 2 && (s.Types[0] == "null" || s.Types[1] == "null") {
+		t := s.Types[0]
+		if t == "null" {
+			t = s.Types[1]
+		}
+		s.Type, s.Types = t, nil
+	}
+	for _, p := range s.Properties {
+		dropNull(p)
+	}
+	dropNull(s.Items)
+	if s.AdditionalProperties != nil {
+		dropNull(s.AdditionalProperties)
+	}
 }
 
 // OpEnum lists a spec's op names as enum values for its "op" property.

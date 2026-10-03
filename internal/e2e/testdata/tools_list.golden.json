@@ -3,8 +3,7 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "openWorldHint": true,
-        "title": "Call a UFUNCTION"
+        "openWorldHint": true
       },
       "description": "Call a UFUNCTION on an actor in the running game (PIE) and return its result. With `until`, poll the function until a predicate over {result} holds → {met, result, elapsed_s, calls}; met=false on timeout is a normal outcome, not an error. The function runs again on every poll.",
       "inputSchema": {
@@ -32,7 +31,7 @@
             "type": "number"
           },
           "until": {
-            "description": "poll: call repeatedly until this predicate over {result} holds, e.g. 'result \u003e= 3'. The function RE-RUNS every poll: use side-effect-free getters only",
+            "description": "poll until this predicate over {result} holds, e.g. 'result \u003e= 3'; the function RE-RUNS each poll",
             "type": "string"
           },
           "world": {
@@ -56,10 +55,9 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "openWorldHint": true,
-        "title": "Edit actors"
+        "openWorldHint": true
       },
-      "description": "Change actors. `world` is REQUIRED (editor = the saved level, pie = the running game, gone when PIE stops).\n| op | editor | pie |\n|---|---|---|\n| spawn | yes | UNSUPPORTED |\n| delete | yes (destructive) | yes |\n| transform | yes | yes |\n| set_properties | yes | yes |\n`actor` = label, object path, @gamestate or @pawn; a shared label is a CONFLICT.",
+      "description": "Change actors. `world` is REQUIRED: editor (the saved level) or pie (the running game, discarded on stop).\nspawn: editor only. delete, transform, set_properties: both worlds; editor edits are one undo step.\n`actor` = label, object path, @gamestate, @pawn; a shared label is a CONFLICT.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -80,13 +78,9 @@
             "items": {
               "type": "number"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "op": {
-            "description": "spawn | delete | transform | set_properties",
             "enum": [
               "spawn",
               "delete",
@@ -105,20 +99,14 @@
             "items": {
               "type": "number"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "scale": {
             "description": "[x, y, z]",
             "items": {
               "type": "number"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "static_mesh": {
             "description": "spawn: static mesh asset for a StaticMeshActor",
@@ -145,10 +133,9 @@
     {
       "annotations": {
         "openWorldHint": true,
-        "readOnlyHint": true,
-        "title": "Find actors"
+        "readOnlyHint": true
       },
-      "description": "Read actors in the editor level (world=editor, default) or the running game (world=pie). Every result echoes the world it read.\n- op=list: label/path/class/location of each actor (filter, class to narrow).\n- op=get: one actor (`actor` = label, object path, @gamestate or @pawn) with transform, tags, components. A label shared by several actors is a CONFLICT listing their paths.\n- op=find: like list, plus `where` {prop: value} filtering and `properties` to include.",
+      "description": "Read actors in the editor level (world=editor, default), the running game (pie) or auto. Results echo the world.\n- list: label/path/class/location (filter, class).\n- get: one `actor` (label, object path, @gamestate, @pawn) with transform, tags, components; a shared label is a CONFLICT.\n- find: list + `where` {prop: value} and `properties`.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -157,7 +144,7 @@
             "type": "string"
           },
           "class": {
-            "description": "list/find: only actors of this class (/Script path, /Game Blueprint path, or short name)",
+            "description": "list/find: only this class and its subclasses",
             "type": "string"
           },
           "filter": {
@@ -169,7 +156,6 @@
             "type": "integer"
           },
           "op": {
-            "description": "list | get | find",
             "enum": [
               "list",
               "get",
@@ -182,10 +168,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "where": {
             "additionalProperties": true,
@@ -212,33 +195,10 @@
     },
     {
       "annotations": {
-        "openWorldHint": true,
+        "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "The tool capability manifest: which tools are offline vs need a live editor / PIE / navmesh / the C++ plugin, and which mutate state. Plan against this instead of discovering constraints by failing.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "offline_only": {
-            "description": "return only tools that need no live editor",
-            "type": "boolean"
-          },
-          "tool": {
-            "description": "return just this tool's affordance",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "affordances"
-    },
-    {
-      "annotations": {
-        "openWorldHint": false,
-        "readOnlyHint": true,
-        "title": "Analyze results offline"
-      },
-      "description": "Score evidence without the editor.\n- op=rubric: re-score a playtest timeline against `rubric` → PASS|WARN|FAIL with frame evidence.\n- op=perf: a CsvProfiler CSV → p50/p95/p99/max frame time + hitches; a .memreport → memory buckets.\n- op=image_diff: `path` vs `baseline` → dHash/aHash distance, luma delta, pass.\n- op=scenarios: list the saved playtest scenarios (.mcp/scenarios) with name and validity.",
+      "description": "Score evidence offline.\n- rubric: re-score a playtest `timeline` → PASS|WARN|FAIL with frame evidence.\n- perf: CsvProfiler CSV → frame-time percentiles + hitches; .memreport → memory buckets.\n- image_diff: `path` vs `baseline` → hash distance, luma delta, pass.\n- scenarios: the saved playtest suite.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -273,27 +233,17 @@
               "warnings",
               "ensures"
             ],
-            "type": [
-              "null",
-              "object"
-            ]
+            "type": "object"
           },
           "max_dhash": {
             "description": "image_diff: pass threshold on dHash distance (default 8; 0 = exact)",
-            "type": [
-              "null",
-              "integer"
-            ]
+            "type": "integer"
           },
           "max_luma_delta": {
             "description": "image_diff: pass threshold on mean-luma delta (default 0.15)",
-            "type": [
-              "null",
-              "number"
-            ]
+            "type": "number"
           },
           "op": {
-            "description": "rubric | perf | image_diff | scenarios",
             "enum": [
               "rubric",
               "perf",
@@ -307,7 +257,7 @@
             "type": "string"
           },
           "rubric": {
-            "description": "rubric: checks [{id, kind, path, params?, severity?}]; kind is reached|entered|increased|decreased|changed|stayed|range|min|max|nonzero_count|log_zero|log_max",
+            "description": "rubric: [{id, kind, path, params?, severity?}]",
             "items": {
               "additionalProperties": false,
               "properties": {
@@ -335,10 +285,7 @@
               ],
               "type": "object"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "timeline": {
             "description": "rubric: recorded frames [{index, t_world, state}] (a playtest result's timeline)",
@@ -363,10 +310,7 @@
               ],
               "type": "object"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           }
         },
         "required": [
@@ -380,15 +324,14 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "openWorldHint": true,
-        "title": "Create an asset"
+        "openWorldHint": true
       },
-      "description": "Create a Blueprint, DataAsset, DataTable, material instance or Widget Blueprint at `dest` (saved).\n- op=create: fails with CONFLICT when dest already exists.\n- op=replace: DELETES the existing asset at dest first (destructive; references to it break).\nPer kind: blueprint needs class (the parent); data_asset needs class; data_table needs row_struct; material_instance needs parent (+ optional params); widget_blueprint takes optional class and root_panel — then author its tree with widget_edit.",
+      "description": "Create an asset at `dest` (saved).\n- create: CONFLICT if dest exists.\n- replace: DELETES the existing asset first (references break).\nkind: blueprint (class = parent) | data_asset (class) | data_table (row_struct) | material_instance (parent, params) | widget_blueprint (class?, root_panel?; then widget_edit).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "class": {
-            "description": "blueprint: parent class; data_asset: the DataAsset class; widget_blueprint: parent UserWidget class (default UserWidget). /Script path, /Game Blueprint, Module.Class or short name",
+            "description": "blueprint/widget_blueprint: parent class; data_asset: its class",
             "type": "string"
           },
           "dest": {
@@ -407,7 +350,6 @@
             "type": "string"
           },
           "op": {
-            "description": "create (fails with CONFLICT if dest exists) | replace (DELETES an existing dest first)",
             "enum": [
               "create",
               "replace"
@@ -445,8 +387,7 @@
     {
       "annotations": {
         "destructiveHint": false,
-        "openWorldHint": true,
-        "title": "Edit a Blueprint"
+        "openWorldHint": true
       },
       "description": "Edit a Blueprint's class defaults; each op compiles and saves.\n- op=set_defaults: `properties` on the CDO (per-property failures come back in errors[]).\n- op=add_component: add a `class` component (optional `name`).\n- op=assign_subclass: set TSubclassOf `property` to `class` (e.g. GameMode DefaultPawnClass).",
       "inputSchema": {
@@ -465,7 +406,6 @@
             "type": "string"
           },
           "op": {
-            "description": "set_defaults | add_component | assign_subclass",
             "enum": [
               "set_defaults",
               "add_component",
@@ -495,8 +435,7 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "openWorldHint": true,
-        "title": "Import assets"
+        "openWorldHint": true
       },
       "description": "Bring outside data into assets. Every op OVERWRITES existing content.\n- op=files: import `files` into `folder`; an asset with the same name is replaced.\n- op=reimport: reload `asset` from its source file.\n- op=datatable: replace ALL rows of DataTable `asset` from `json` (preferred) or `csv`.",
       "inputSchema": {
@@ -515,10 +454,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "folder": {
             "description": "files: destination content folder (default /Game/Imported)",
@@ -529,7 +465,6 @@
             "type": "string"
           },
           "op": {
-            "description": "files | reimport | datatable",
             "enum": [
               "files",
               "reimport",
@@ -550,10 +485,9 @@
       "annotations": {
         "destructiveHint": false,
         "idempotentHint": true,
-        "openWorldHint": true,
-        "title": "Find and inspect assets"
+        "openWorldHint": true
       },
-      "description": "Find and inspect Content Browser assets.\n- op=list: asset paths under `folder`.\n- op=info: one asset's class, bounds, LODs, Nanite.\n- op=search: by `classes` (/Script paths) and `folder`; blueprints=true finds Blueprints deriving them.\n- op=deps: what the asset needs and what needs it.\n- op=tags: registry tags (ParentClass, NativeParentClass) without loading.\n- op=thumbnail: see a StaticMesh — PNG image + tris/verts/LODs/material slots/bounds (writes Saved/MCP/AssetThumbs).",
+      "description": "Find and inspect Content Browser assets.\n- list: assets under `folder`.\n- info: class, bounds, LODs, Nanite.\n- search: by /Script `classes` and `folder`; blueprints=true finds Blueprints deriving them.\n- deps / tags: dependencies + referencers / registry tags (lineage), no loading.\n- thumbnail: PNG of a StaticMesh + tris/verts/LODs/slots/bounds.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -570,10 +504,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "folder": {
             "description": "list/search: content folder (default /Game)",
@@ -584,7 +515,6 @@
             "type": "integer"
           },
           "op": {
-            "description": "list | info | search | deps | tags | thumbnail",
             "enum": [
               "list",
               "info",
@@ -597,10 +527,7 @@
           },
           "recursive": {
             "description": "list/search: include subfolders (default true)",
-            "type": [
-              "null",
-              "boolean"
-            ]
+            "type": "boolean"
           },
           "size": {
             "description": "thumbnail: image size in pixels (default 512)",
@@ -620,62 +547,11 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Report diagnostic asset-pack utilization (readonly) for a referenced inventory.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "inventory": {
-            "additionalProperties": false,
-            "properties": {
-              "all_assets": {
-                "items": {
-                  "type": "string"
-                },
-                "type": [
-                  "null",
-                  "array"
-                ]
-              },
-              "pack": {
-                "type": "string"
-              },
-              "referenced": {
-                "items": {
-                  "type": "string"
-                },
-                "type": [
-                  "null",
-                  "array"
-                ]
-              }
-            },
-            "required": [
-              "pack",
-              "all_assets",
-              "referenced"
-            ],
-            "type": "object"
-          }
-        },
-        "required": [
-          "inventory"
-        ],
-        "type": "object"
-      },
-      "name": "asset_utilization"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true,
-        "title": "Game audio"
-      },
-      "description": "Listen to the running game (PIE only; audio renders only in play; needs the UnrealMCP plugin).\n- op=capture_start: record the main submix's RMS/peak envelope.\n- op=capture_stop: stop → {path, points, max_rms, duration} (feeds design_audit kind=audio_audit).\n- op=play: play `sound` as a known test signal.",
+      "description": "Listen to the running game (PIE only, UnrealMCP plugin).\n- capture_start: record the main submix envelope.\n- capture_stop → {path, points, max_rms, duration} for design_audit kind=audio.\n- play `sound` as a test signal.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "op": {
-            "description": "capture_start | capture_stop | play",
             "enum": [
               "capture_start",
               "capture_stop",
@@ -709,194 +585,12 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Run the audio Layer-A deterministic audit (readonly) against an RMS track and gameplay events.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "events": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "audio_t": {
-                  "type": "number"
-                },
-                "camera_t": {
-                  "type": "number"
-                },
-                "fx_count": {
-                  "type": "integer"
-                },
-                "instigator": {
-                  "type": "string"
-                },
-                "kind": {
-                  "type": "string"
-                },
-                "location": {
-                  "items": {
-                    "type": "number"
-                  },
-                  "maxItems": 3,
-                  "minItems": 3,
-                  "type": "array"
-                },
-                "t": {
-                  "type": "number"
-                },
-                "visual_t": {
-                  "type": "number"
-                }
-              },
-              "required": [
-                "t",
-                "kind"
-              ],
-              "type": "object"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "track": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "peak": {
-                  "type": "number"
-                },
-                "rms": {
-                  "type": "number"
-                },
-                "t": {
-                  "type": "number"
-                }
-              },
-              "required": [
-                "t",
-                "rms",
-                "peak"
-              ],
-              "type": "object"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          }
-        },
-        "required": [
-          "track",
-          "events"
-        ],
-        "type": "object"
-      },
-      "name": "audio_audit"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Run the balance sweep and gate keystone analysis (readonly) against a scaffold.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "grid": {
-            "additionalProperties": false,
-            "properties": {
-              "e_steps": {
-                "type": "integer"
-              },
-              "s_steps": {
-                "type": "integer"
-              },
-              "splash_steps": {
-                "type": "integer"
-              }
-            },
-            "required": [
-              "s_steps",
-              "e_steps",
-              "splash_steps"
-            ],
-            "type": "object"
-          },
-          "scaffold": {
-            "additionalProperties": false,
-            "properties": {
-              "base_damage": {
-                "type": "number"
-              },
-              "expand_growth": {
-                "type": "number"
-              },
-              "focus": {
-                "type": "integer"
-              },
-              "splash_min": {
-                "type": "number"
-              },
-              "spread": {
-                "type": "integer"
-              },
-              "waves": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "count": {
-                      "type": "integer"
-                    },
-                    "hp": {
-                      "type": "number"
-                    },
-                    "spike": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "count",
-                    "hp",
-                    "spike"
-                  ],
-                  "type": "object"
-                },
-                "type": [
-                  "null",
-                  "array"
-                ]
-              }
-            },
-            "required": [
-              "waves",
-              "base_damage",
-              "focus",
-              "spread",
-              "splash_min",
-              "expand_growth"
-            ],
-            "type": "object"
-          }
-        },
-        "required": [
-          "scaffold"
-        ],
-        "type": "object"
-      },
-      "name": "balance_sweep"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true,
-        "title": "Compile C++"
-      },
-      "description": "Compile the project's C++ (async job; follow with job op=wait). strategy=auto picks from the git diff: header/reflection/new-file changes → ubt (saves, closes the editor safely, runs Build.bat, relaunches on the same map); body-only changes → livecoding (escalates to ubt when Live Coding cannot patch). Result: success, strategy, reason, structured diagnostics.",
+      "description": "Compile the project's C++ (async job). strategy=auto picks from the git diff: header/reflection/new files → ubt (save, safe editor shutdown, Build.bat, relaunch on the same map); body-only → livecoding (escalates to ubt if it cannot patch). Result: success, strategy, reason, diagnostics.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "strategy": {
-            "description": "auto (default: classify the git diff) | livecoding (hot-patch the running editor) | ubt (full Build.bat; closes and reopens the editor)",
+            "description": "auto (default) | livecoding | ubt",
             "enum": [
               "auto",
               "livecoding",
@@ -917,10 +611,9 @@
     {
       "annotations": {
         "destructiveHint": false,
-        "openWorldHint": true,
-        "title": "Record frames"
+        "openWorldHint": true
       },
-      "description": "Film the world: an in-editor recorder saves a frame + observed state every interval_s with no per-frame round trip.\n- op=start → session.  - op=status: frames so far.\n- op=stop: ONE contact-sheet image + a timeline (per-frame world time, state, cell).\n- op=read: a contact sheet of a past session or a `path` of frames.\n- op=clear: delete one session's files, or all=true for every MCP capture (Saved/MCP/capture only).",
+      "description": "Film the world: an in-editor recorder saves a frame + state every interval_s.\n- start → session.\n- status.\n- stop: ONE contact sheet + a timeline (world time, state, cell).\n- read: a past session or a `path` of frames.\n- clear: a session, or all=true (Saved/MCP/capture only).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -966,10 +659,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "glob": {
             "description": "read: file pattern within the directory (default *)",
@@ -980,10 +670,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "include_ui": {
             "description": "start source=game_scene: include the HUD (needs a visible window)",
@@ -998,20 +685,14 @@
             "items": {
               "type": "number"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "mark_cells": {
             "description": "stop: frame indices to outline in red",
             "items": {
               "type": "integer"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "max_frames": {
             "description": "start: auto-stop after this many frames (default 240)",
@@ -1022,7 +703,6 @@
             "type": "number"
           },
           "op": {
-            "description": "start | status | stop | read | clear",
             "enum": [
               "start",
               "status",
@@ -1041,27 +721,21 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "rotation": {
             "description": "start camera_mode=fixed: [pitch, yaw, roll]",
             "items": {
               "type": "number"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "session": {
             "description": "start: a session id (default generated); status/stop/read/clear: the session",
             "type": "string"
           },
           "source": {
-            "description": "start: scene_capture (default; editor/simulate, works backgrounded) | pie_highres (possessed PIE, needs a visible viewport) | game_scene (live PIE via the UnrealMCP plugin, works backgrounded)",
+            "description": "start: scene_capture (default; editor) | pie_highres (possessed PIE) | game_scene (PIE, plugin)",
             "enum": [
               "scene_capture",
               "pie_highres",
@@ -1074,10 +748,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "world": {
             "description": "start: editor (default) | pie",
@@ -1098,166 +769,10 @@
     },
     {
       "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Return the MCP Cockpit URL — a browser page for live control + observability of the editor (feed, gates, STOP). Open it in a browser. Empty with ready=false until an editor with the UnrealMCP (MCPCore) plugin is running.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "type": "object"
-      },
-      "name": "cockpit_url"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Place a factory from the build catalog (option index) at a world [x,y,z] location — what a HUD build-palette click does; spends Capital. Returns {built,name,spent,capital}.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "location": {
-            "items": {
-              "type": "number"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "option": {
-            "type": "integer"
-          },
-          "world": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "option"
-        ],
-        "type": "object"
-      },
-      "name": "company_build"
-    },
-    {
-      "annotations": {
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Bulldoze the building nearest a world [x,y,z] location — refunds half its cost and destroys it (frees its grid cells). Returns {demolished,name,refund,capital}.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "location": {
-            "items": {
-              "type": "number"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "world": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "company_demolish"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Drag-build a road line from grid cell start=[x,y] to end=[x,y] (X-first L), clamped to the affordable/unblocked prefix. Returns {placed,capital,road_cells}.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "end": {
-            "items": {
-              "type": "integer"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "start": {
-            "items": {
-              "type": "integer"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "world": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "start",
-          "end"
-        ],
-        "type": "object"
-      },
-      "name": "company_road"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Set a production building's SUPPLIER (who you buy inputs from) and/or MARKET (who you sell the product to) by catalog index — the core Capitalism-2 choice. Profit updates next cycle.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "building": {
-            "type": "integer"
-          },
-          "market": {
-            "type": [
-              "null",
-              "integer"
-            ]
-          },
-          "supplier": {
-            "type": [
-              "null",
-              "integer"
-            ]
-          }
-        },
-        "type": "object"
-      },
-      "name": "company_select"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Read the PolyWorld Company-MVP economy from the live PIE: company Capital + each production building's supplier/market and last-cycle profit.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "world": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "company_status"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true,
-        "title": "Console command"
-      },
-      "description": "Run an Unreal console command. world=editor (default) runs it in the editor context (viewport/show/stat commands); world=pie routes it through the player controller so cheat/exec commands like 'slomo' apply to the running game. Returns every line the command printed as `output` (e.g. a CVar's current value) and its warnings/errors as `editor_log`.",
+      "description": "Run an Unreal console command. world=editor (default): editor context (viewport/show/stat); world=pie: the player controller (cheats like slomo). Returns every printed line as `output` and warnings/errors as editor_log.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1284,66 +799,56 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
+        "openWorldHint": false,
+        "readOnlyHint": true
       },
-      "description": "Run the decision cadence Layer-A deterministic audit (readonly) against observed decision points.",
+      "description": "Deterministic design audits over evidence you already captured (offline, read-only) → a report with pass/fail findings. `kind` and its `input`:\n- audio: {track: [...], events: [...]} (audio op=capture_stop output)\n- decision: {points: [...]}\n- feel: {events: [...], within_ms? (120), max_fx_per_event? (4)}\n- in_motion: {samples: [...]}\n- luminance: {frame_paths: [...]}\n- novelty: {trace, max_dead_stretch?}\n- primitive: {scene: {level, actors: [...]}}\n- render: {config, timeline? | timeline_path?}\n- style: {frame_paths: [...]}\n- utilization: {inventory}\n- verb: {burst: [...], envelope}",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "points": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "available": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
-                },
-                "chosen": {
-                  "type": "string"
-                },
-                "state": {
-                  "type": "string"
-                },
-                "t": {
-                  "type": "number"
-                }
-              },
-              "required": [
-                "t",
-                "available",
-                "chosen"
-              ],
-              "type": "object"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
+          "input": {
+            "additionalProperties": true,
+            "description": "the audit's input object; its shape per kind is listed in the description",
+            "type": "object"
+          },
+          "kind": {
+            "description": "primitive | decision | novelty | feel | verb | in_motion | render | audio | utilization | luminance | style",
+            "enum": [
+              "audio",
+              "decision",
+              "feel",
+              "in_motion",
+              "luminance",
+              "novelty",
+              "primitive",
+              "render",
+              "style",
+              "utilization",
+              "verb"
+            ],
+            "type": "string"
           }
         },
         "required": [
-          "points"
+          "kind",
+          "input"
         ],
         "type": "object"
       },
-      "name": "decision_audit"
+      "name": "design_audit",
+      "title": "Design audits"
     },
     {
       "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
+        "openWorldHint": false,
+        "readOnlyHint": true
       },
-      "description": "Run the design exploration keystone search (readonly) from a seed genotype.",
+      "description": "Offline design analysis.\n- op=sweep: simulate every policy on a grid over a wave `scaffold` → dominant policy?, degenerate optimum?, axis liveness, fenced corners, win rate by spike, plus a pass/fail gate.\n- op=explore: MAP-Elites style search from `seed` → filled cells and the top_k elite genotypes.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "donors": {
+            "description": "explore: scaffolds to cross over from",
             "items": {
               "additionalProperties": false,
               "properties": {
@@ -1383,10 +888,7 @@
                     ],
                     "type": "object"
                   },
-                  "type": [
-                    "null",
-                    "array"
-                  ]
+                  "type": "array"
                 }
               },
               "required": [
@@ -1399,19 +901,100 @@
               ],
               "type": "object"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "evaluations": {
+            "description": "explore: evaluation budget (default 500)",
             "type": "integer"
           },
+          "grid": {
+            "additionalProperties": false,
+            "description": "sweep: policy grid {s_steps, e_steps, splash_steps} (default 5 each)",
+            "properties": {
+              "e_steps": {
+                "type": "integer"
+              },
+              "s_steps": {
+                "type": "integer"
+              },
+              "splash_steps": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "s_steps",
+              "e_steps",
+              "splash_steps"
+            ],
+            "type": "object"
+          },
+          "op": {
+            "enum": [
+              "sweep",
+              "explore"
+            ],
+            "type": "string"
+          },
+          "scaffold": {
+            "additionalProperties": false,
+            "description": "sweep: the balance scaffold {waves: [{count, hp, spike}], base_damage, focus, spread, splash_min, expand_growth}",
+            "properties": {
+              "base_damage": {
+                "type": "number"
+              },
+              "expand_growth": {
+                "type": "number"
+              },
+              "focus": {
+                "type": "integer"
+              },
+              "splash_min": {
+                "type": "number"
+              },
+              "spread": {
+                "type": "integer"
+              },
+              "waves": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "hp": {
+                      "type": "number"
+                    },
+                    "spike": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "count",
+                    "hp",
+                    "spike"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "waves",
+              "base_damage",
+              "focus",
+              "spread",
+              "splash_min",
+              "expand_growth"
+            ],
+            "type": "object"
+          },
           "search_seed": {
+            "description": "explore: RNG seed (deterministic)",
             "type": "integer"
           },
           "seed": {
             "additionalProperties": false,
+            "description": "explore: the starting genotype {policy: {s, splash, e}, scaffold}",
             "properties": {
               "policy": {
                 "additionalProperties": false,
@@ -1472,10 +1055,7 @@
                       ],
                       "type": "object"
                     },
-                    "type": [
-                      "null",
-                      "array"
-                    ]
+                    "type": "array"
                   }
                 },
                 "required": [
@@ -1496,21 +1076,199 @@
             "type": "object"
           },
           "top_k": {
+            "description": "explore: elites returned (default 8)",
             "type": "integer"
           }
         },
         "required": [
-          "seed"
+          "op"
         ],
         "type": "object"
       },
-      "name": "design_explore"
+      "name": "design_explore",
+      "title": "Balance and design search"
+    },
+    {
+      "annotations": {
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "OS-level screenshots of what is REALLY on screen (Windows only; elsewhere UNSUPPORTED_PLATFORM): editor menus, panels, modal dialogs, crash popups — which the in-editor screenshot tool never sees.\n- op=list_windows: title, pid, hwnd, bounds, foreground/minimized.\n- op=screen: the desktop, a monitor or a region.\n- op=window: one window, even when backgrounded (method=print).\nResults carry the source bounds and a coord_hint for turning an image pixel into a desktop_input mouse coordinate.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "filter": {
+            "description": "list_windows: case-insensitive title substring",
+            "type": "string"
+          },
+          "hwnd": {
+            "description": "window: an exact handle from list_windows",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_width": {
+            "description": "screen/window: downscale to at most this width (default 1600; 0 = full resolution)",
+            "type": "integer"
+          },
+          "method": {
+            "description": "window: print (default; works backgrounded, never steals focus) | screen (blit the visible rectangle) | auto",
+            "enum": [
+              "print",
+              "screen",
+              "auto"
+            ],
+            "type": "string"
+          },
+          "monitor": {
+            "description": "screen: monitor index (default: the whole virtual desktop)",
+            "type": "integer"
+          },
+          "op": {
+            "enum": [
+              "list_windows",
+              "screen",
+              "window"
+            ],
+            "type": "string"
+          },
+          "pid": {
+            "description": "window: a process id",
+            "type": "integer"
+          },
+          "region": {
+            "description": "screen: [x, y, w, h] in virtual-desktop pixels",
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "window: title substring (default: auto-detect the Unreal Editor)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "type": "object"
+      },
+      "name": "desktop_capture",
+      "title": "See the real screen"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": false
+      },
+      "description": "OS-level input to whatever window is in front (Windows only; elsewhere UNSUPPORTED_PLATFORM). It can do anything a person at the keyboard can, hence Exec.\n- op=focus: bring a window forward (default: the Unreal Editor).\n- op=mouse: move|click|double_click|down|up|drag|scroll; with `window` the x/y are window-relative pixels from desktop_capture op=window.\n- op=keys: chords like ctrl+s, F5, escape.\n- op=type: literal text.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "mouse: move | click | double_click | down | up | drag | scroll",
+            "enum": [
+              "move",
+              "click",
+              "double_click",
+              "down",
+              "up",
+              "drag",
+              "scroll"
+            ],
+            "type": "string"
+          },
+          "button": {
+            "description": "mouse: left (default) | right | middle",
+            "enum": [
+              "left",
+              "right",
+              "middle"
+            ],
+            "type": "string"
+          },
+          "horizontal": {
+            "description": "mouse scroll: horizontal",
+            "type": "boolean"
+          },
+          "hwnd": {
+            "description": "focus: an exact window handle",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "keys": {
+            "description": "keys: chords pressed in order, e.g. ['ctrl+s'] or ['ctrl+a', 'delete']",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "op": {
+            "enum": [
+              "focus",
+              "mouse",
+              "keys",
+              "type"
+            ],
+            "type": "string"
+          },
+          "pid": {
+            "description": "focus: a process id",
+            "type": "integer"
+          },
+          "scroll_amount": {
+            "description": "mouse scroll: notches, + up/right, - down/left (default 3)",
+            "type": "integer"
+          },
+          "steps": {
+            "description": "mouse drag: interpolation steps (default 12)",
+            "type": "integer"
+          },
+          "text": {
+            "description": "type: literal Unicode text for the focused control",
+            "type": "string"
+          },
+          "title": {
+            "description": "focus: window title substring (default: the Unreal Editor)",
+            "type": "string"
+          },
+          "to_x": {
+            "description": "mouse drag: end X",
+            "type": "integer"
+          },
+          "to_y": {
+            "description": "mouse drag: end Y",
+            "type": "integer"
+          },
+          "window": {
+            "description": "mouse: a window title; x/y become relative to its top-left (same origin as desktop_capture op=window)",
+            "type": "string"
+          },
+          "window_hwnd": {
+            "description": "mouse: like window, by handle",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "x": {
+            "description": "mouse: target X (screen px, or relative to the window param)",
+            "type": "integer"
+          },
+          "y": {
+            "description": "mouse: target Y",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "type": "object"
+      },
+      "name": "desktop_input",
+      "title": "Drive the real mouse and keyboard"
     },
     {
       "annotations": {
         "openWorldHint": true,
-        "readOnlyHint": true,
-        "title": "Editor status"
+        "readOnlyHint": true
       },
       "description": "Inspect the connected Unreal Editor.\n- op=status: engine version, project, current level, is_in_pie, viewport camera, selection, actor count.\n- op=ping: cheap liveness probe.\n- op=health: ping, then check expect_version and for crashes since `since` → {healthy, problems[]}.",
       "inputSchema": {
@@ -1521,7 +1279,6 @@
             "type": "integer"
           },
           "op": {
-            "description": "status | ping | health",
             "enum": [
               "status",
               "ping",
@@ -1530,7 +1287,7 @@
             "type": "string"
           },
           "since": {
-            "description": "health: RFC3339 time; crashes at or after it count (default: the last 10 minutes)",
+            "description": "health: RFC3339; count crashes since (default 10 min ago)",
             "type": "string"
           }
         },
@@ -1545,10 +1302,9 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "openWorldHint": true,
-        "title": "Editor process"
+        "openWorldHint": true
       },
-      "description": "Start, restart or reconnect the Unreal Editor.\n- op=ensure_open (job): launch the project's editor if none answers; waits until it does.\n- op=restart (job): SAFE shutdown — fails with PRECONDITION listing unsaved packages (save=true saves them first; discard_dirty=true throws them away), stops PIE, re-checks, quits gracefully (kill after 30 s, reported), relaunches on the same map. In daemon mode the session's lease is preserved.\n- op=reclaim: another tool took over the editor's command channel (EDITOR_BUSY / channel stolen); take it back.",
+      "description": "Start, restart or reconnect the editor.\n- ensure_open (job): launch it if none answers.\n- restart (job): safe shutdown — PRECONDITION listing unsaved packages (save=true saves, discard_dirty=true drops them), stop PIE, graceful quit (kill after 30 s, reported), relaunch on the same map. Daemon: lease kept; other calls get RESTART_IN_PROGRESS meanwhile. Cancelling never escalates to a kill.\n- reclaim: retake a command channel another client took.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1561,7 +1317,6 @@
             "type": "string"
           },
           "op": {
-            "description": "ensure_open | restart | reclaim",
             "enum": [
               "ensure_open",
               "restart",
@@ -1593,105 +1348,9 @@
     {
       "annotations": {
         "destructiveHint": false,
-        "openWorldHint": true
+        "openWorldHint": false
       },
-      "description": "Run the feedback coverage Layer-A deterministic audit (readonly) against gameplay events.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "events": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "audio_t": {
-                  "type": "number"
-                },
-                "camera_t": {
-                  "type": "number"
-                },
-                "fx_count": {
-                  "type": "integer"
-                },
-                "instigator": {
-                  "type": "string"
-                },
-                "kind": {
-                  "type": "string"
-                },
-                "location": {
-                  "items": {
-                    "type": "number"
-                  },
-                  "maxItems": 3,
-                  "minItems": 3,
-                  "type": "array"
-                },
-                "t": {
-                  "type": "number"
-                },
-                "visual_t": {
-                  "type": "number"
-                }
-              },
-              "required": [
-                "t",
-                "kind"
-              ],
-              "type": "object"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "max_fx_per_event": {
-            "type": "integer"
-          },
-          "within_ms": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "events"
-        ],
-        "type": "object"
-      },
-      "name": "feel_audit"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true
-      },
-      "description": "Bring a window to the foreground (restoring it if minimized). Useful before a method=screen capture or before sending input that must land on a specific window. Selector: title substring, pid, or hwnd; default the Unreal Editor.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "hwnd": {
-            "description": "target an exact window handle (from list_windows)",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "pid": {
-            "description": "target a specific process id instead of by title",
-            "type": "integer"
-          },
-          "title": {
-            "description": "window title substring (case-insensitive); omit to auto-detect the Unreal Editor",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "focus_window"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": false,
-        "title": "Project git"
-      },
-      "description": "The project's git repository (no editor needed).\n- op=status / diff / log.\n- op=checkpoint: stage (default everything except Saved/Intermediate/DerivedDataCache), commit `message` (hooks run; never bypassed) and tag it umcp/cp/\u003cn\u003e → {commit, tag}. With nothing to commit, HEAD is tagged. git_revert only goes back to these checkpoints.",
+      "description": "The project's git repo (no editor).\n- status / diff / log (+ checkpoints).\n- checkpoint: stage (default all but Saved/Intermediate/DerivedDataCache), commit `message` (hooks run) and tag umcp/cp/\u003cn\u003e; nothing to commit tags HEAD. git_revert only goes back to these.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1704,7 +1363,6 @@
             "type": "string"
           },
           "op": {
-            "description": "status | diff | log | checkpoint",
             "enum": [
               "status",
               "diff",
@@ -1714,14 +1372,11 @@
             "type": "string"
           },
           "paths": {
-            "description": "diff: limit to these paths; checkpoint: stage only these (default: everything except Saved/Intermediate/DerivedDataCache)",
+            "description": "diff: limit to these; checkpoint: stage only these",
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           }
         },
         "required": [
@@ -1735,15 +1390,14 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "openWorldHint": true,
-        "title": "Revert to a checkpoint"
+        "openWorldHint": true
       },
-      "description": "Put the project's files back exactly as they were at a git op=checkpoint (umcp/cp/\u003cn\u003e only; anything else is PRECONDITION). Files changed since are restored, files added since are deleted, untracked files are kept (listed). History is not rewritten: HEAD stays where it is, so the revert shows as working-tree changes (commit them, e.g. with git op=checkpoint, to keep them). Editor-aware: if the editor has any of those assets loaded, it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty=true) and relaunched on the same map after; otherwise it stays up and those assets are reported possibly_stale. All-or-nothing: the previous files are backed up under Saved/MCP/revert-backup and restored on failure. Result: reverted_files, deleted_files, editor_restarted, discarded_dirty, possibly_stale, rebuild_required (C++ changed: run build).",
+      "description": "Restore the project's files to a git op=checkpoint (umcp/cp/\u003cn\u003e only, else PRECONDITION): changed files are restored, files added since are deleted, untracked files are kept. History is not rewritten (the revert shows as working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing via a backup in Saved/MCP/revert-backup. rebuild_required means C++ changed: run build.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "discard_dirty": {
-            "description": "when reverted assets are open in the editor: THROW AWAY unsaved packages instead of failing with PRECONDITION",
+            "description": "if the editor must close: THROW AWAY unsaved packages instead of PRECONDITION",
             "type": "boolean"
           },
           "dry_run": {
@@ -1770,8 +1424,7 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "openWorldHint": true,
-        "title": "Headless editor runs"
+        "openWorldHint": true
       },
       "description": "Run work in a SEPARATE UnrealEditor-Cmd process (async job), off the interactive editor's command channel: a commandlet, an -ExecCmds batch, or automation tests → exit code, log tail, test pass/fail counts. A tests run that matched no test is ok:false.",
       "inputSchema": {
@@ -1782,10 +1435,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "commandlet": {
             "description": "commandlet: the commandlet to -run, e.g. DataValidation, ResavePackages",
@@ -1796,17 +1446,13 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "filter": {
             "description": "tests: automation test filter, e.g. Project.Functional",
             "type": "string"
           },
           "op": {
-            "description": "commandlet | exec | tests",
             "enum": [
               "commandlet",
               "exec",
@@ -1838,58 +1484,10 @@
     {
       "annotations": {
         "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Run the locomotion Layer-A deterministic audit (readonly) against motion samples.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "samples": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "anim_stride": {
-                  "type": "number"
-                },
-                "root_travel": {
-                  "type": "number"
-                },
-                "t": {
-                  "type": "number"
-                },
-                "yaw": {
-                  "type": "number"
-                }
-              },
-              "required": [
-                "t",
-                "root_travel",
-                "anim_stride",
-                "yaw"
-              ],
-              "type": "object"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          }
-        },
-        "required": [
-          "samples"
-        ],
-        "type": "object"
-      },
-      "name": "in_motion_audit"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
         "idempotentHint": true,
-        "openWorldHint": false,
-        "title": "Background jobs"
+        "openWorldHint": false
       },
-      "description": "Follow long-running work (build, playtest run, editor_lifecycle, git_revert, headless): those return {job_id, state} unless called with wait_s.\n- op=status: state (running|succeeded|failed|cancelled), last progress, result or error.\n- op=wait: block up to wait_s (default 25) for it to finish, streaming progress.\n- op=cancel: request cancellation; the job reports cancelled when it stops.\n- op=list: every job of this project. Jobs belong to the project, so a later session can poll them.",
+      "description": "Follow async work (build, playtest run, editor_lifecycle, git_revert, headless), which returns {job_id, state} unless called with wait_s.\n- status: state, last progress, result or error.\n- wait: up to wait_s (default 25), streaming progress.\n- cancel.\n- list: this project's jobs (any session of the project can poll them).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1898,7 +1496,6 @@
             "type": "string"
           },
           "op": {
-            "description": "status | wait | cancel | list",
             "enum": [
               "status",
               "wait",
@@ -1908,7 +1505,7 @@
             "type": "string"
           },
           "wait_s": {
-            "description": "wait: seconds to wait for it to finish (default and max 25); progress is streamed meanwhile",
+            "description": "wait: seconds (default and max 25)",
             "type": "number"
           }
         },
@@ -1922,44 +1519,15 @@
     },
     {
       "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true
-      },
-      "description": "Send real keyboard shortcuts at the OS level: a chord like 'ctrl+s', 'F5', 'alt+f4', 'escape', 'delete', 'ctrl+shift+p', or a sequence of chords. Goes to the foreground window, so focus_window first if needed. For typing literal text use type_text.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "keys": {
-            "description": "a single chord, e.g. 'ctrl+s', 'F5', 'alt+f4', 'escape', 'delete', 'ctrl+shift+p'",
-            "type": "string"
-          },
-          "sequence": {
-            "description": "a sequence of chords pressed in order, e.g. ['ctrl+a','delete']",
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          }
-        },
-        "type": "object"
-      },
-      "name": "key_press"
-    },
-    {
-      "annotations": {
         "destructiveHint": false,
-        "openWorldHint": true,
-        "title": "Level"
+        "openWorldHint": true
       },
       "description": "Open and save levels.\n- op=open: saves all dirty packages FIRST, then loads `level`.\n- op=save_all: saves every dirty package.\n- op=set_world_gamemode: sets the open level's GameMode override to `class` and saves.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "class": {
-            "description": "set_world_gamemode: GameMode class (/Script path, /Game Blueprint path, or short name)",
+            "description": "set_world_gamemode: the GameMode class",
             "type": "string"
           },
           "level": {
@@ -1967,7 +1535,6 @@
             "type": "string"
           },
           "op": {
-            "description": "open | save_all | set_world_gamemode",
             "enum": [
               "open",
               "save_all",
@@ -1986,29 +1553,10 @@
     },
     {
       "annotations": {
-        "openWorldHint": true,
+        "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "List the OS's visible top-level windows (title, pid, handle, on-screen bounds, foreground/minimized). Use it to find the Unreal Editor window (or a dialog/crash popup) to capture or control. Optional case-insensitive title filter.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "filter": {
-            "description": "case-insensitive title substring to filter by; empty = all visible titled windows",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "list_windows"
-    },
-    {
-      "annotations": {
-        "openWorldHint": false,
-        "readOnlyHint": true,
-        "title": "Editor logs"
-      },
-      "description": "Read the project's editor log files directly — works while the editor is busy or gone.\n- op=mark → marker; do something; op=since marker → that window's lines + error/warning/ensure counts.\n- op=tail: the last `lines` at min_severity.\n- op=events: structured events (issues, PIE start/stop) from `marker` offset; returns the next offset.",
+      "description": "Read the editor log files (works while the editor is busy or gone).\n- mark → marker; later since `marker` → those lines + error/warning/ensure counts.\n- tail: last `lines` at min_severity.\n- events: structured events from offset `marker`.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2017,10 +1565,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "limit": {
             "description": "events: most recent N (default 200)",
@@ -2035,7 +1580,7 @@
             "type": "string"
           },
           "min_severity": {
-            "description": "tail/since: Verbose | Log | Display | Warning | Error (default Display for tail, Warning for since)",
+            "description": "tail/since: minimum severity (default Display / Warning)",
             "enum": [
               "Verbose",
               "Log",
@@ -2046,7 +1591,6 @@
             "type": "string"
           },
           "op": {
-            "description": "mark | tail | since | events",
             "enum": [
               "mark",
               "tail",
@@ -2073,182 +1617,7 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Run the luminance Layer-A deterministic audit (readonly) against captured frame paths.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "frame_paths": {
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          }
-        },
-        "required": [
-          "frame_paths"
-        ],
-        "type": "object"
-      },
-      "name": "luminance_report"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true
-      },
-      "description": "Drive the real mouse at the OS level: move|click|double_click|down|up|drag|scroll. Coordinates are screen pixels, OR set 'window' (a title substring like 'unreal') to make x/y relative to that window's top-left — the same origin as window_capture's image — so you can click exactly what you saw. Returns the final cursor position.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "action": {
-            "description": "move|click|double_click|down|up|drag|scroll",
-            "type": "string"
-          },
-          "button": {
-            "description": "left|right|middle; default left",
-            "type": "string"
-          },
-          "horizontal": {
-            "description": "scroll horizontally instead of vertically",
-            "type": "boolean"
-          },
-          "scroll_amount": {
-            "description": "wheel notches for action=scroll; +up/right, -down/left; default 3",
-            "type": "integer"
-          },
-          "steps": {
-            "description": "drag interpolation steps; default 12",
-            "type": "integer"
-          },
-          "to_x": {
-            "description": "drag end X",
-            "type": "integer"
-          },
-          "to_y": {
-            "description": "drag end Y",
-            "type": "integer"
-          },
-          "window": {
-            "description": "a window title substring (e.g. 'unreal') to interpret x/y (and to_x/to_y) RELATIVE to that window's top-left — the same origin as window_capture's image",
-            "type": "string"
-          },
-          "window_hwnd": {
-            "description": "like 'window' but an exact window handle",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "x": {
-            "description": "target X (screen px, or window-relative when 'window'/'window_hwnd' is set)",
-            "type": "integer"
-          },
-          "y": {
-            "description": "target Y",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "action"
-        ],
-        "type": "object"
-      },
-      "name": "mouse_control"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Run the novelty cadence Layer-A deterministic audit (readonly) against a session trace.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "max_dead_stretch": {
-            "type": "number"
-          },
-          "trace": {
-            "additionalProperties": false,
-            "properties": {
-              "duration": {
-                "type": "number"
-              },
-              "observed": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    },
-                    "kind": {
-                      "type": "string"
-                    },
-                    "t": {
-                      "type": "number"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "kind",
-                    "t"
-                  ],
-                  "type": "object"
-                },
-                "type": [
-                  "null",
-                  "array"
-                ]
-              },
-              "schedule": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    },
-                    "kind": {
-                      "type": "string"
-                    },
-                    "t": {
-                      "type": "number"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "kind",
-                    "t"
-                  ],
-                  "type": "object"
-                },
-                "type": [
-                  "null",
-                  "array"
-                ]
-              }
-            },
-            "required": [
-              "duration",
-              "observed",
-              "schedule"
-            ],
-            "type": "object"
-          }
-        },
-        "required": [
-          "trace"
-        ],
-        "type": "object"
-      },
-      "name": "novelty_audit"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true,
-        "title": "Play In Editor"
-      },
-      "description": "Run the game inside the editor and drive it.\n- op=start: begin PIE (simulate=true: no possessed player); waits until it is running.\n- op=stop: end PIE; waits until it has stopped. Everything changed in the pie world is discarded.\n- op=input: tap/press/release/hold `key` as if a player did (needs the UnrealMCP plugin), e.g. hold W to walk.",
+      "description": "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop; everything changed in the pie world is discarded.\n- input: tap/press/release/hold `key` like a player (UnrealMCP plugin).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2268,11 +1637,10 @@
             "type": "number"
           },
           "key": {
-            "description": "input: UE key name — W, A, S, D, SpaceBar, LeftMouseButton, Gamepad_FaceButton_Bottom, ...",
+            "description": "input: UE key name, e.g. W, SpaceBar, LeftMouseButton",
             "type": "string"
           },
           "op": {
-            "description": "start | stop | input",
             "enum": [
               "start",
               "stop",
@@ -2286,10 +1654,7 @@
           },
           "wait": {
             "description": "start/stop: wait until PIE is actually running/stopped (default true)",
-            "type": [
-              "null",
-              "boolean"
-            ]
+            "type": "boolean"
           }
         },
         "required": [
@@ -2303,8 +1668,7 @@
     {
       "annotations": {
         "openWorldHint": true,
-        "readOnlyHint": true,
-        "title": "Observe the running game"
+        "readOnlyHint": true
       },
       "description": "Read the running game (PIE): gamestate properties (discovered by reflection), a class histogram `counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. The output schema is what pie_wait predicates address (gamestate.\u003cprop\u003e, counts.\u003cClass\u003e, pawn.speed).",
       "inputSchema": {
@@ -2315,30 +1679,21 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "exclude": {
             "description": "glob patterns of property names to exclude",
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "include": {
             "description": "glob patterns of property names to include (default all, minus engine noise)",
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "max_props": {
             "description": "cap on properties per object (default 48)",
@@ -2357,10 +1712,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           }
         },
         "type": "object"
@@ -2371,8 +1723,7 @@
     {
       "annotations": {
         "openWorldHint": true,
-        "readOnlyHint": true,
-        "title": "Wait for a game condition"
+        "readOnlyHint": true
       },
       "description": "Poll pie_observe until `predicate` holds → {met, pie_running, elapsed_s, polls, final_state}. met=false on timeout is a normal answer, not an error. Waits through PIE starting up; returns at once if PIE stops. Read-only: to poll a UFUNCTION's result use actor_call with until.",
       "inputSchema": {
@@ -2387,7 +1738,7 @@
             "type": "boolean"
           },
           "predicate": {
-            "description": "one comparison over pie_observe output, e.g. 'gamestate.wave_number \u003e= 2', 'counts.EnemyCharacter \u003e= 1', 'pawn.speed \u003e 100'",
+            "description": "one comparison over pie_observe output, e.g. 'gamestate.wave \u003e= 2', 'counts.Enemy \u003e= 1', 'pawn.speed \u003e 100'",
             "type": "string"
           },
           "properties": {
@@ -2395,10 +1746,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "timeout_s": {
             "description": "give up after this many seconds (default 20, max 28)",
@@ -2416,10 +1764,9 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "openWorldHint": true,
-        "title": "Automated playtest"
+        "openWorldHint": true
       },
-      "description": "Validate that the game WORKS.\n- op=run (async job; scenario/v1 from `path` or `json`): open the level, play (mode pie|simulate|editor), record frames + state, run timed beats (exec = call a UFUNCTION — arbitrary code, hence Exec; console; wait_until), stop, and score the rubric → {verdict PASS|WARN|FAIL, rubric, logs, crash?, timeline} with the contact sheet (failed-check frames outlined in red) as an image when read via wait_s / job.\nThe saved suite: analyze op=scenarios.",
+      "description": "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats (exec = call a UFUNCTION, arbitrary code; console; wait_until), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, timeline} plus a contact sheet image via wait_s / job. Saved suite: analyze op=scenarios.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2440,10 +1787,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "json": {
             "description": "run: the scenario as inline JSON (instead of path)",
@@ -2454,7 +1798,6 @@
             "type": "integer"
           },
           "op": {
-            "description": "run",
             "enum": [
               "run"
             ],
@@ -2469,10 +1812,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "wait_s": {
             "description": "run: wait up to this many seconds (max 25) before returning the job",
@@ -2492,72 +1832,96 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Run the primitive art Layer-A deterministic audit (readonly) against a captured scene.",
+      "description": "Compile the project's C++ (async job). strategy=auto picks from the git diff: header/reflection/new files → ubt (save, safe editor shutdown, Build.bat, relaunch on the same map); body-only → livecoding (escalates to ubt if it cannot patch). Result: success, strategy, reason, diagnostics.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "scene": {
-            "additionalProperties": false,
-            "properties": {
-              "actors": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "class": {
-                      "type": "string"
-                    },
-                    "debug_draw": {
-                      "type": "boolean"
-                    },
-                    "hero": {
-                      "type": "boolean"
-                    },
-                    "label": {
-                      "type": "string"
-                    },
-                    "material_path": {
-                      "type": "string"
-                    },
-                    "mesh_path": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "label",
-                    "class"
-                  ],
-                  "type": "object"
-                },
-                "type": [
-                  "null",
-                  "array"
-                ]
-              },
-              "level": {
-                "type": "string"
-              }
+          "building": {
+            "description": "select: the production building index",
+            "type": "integer"
+          },
+          "end": {
+            "description": "road: grid cell [x, y]",
+            "items": {
+              "type": "integer"
             },
-            "required": [
-              "level",
-              "actors"
+            "type": "array"
+          },
+          "location": {
+            "description": "build: world [x, y, z]",
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "market": {
+            "description": "select: market catalog index (who you sell to)",
+            "type": "integer"
+          },
+          "op": {
+            "enum": [
+              "status",
+              "build",
+              "select",
+              "road"
             ],
-            "type": "object"
+            "type": "string"
+          },
+          "option": {
+            "description": "build: build-catalog option index",
+            "type": "integer"
+          },
+          "start": {
+            "description": "road: grid cell [x, y]",
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "supplier": {
+            "description": "select: supplier catalog index (who you buy inputs from)",
+            "type": "integer"
           }
         },
         "required": [
-          "scene"
+          "op"
         ],
         "type": "object"
       },
-      "name": "primitive_audit"
+      "name": "polyworld",
+      "title": "PolyWorld company game"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Bulldoze the building nearest `location` in the running game (PIE only): destroys it, frees its grid cells, refunds half its cost → {demolished, name, refund, capital}.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "location": {
+            "description": "world [x, y, z]: the building nearest to it is demolished",
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "location"
+        ],
+        "type": "object"
+      },
+      "name": "polyworld_demolish",
+      "title": "Demolish a PolyWorld building"
     },
     {
       "annotations": {
         "destructiveHint": false,
-        "openWorldHint": false,
-        "title": "Project config (.ini)"
+        "openWorldHint": false
       },
-      "description": "Edit the project's Config/*.ini files directly — no editor needed; idempotent. The editor reads most of these at startup, so restart it (editor_lifecycle) to see changes there.\n- op=set_default_gamemode: `class`.\n- op=input_action: `name`, `key`, modifiers.\n- op=input_axis: `name`, `key`, `scale`.\n- op=gameplay_tag: `tag`, `comment`.",
+      "description": "Edit Config/*.ini directly (no editor; idempotent; the editor reads most at startup).\n- set_default_gamemode `class`.\n- input_action `name` `key` modifiers.\n- input_axis `name` `key` `scale`.\n- gameplay_tag `tag` `comment`.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2566,7 +1930,7 @@
             "type": "boolean"
           },
           "class": {
-            "description": "set_default_gamemode: GameMode class path, e.g. /Game/BP/BP_GM.BP_GM_C or /Script/Module.MyGameMode",
+            "description": "set_default_gamemode: GameMode class path, e.g. /Game/BP/BP_GM.BP_GM_C",
             "type": "string"
           },
           "cmd": {
@@ -2590,7 +1954,6 @@
             "type": "string"
           },
           "op": {
-            "description": "set_default_gamemode | input_action | input_axis | gameplay_tag",
             "enum": [
               "set_default_gamemode",
               "input_action",
@@ -2623,15 +1986,13 @@
     {
       "annotations": {
         "openWorldHint": true,
-        "readOnlyHint": true,
-        "title": "Map the project"
+        "readOnlyHint": true
       },
-      "description": "Orient in an unfamiliar project.\n- op=project: works WITHOUT the editor — modules, dependencies and every UCLASS/USTRUCT/UENUM with its /Script path and header, parsed from .uproject/Build.cs/headers. Fails with PRECONDITION when no project is configured.\n- op=level: needs the editor — the level's WorldSettings GameMode, the project default GameMode, and in PIE the live mode/state/controller/pawn classes.",
+      "description": "Orient in a project.\n- project: offline (no editor) — modules, dependencies, every UCLASS/USTRUCT/UENUM with /Script path and header.\n- level: the level's GameMode wiring, plus live classes in PIE.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "op": {
-            "description": "project (offline C++ map) | level (live gameplay framework; needs the editor)",
             "enum": [
               "project",
               "level"
@@ -2650,10 +2011,9 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "openWorldHint": true,
-        "title": "Run Python in the editor"
+        "openWorldHint": true
       },
-      "description": "Run Python inside the Unreal Editor (arbitrary code: gated when approval is required).\n- op=run: execute `code` and return its captured output; evaluate=true returns one expression's value.\n- op=recipe: run a level-recipe file at `path`; clean_slate=true first destroys every actor except WorldSettings; save defaults true.",
+      "description": "Run Python in the editor (arbitrary code).\n- run: `code` → captured output; evaluate=true → one expression's value.\n- recipe: run the level-recipe file `path`; clean_slate=true FIRST destroys every actor except WorldSettings; save defaults true.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2670,7 +2030,6 @@
             "type": "boolean"
           },
           "op": {
-            "description": "run | recipe",
             "enum": [
               "run",
               "recipe"
@@ -2683,10 +2042,7 @@
           },
           "save": {
             "description": "recipe: save dirty packages afterwards (default true)",
-            "type": [
-              "null",
-              "boolean"
-            ]
+            "type": "boolean"
           }
         },
         "required": [
@@ -2700,8 +2056,7 @@
     {
       "annotations": {
         "openWorldHint": true,
-        "readOnlyHint": true,
-        "title": "Reflect objects, classes, enums"
+        "readOnlyHint": true
       },
       "description": "Discover what an object exposes, without knowing the game.\n- op=object: `actor` in `world` (editor default) → {class, path, properties, functions}.\n- op=class: a class contract — its CDO defaults and functions.\n- op=enum: enumerator names and values (e.g. to write a predicate over an enum field).",
       "inputSchema": {
@@ -2716,7 +2071,7 @@
             "type": "string"
           },
           "enum": {
-            "description": "enum: a UENUM(BlueprintType) name (e.g. EWaveState) or a UserDefinedEnum asset path",
+            "description": "enum: a UENUM(BlueprintType) name or UserDefinedEnum asset",
             "type": "string"
           },
           "exclude": {
@@ -2724,20 +2079,14 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "include": {
             "description": "object/class: glob patterns of property names to include (default all)",
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "max_props": {
             "description": "object/class: cap on discovered properties (default 64)",
@@ -2748,7 +2097,6 @@
             "type": "integer"
           },
           "op": {
-            "description": "object | class | enum",
             "enum": [
               "object",
               "class",
@@ -2761,10 +2109,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "world": {
             "description": "object: editor (default) | pie | auto",
@@ -2789,109 +2134,16 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Run the render health Layer-A deterministic audit (readonly) against packaged config and render timeline.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "config": {
-            "additionalProperties": false,
-            "properties": {
-              "editor_startup_map": {
-                "type": "string"
-              },
-              "game_default_map": {
-                "type": "string"
-              },
-              "game_maps": {
-                "items": {
-                  "type": "string"
-                },
-                "type": [
-                  "null",
-                  "array"
-                ]
-              }
-            },
-            "required": [
-              "game_default_map"
-            ],
-            "type": "object"
-          },
-          "timeline": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "seq": {
-                  "type": "integer"
-                },
-                "sim_time": {
-                  "type": "number"
-                },
-                "static": {
-                  "type": "integer"
-                },
-                "tag": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "tag",
-                "seq",
-                "sim_time",
-                "static"
-              ],
-              "type": "object"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "timeline_path": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "config"
-        ],
-        "type": "object"
-      },
-      "name": "render_health"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true,
-        "title": "Declarative scenes"
-      },
-      "description": "Build levels from a declarative unreal.scene/v1 spec (`path` or `json`).\n- op=apply: create/update the spec's actors in one undo step and save; dry_run=true reports the diff only. ADDITIVE: actors are matched by the scene's tag (mcp_scene:\u003cid\u003e), never by label alone, and nothing is deleted (remove stale ones with scene_clear op=prune).\n- op=check: lint the level (lit, no missing meshes, PlayerStart, nav bounds).\n- op=preview: offline — where a layout would place things.\n- op=env_preset: lighting/sky/exposure preset as scene actors (the sun always points down).",
+      "description": "Build levels from an unreal.scene/v1 spec (`path` or `json`).\n- apply: create/update the spec's actors (one undo step) and save; dry_run reports the diff. Additive: matched by the scene tag, never by label alone; stale actors go via scene_clear op=prune.\n- check: lint the level (lit, meshes present, PlayerStart, nav).\n- preview: offline layout placements.\n- env_preset: lighting/sky/exposure preset (sun always points down).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "checks": {
-            "additionalProperties": false,
-            "description": "check: invariants to require (default: lit, no missing meshes, a PlayerStart)",
-            "properties": {
-              "require_environment_lit": {
-                "type": "boolean"
-              },
-              "require_nav_bounds": {
-                "type": "boolean"
-              },
-              "require_no_missing_meshes": {
-                "type": "boolean"
-              },
-              "require_player_start": {
-                "type": "boolean"
-              },
-              "spawns_within_bounds": {
-                "type": "boolean"
-              }
+            "additionalProperties": {
+              "type": "boolean"
             },
-            "type": [
-              "null",
-              "object"
-            ]
+            "description": "check: {require_environment_lit, require_no_missing_meshes, require_player_start, require_nav_bounds, spawns_within_bounds: bool}",
+            "type": "object"
           },
           "dry_run": {
             "description": "apply: report add/update/missing assets without changing the level",
@@ -2902,79 +2154,11 @@
             "type": "string"
           },
           "layout": {
-            "additionalProperties": false,
-            "description": "preview: {type: grid|ring|line|scatter, ...}",
-            "properties": {
-              "align_to_center": {
-                "type": "boolean"
-              },
-              "center": {
-                "items": {
-                  "type": "number"
-                },
-                "maxItems": 3,
-                "minItems": 3,
-                "type": "array"
-              },
-              "cols": {
-                "type": "integer"
-              },
-              "count": {
-                "type": "integer"
-              },
-              "end": {
-                "items": {
-                  "type": "number"
-                },
-                "maxItems": 3,
-                "minItems": 3,
-                "type": "array"
-              },
-              "extent": {
-                "items": {
-                  "type": "number"
-                },
-                "maxItems": 3,
-                "minItems": 3,
-                "type": "array"
-              },
-              "radius": {
-                "type": "number"
-              },
-              "rows": {
-                "type": "integer"
-              },
-              "seed": {
-                "type": "integer"
-              },
-              "spacing": {
-                "type": "number"
-              },
-              "start": {
-                "items": {
-                  "type": "number"
-                },
-                "maxItems": 3,
-                "minItems": 3,
-                "type": "array"
-              },
-              "start_angle_deg": {
-                "type": "number"
-              },
-              "type": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "type"
-            ],
-            "type": [
-              "null",
-              "object"
-            ]
+            "additionalProperties": true,
+            "description": "preview: {type: grid|ring|line|scatter, count, spacing, rows, cols, radius, start, end, center, extent, seed}",
+            "type": "object"
           },
           "op": {
-            "description": "apply | check | preview | env_preset",
             "enum": [
               "apply",
               "check",
@@ -3005,10 +2189,7 @@
           },
           "save": {
             "description": "apply/env_preset: save afterwards (default true)",
-            "type": [
-              "null",
-              "boolean"
-            ]
+            "type": "boolean"
           },
           "scene_id": {
             "description": "env_preset: scene id for the environment actors (default env)",
@@ -3026,10 +2207,9 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "openWorldHint": true,
-        "title": "Remove scene actors"
+        "openWorldHint": true
       },
-      "description": "Delete actors a scene created (only actors tagged mcp_scene:\u003cid\u003e; hand-placed actors are never touched), as one undo step, then save.\n- op=all: every actor of `scene_id`.\n- op=prune: the scene's actors whose label is not in the spec (`path` or `json`) — run after scene apply to drop stale ones. A separate step from apply, not atomic with it.\ndry_run=true lists what would go.",
+      "description": "Delete actors a scene created (tagged mcp_scene:\u003cid\u003e only; hand-placed actors never), one undo step, then save.\n- all: every actor of `scene_id`.\n- prune: the scene's actors not in the spec (`path`/`json`) — after scene apply; not atomic with it.\ndry_run lists them.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3042,7 +2222,6 @@
             "type": "string"
           },
           "op": {
-            "description": "all | prune",
             "enum": [
               "all",
               "prune"
@@ -3055,10 +2234,7 @@
           },
           "save": {
             "description": "save afterwards (default true)",
-            "type": [
-              "null",
-              "boolean"
-            ]
+            "type": "boolean"
           },
           "scene_id": {
             "description": "all: the scene whose actors to delete",
@@ -3075,50 +2251,11 @@
     },
     {
       "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Capture the actual display as a PNG — the whole virtual desktop (all monitors), one monitor, or a region. This is an OS screenshot of what is really on screen (unlike take_screenshot, which renders the 3D scene inside the editor). Downscaled to max_width for token economy.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "max_width": {
-            "description": "downscale so the image is at most this many px wide (aspect preserved); default 1600, 0 = full resolution",
-            "type": [
-              "null",
-              "integer"
-            ]
-          },
-          "monitor": {
-            "description": "monitor index (0-based, see list from MonitorRects); omit or -1 = whole virtual desktop spanning all monitors",
-            "type": [
-              "null",
-              "integer"
-            ]
-          },
-          "region": {
-            "description": "[x,y,w,h] in virtual-desktop pixels to grab a sub-rectangle instead of a whole monitor",
-            "items": {
-              "type": "integer"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          }
-        },
-        "type": "object"
-      },
-      "name": "screen_capture"
-    },
-    {
-      "annotations": {
         "destructiveHint": false,
         "idempotentHint": true,
-        "openWorldHint": true,
-        "title": "Screenshot"
+        "openWorldHint": true
       },
-      "description": "Look at the world; returns PNG image content.\n- op=viewport: the editor world via a scene capture (works with the editor in the background).\n- op=pie: the running game's rendered screen (needs a visible game viewport).\n- op=orbit: `actors` (or the level) from num_angles angles in one contact sheet — a quick all-sides check.\nTransient capture actors may dirty the level; the result lists any map they dirtied.",
+      "description": "Look at the world (PNG).\n- viewport: the editor world via a scene capture (works backgrounded).\n- pie: the running game's screen (needs a visible viewport).\n- orbit: `actors` (or the level) from num_angles angles in one sheet.\nResults list any map the capture actors dirtied.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3127,10 +2264,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "cell_height": {
             "description": "orbit: per-angle height (default 270)",
@@ -3146,10 +2280,7 @@
           },
           "elevation": {
             "description": "orbit: degrees above the horizon (default 25)",
-            "type": [
-              "null",
-              "number"
-            ]
+            "type": "number"
           },
           "fill": {
             "description": "orbit: fraction of the frame the target fills (default 0.7)",
@@ -3168,17 +2299,13 @@
             "items": {
               "type": "number"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "num_angles": {
             "description": "orbit: angles around the target (default 8)",
             "type": "integer"
           },
           "op": {
-            "description": "viewport | pie | orbit",
             "enum": [
               "viewport",
               "pie",
@@ -3191,10 +2318,7 @@
             "items": {
               "type": "number"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "width": {
             "description": "viewport/pie: pixels (default 1280 / 1920)",
@@ -3213,10 +2337,9 @@
       "annotations": {
         "destructiveHint": false,
         "idempotentHint": true,
-        "openWorldHint": true,
-        "title": "Level snapshots"
+        "openWorldHint": true
       },
-      "description": "Record and compare the editor level (files under Saved/MCP/snapshots).\n- op=take: store `name` (default auto) — actors matched by object path, with class, tags, transform.\n- op=diff: `name` vs `against` (default: the level now) → added, removed, moved, retagged; under World Partition, actors in a cell that was not loaded are `unknown`, never removed.\n- op=list: stored snapshots.\n- op=digest: a quantized SHA1 over actor (scope=actors) or ISM/HISM instance transforms — verify a level hashes to an expected value. Does not store anything.\nUndo moves with snapshot_restore.",
+      "description": "Record and compare the editor level (Saved/MCP/snapshots).\n- take: store `name` (default auto): every actor's path, class, tags, transform.\n- diff: `name` vs `against` (default: now) → added, removed, moved, retagged (by object path); World Partition actors in unloaded cells are unknown, never removed.\n- list.\n- digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.\nUndo moves with snapshot_restore.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3229,7 +2352,7 @@
             "type": "string"
           },
           "limit": {
-            "description": "digest scope=instances: max instances hashed (default 5,000,000; a larger set fails rather than hashing part of it)",
+            "description": "digest instances: max hashed (default 5,000,000; more fails)",
             "type": "integer"
           },
           "mesh": {
@@ -3241,7 +2364,6 @@
             "type": "string"
           },
           "op": {
-            "description": "take | diff | list | digest",
             "enum": [
               "take",
               "diff",
@@ -3282,10 +2404,9 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "openWorldHint": true,
-        "title": "Restore a snapshot"
+        "openWorldHint": true
       },
-      "description": "Move every actor that still exists back to its transform in snapshot `name` (matched by object path; parents before attached children), as one undo step, then save. TRANSFORMS ONLY: actors spawned since are not deleted and deleted actors are not recreated — both are listed in not_restored {added, removed} (and, under World Partition, `unknown` for actors in cells that are not loaded). For those use scene_clear or git_revert.",
+      "description": "Move every actor that still exists back to its transform in snapshot `name` (by object path, parents first), as one undo step, then save. TRANSFORMS ONLY: spawned/deleted actors are listed in not_restored {added, removed, unknown (unloaded WP cells)}; for those use scene_clear or git_revert.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3295,10 +2416,7 @@
           },
           "save": {
             "description": "save the level afterwards (default true)",
-            "type": [
-              "null",
-              "boolean"
-            ]
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -3309,161 +2427,64 @@
     {
       "annotations": {
         "destructiveHint": false,
-        "openWorldHint": true
+        "idempotentHint": true,
+        "openWorldHint": false
       },
-      "description": "Run the style cohesion Layer-A deterministic audit (readonly) against captured frame paths.",
+      "description": "Optional tool groups and what each tool needs.\n- list: toolsets (core always on; daemon, headless, design, ui, desktop, polyworld) and their tools.\n- enable / disable `toolset` for this session.\n- describe `tool`: per op tier, async, needs (editor, pie, plugin, navmesh, project, engine). No `tool`: every enabled tool briefly, the cockpit status, the rollback ladder.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "frame_paths": {
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          }
-        },
-        "required": [
-          "frame_paths"
-        ],
-        "type": "object"
-      },
-      "name": "style_cohesion"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true
-      },
-      "description": "Type a literal Unicode string at the OS level into the focused control (KEYEVENTF_UNICODE — layout-independent). Use for search boxes, names, and paths; use key_press for shortcuts and navigation keys.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "text": {
-            "description": "the literal text to type as Unicode characters",
+          "op": {
+            "enum": [
+              "list",
+              "enable",
+              "disable",
+              "describe"
+            ],
+            "type": "string"
+          },
+          "tool": {
+            "description": "describe: one tool (default: every tool of the enabled toolsets, briefly)",
+            "type": "string"
+          },
+          "toolset": {
+            "description": "enable/disable: the toolset",
+            "enum": [
+              "core",
+              "daemon",
+              "headless",
+              "design",
+              "ui",
+              "desktop",
+              "polyworld"
+            ],
             "type": "string"
           }
         },
         "required": [
-          "text"
+          "op"
         ],
         "type": "object"
       },
-      "name": "type_text"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Run the verb response Layer-A deterministic audit (readonly) against an input burst and envelope.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "burst": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "aim": {
-                  "items": {
-                    "type": "number"
-                  },
-                  "maxItems": 2,
-                  "minItems": 2,
-                  "type": "array"
-                },
-                "input": {
-                  "type": "number"
-                },
-                "pos": {
-                  "items": {
-                    "type": "number"
-                  },
-                  "maxItems": 3,
-                  "minItems": 3,
-                  "type": "array"
-                },
-                "recoil": {
-                  "type": "number"
-                },
-                "t": {
-                  "type": "number"
-                },
-                "vel": {
-                  "items": {
-                    "type": "number"
-                  },
-                  "maxItems": 3,
-                  "minItems": 3,
-                  "type": "array"
-                }
-              },
-              "required": [
-                "t",
-                "input"
-              ],
-              "type": "object"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "envelope": {
-            "additionalProperties": false,
-            "properties": {
-              "max_rise_frames": {
-                "type": "integer"
-              },
-              "min_delta_mag": {
-                "type": "number"
-              },
-              "min_rise_frames": {
-                "type": "integer"
-              },
-              "name": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "name",
-              "min_rise_frames",
-              "max_rise_frames",
-              "min_delta_mag"
-            ],
-            "type": "object"
-          }
-        },
-        "required": [
-          "burst",
-          "envelope"
-        ],
-        "type": "object"
-      },
-      "name": "verb_response"
+      "name": "toolsets",
+      "title": "Toolsets and capabilities"
     },
     {
       "annotations": {
         "destructiveHint": false,
         "idempotentHint": true,
-        "openWorldHint": true,
-        "title": "Editor viewport"
+        "openWorldHint": true
       },
-      "description": "The editor viewport camera and selection (UI state; nothing is saved).\n- op=get: camera {location, rotation} + game_view.\n- op=set: location/rotation, pilot (actor) or eject, game_view.\n- op=focus: aim the camera at `actors` (default: the selection).\n- op=select: select `actors` (mode replace|add|remove|none), frame=true to focus them.\n- op=selection: the selected actors (label, path, class).\nConsole commands moved to the console tool.",
+      "description": "Editor viewport camera and selection (UI state, nothing saved).\n- get: camera + game_view.\n- set: location/rotation, pilot or eject, game_view.\n- focus: frame `actors` (default the selection).\n- select: `actors` (mode replace|add|remove|none), frame.\n- selection. Console commands: use console.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "actors": {
-            "description": "focus/select: actor labels or object paths (focus default: the current selection)",
+            "description": "focus/select: labels or object paths (focus default: selection)",
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "distance_scale": {
             "description": "focus: multiplier on the framing distance (default 2)",
@@ -3479,20 +2500,14 @@
           },
           "game_view": {
             "description": "set: Game View on/off (hides editor-only actors, like pressing G)",
-            "type": [
-              "null",
-              "boolean"
-            ]
+            "type": "boolean"
           },
           "location": {
             "description": "set: camera [x, y, z]",
             "items": {
               "type": "number"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "mode": {
             "description": "select: replace (default) | add | remove | none",
@@ -3505,7 +2520,6 @@
             "type": "string"
           },
           "op": {
-            "description": "get | set | focus | select | selection",
             "enum": [
               "get",
               "set",
@@ -3528,10 +2542,7 @@
             "items": {
               "type": "number"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           }
         },
         "required": [
@@ -3545,8 +2556,7 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "openWorldHint": true,
-        "title": "Author UMG widgets"
+        "openWorldHint": true
       },
       "description": "Author a WidgetBlueprint's tree declaratively (create the asset with asset_create kind=widget_blueprint).\n- op=compose: apply `tree` — add/update/reorder nodes, slots, props — then compile; never deletes. Re-composing the same tree is a no-op (same digest).\n- op=prune: like compose, but DELETES every node absent from `tree` and the names in `remove`.\n- op=compile: compile + save; returns the digest (and ends a deferred patch).\nCheck the result with widget_query op=tree / op=render.",
       "inputSchema": {
@@ -3569,7 +2579,6 @@
             "type": "string"
           },
           "op": {
-            "description": "compose | prune | compile",
             "enum": [
               "compose",
               "prune",
@@ -3582,10 +2591,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "tree": {
             "additionalProperties": true,
@@ -3606,10 +2612,9 @@
       "annotations": {
         "destructiveHint": false,
         "idempotentHint": true,
-        "openWorldHint": true,
-        "title": "Inspect UMG widgets"
+        "openWorldHint": true
       },
-      "description": "Inspect UMG widgets without PIE.\n- op=tree: a WidgetBlueprint's tree as JSON + digest (compare digests to verify an edit).\n- op=describe: the authorable palette (no class) or a class's editable props and slot type.\n- op=render: SEE a UserWidget class — offscreen PNG (needs the plugin's MCPAuthoring module; writes Saved/MCP/WidgetRenders).",
+      "description": "Inspect UMG widgets without PIE.\n- tree: a WidgetBlueprint's tree + digest.\n- describe: the palette, or one class's props and slot type.\n- render: a UserWidget class as a PNG (MCPAuthoring module).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3618,7 +2623,7 @@
             "type": "string"
           },
           "class": {
-            "description": "describe: a widget class (omit for the whole palette); render: the UserWidget class, e.g. /Script/MyGame.HudWidget or /Game/UI/WBP_HUD.WBP_HUD_C",
+            "description": "describe: a widget class (omit for the palette); render: the UserWidget class",
             "type": "string"
           },
           "height": {
@@ -3626,7 +2631,6 @@
             "type": "integer"
           },
           "op": {
-            "description": "tree | describe | render",
             "enum": [
               "tree",
               "describe",
@@ -3652,50 +2656,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Capture a specific on-screen window as a PNG — defaults to auto-detecting the Unreal Editor. Sees the FULL editor: menus, panels, the Content Browser, modal dialogs, the composited viewport with UI. method=print (default) works even when the window is backgrounded/occluded and does not steal focus; method=screen blits its on-screen rectangle. Returns the window's screen bounds so you can map image pixels to mouse_control coordinates.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "focus": {
-            "description": "bring the window to the foreground before capturing",
-            "type": "boolean"
-          },
-          "hwnd": {
-            "description": "target an exact window handle (from list_windows)",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "max_width": {
-            "description": "downscale to at most this width; default 1600, 0 = full resolution",
-            "type": [
-              "null",
-              "integer"
-            ]
-          },
-          "method": {
-            "description": "auto|print|screen. print (default) renders the window even when backgrounded/occluded and never steals focus; screen blits its on-screen rectangle (window must be visible)",
-            "type": "string"
-          },
-          "pid": {
-            "description": "target a specific process id instead of by title",
-            "type": "integer"
-          },
-          "title": {
-            "description": "window title substring (case-insensitive); omit to auto-detect the Unreal Editor",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "window_capture"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true,
-        "title": "Spatial queries"
-      },
-      "description": "Ask the world spatial questions (world=editor default, pie, or auto). Every result echoes the world.\n- op=line_trace / sphere_overlap: collision (line of sight, what is near a point).\n- op=nav_path / project_point: navigation (needs a built navmesh).\n- op=instances_count / instances_list: ISM/HISM instances — a whole city can live as instances inside ONE actor, invisible to actor_query.",
+      "description": "Spatial questions (world=editor default, pie, auto; results echo it).\n- line_trace / sphere_overlap: collision.\n- nav_path / project_point: navigation (built navmesh).\n- instances_count / instances_list: ISM/HISM instances, which actor_query cannot see.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3704,20 +2665,14 @@
             "items": {
               "type": "number"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "end": {
             "description": "line_trace/nav_path: [x, y, z]",
             "items": {
               "type": "number"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "limit": {
             "description": "instances_list: max instances (default 8192; truncated:true when cut)",
@@ -3728,7 +2683,6 @@
             "type": "string"
           },
           "op": {
-            "description": "line_trace | sphere_overlap | nav_path | project_point | instances_count | instances_list",
             "enum": [
               "line_trace",
               "sphere_overlap",
@@ -3744,10 +2698,7 @@
             "items": {
               "type": "number"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "radius": {
             "description": "sphere_overlap: radius (default 100)",
@@ -3758,10 +2709,7 @@
             "items": {
               "type": "number"
             },
-            "type": [
-              "null",
-              "array"
-            ]
+            "type": "array"
           },
           "tag": {
             "description": "instances_*: only ISM/HISM components with this component tag",

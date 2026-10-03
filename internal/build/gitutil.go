@@ -31,7 +31,9 @@ func Run(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
+		// git prints some failures (e.g. "nothing to commit") on stdout, and stderr may
+		// hold only warnings: report both.
+		msg := strings.TrimSpace(strings.TrimSpace(stderr.String()) + "\n" + strings.TrimSpace(stdout.String()))
 		if msg == "" {
 			msg = err.Error()
 		}

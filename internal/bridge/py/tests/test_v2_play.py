@@ -162,3 +162,13 @@ def test_restore_unloaded_is_unknown_and_parents_first(v2, ue):
     res = ok(v2, "snapshot_restore", {"actors": snap})
     assert seq == ["Parent", "Child"]
     assert res["not_restored"]["removed"] == [gone] and res["not_restored"]["unknown"] == [far]
+
+
+def test_polyworld_is_pie_only(v2, ue):
+    m = v2["_mcp2"]
+    seen = []
+    env = call(v2, "company_status", {})
+    assert not env["ok"] and env["code"] == "NOT_IN_PIE"  # v1 fell back to the EDITOR level
+    ue.pie_actors = []
+    wrapped = m._pie_only(lambda args: seen.append(args) or {"capital": 1})
+    assert wrapped({"world": "auto"}) == {"capital": 1} and seen == [{"world": "pie"}]

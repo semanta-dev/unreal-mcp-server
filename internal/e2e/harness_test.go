@@ -34,7 +34,9 @@ type harnessOpts struct {
 	noEditor bool                     // discovery targets a dead port: no editor answers
 	fake     func(*uexectest.Options) // fault-injection tweaks on the wire fake
 	cfg      func(*uexec.Config)
-	project  string         // Deps.ProjectDir (offline tools)
+	project  string // Deps.ProjectDir (offline tools)
+	native   bool   // dispatch op results over the native framed backend
+	client   *mcp.ClientOptions
 	toolsets []spec.Toolset // enabled at session start in addition to core
 }
 
@@ -94,6 +96,9 @@ func startHarness(t *testing.T, o harnessOpts) *harness {
 	t.Cleanup(func() { sess.Close() })
 
 	b := bridge.New(sess, bridge.Options{})
+	if o.native {
+		b.SetNative(h.emu)
+	}
 	h.bridge = b
 	deps := tools.Deps{Bridge: b, Jobs: jobs.NewRegistry(), ProjectDir: o.project}
 	srv := app.NewServer(app.Options{Deps: deps, Toolsets: o.toolsets}, nil).MCP
@@ -108,7 +113,7 @@ func startHarness(t *testing.T, o harnessOpts) *harness {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ss.Close() })
-	cs, err := mcp.NewClient(&mcp.Implementation{Name: "e2e-client", Version: "1"}, nil).Connect(ctx, clientT, nil)
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "e2e-client", Version: "1"}, o.client).Connect(ctx, clientT, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

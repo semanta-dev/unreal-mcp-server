@@ -171,10 +171,10 @@ func TestDaemonTwoSessionsTwoProjectsNoCrossTalk(t *testing.T) {
 	defer a.Close()
 	defer b.Close()
 	pa, pb := t.TempDir(), t.TempDir()
-	if out := callTool(t, a, "project_attach", map[string]any{"project": pa}); out["attached"] != true {
+	if out := callTool(t, a, "project", map[string]any{"op": "attach", "project": pa}); out["attached"] != true {
 		t.Fatalf("attach a: %v", out)
 	}
-	if out := callTool(t, b, "project_attach", map[string]any{"project": pb}); out["attached"] != true {
+	if out := callTool(t, b, "project", map[string]any{"op": "attach", "project": pb}); out["attached"] != true {
 		t.Fatalf("attach b: %v", out)
 	}
 	callTool(t, a, "actor_edit", map[string]any{"op": "spawn", "world": "editor", "class": "/Script/Engine.Actor", "label": "OnlyInA"})
@@ -190,7 +190,7 @@ func TestDaemonVanishedClientIsTornDown(t *testing.T) {
 	e := startDaemon(t, 300*time.Millisecond, nil)
 	cs, rt := e.connectKillable(t, nil)
 	proj := t.TempDir()
-	callTool(t, cs, "project_attach", map[string]any{"project": proj})
+	callTool(t, cs, "project", map[string]any{"op": "attach", "project": proj})
 	if leasedBy(e.dm, proj) == "" {
 		t.Fatal("expected a lease")
 	}
@@ -208,7 +208,7 @@ func TestDaemonSweeperEndsSessionWithHeldStream(t *testing.T) {
 	cs := e.connect(t, nil) // keeps its standalone SSE stream open
 	defer cs.Close()
 	proj := t.TempDir()
-	callTool(t, cs, "project_attach", map[string]any{"project": proj})
+	callTool(t, cs, "project", map[string]any{"op": "attach", "project": proj})
 	e.dm.SweepIdleSessions(0) // everything is idle relative to a zero TTL
 	waitFor(t, "sweeper-driven release", func() bool { return leasedBy(e.dm, proj) == "" })
 }
@@ -217,7 +217,7 @@ func TestDaemonVanishMidJobDrainsThenAdopts(t *testing.T) {
 	e := startDaemon(t, 200*time.Millisecond, nil)
 	cs, rt := e.connectKillable(t, nil)
 	proj := t.TempDir()
-	out := callTool(t, cs, "project_attach", map[string]any{"project": proj})
+	out := callTool(t, cs, "project", map[string]any{"op": "attach", "project": proj})
 	instance := out["instance"]
 
 	// A long project job (as build_compile would start) is running.
@@ -238,7 +238,7 @@ func TestDaemonVanishMidJobDrainsThenAdopts(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		alt = upper(proj)
 	}
-	out = callTool(t, cs2, "project_attach", map[string]any{"project": alt})
+	out = callTool(t, cs2, "project", map[string]any{"op": "attach", "project": alt})
 	if out["instance"] != instance {
 		t.Fatalf("expected adoption of %v, got %v", instance, out)
 	}
@@ -276,7 +276,7 @@ func TestDaemonAttachAppliesProjectToolsets(t *testing.T) {
 	}
 	proj := t.TempDir()
 	os.WriteFile(filepath.Join(proj, session.ProjectFileName), []byte(`{"toolsets":["design"]}`), 0o644)
-	out := callTool(t, cs, "project_attach", map[string]any{"project": proj})
+	out := callTool(t, cs, "project", map[string]any{"op": "attach", "project": proj})
 	if out["attached"] != true {
 		t.Fatalf("attach: %v", out)
 	}

@@ -221,14 +221,17 @@ func TestGitRevertProjectInASubdirectory(t *testing.T) {
 	gitRun(t, repo, "commit", "-q", "-m", "cp")
 	gitRun(t, repo, "tag", "-a", "umcp/cp/1", "-m", "cp")
 	write("Content/Maps/L_Arena.umap", "v2")
+	write("Content/BP/BP_Committed Since.uasset", "added")
+	gitRun(t, repo, "add", "-A")
+	gitRun(t, repo, "commit", "-q", "-m", "after the checkpoint")
 	write("Content/BP/BP_Ünïcode New.uasset", "new")
 
 	h := startHarness(t, harnessOpts{project: proj})
 	pk := &bridgetest.Packages{}
 	pk.Install(h.emu, h.world)
 	plan := structured(t, h.call(t, "git_revert", map[string]any{"to": "1", "dry_run": true}))
-	if plan["changes"] != 1.0 { // the untracked new asset is kept, not reverted
-		t.Fatalf("dry run = %v", plan)
+	if plan["changes"] != 2.0 || !strings.Contains(strings.Join(anyStrings(plan["untracked_kept"]), "|"), "BP_Ünïcode New.uasset") {
+		t.Fatalf("dry run = %v", plan) // the untracked asset is kept (one entry, spaces and all)
 	}
 	out := structured(t, h.call(t, "git_revert", map[string]any{"to": "1", "wait_s": 20}))
 	if out["state"] != "succeeded" || read(t, proj, "Content/Maps/L_Arena.umap") != "v1" {
@@ -236,6 +239,9 @@ func TestGitRevertProjectInASubdirectory(t *testing.T) {
 	}
 	if res := out["result"].(map[string]any); !strings.Contains(strings.Join(anyStrings(res["possibly_stale"]), ","), "/Game/Maps/L_Arena") {
 		t.Fatalf("package mapping lost for a nested project: %v", res)
+	}
+	if read(t, proj, "Content/BP/BP_Committed Since.uasset") != "<missing>" {
+		t.Fatal("a file committed after the checkpoint must be deleted")
 	}
 	if read(t, proj, "Content/BP/BP_Ünïcode New.uasset") != "new" {
 		t.Fatal("an untracked file must be kept")

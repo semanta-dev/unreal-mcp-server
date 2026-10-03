@@ -87,14 +87,6 @@ func montage(dir string, frames []captureFrame, cols int, drawLabels bool, markC
 	}, nil
 }
 
-func toVec3(s []float64) [3]float64 {
-	var v [3]float64
-	for i := 0; i < 3 && i < len(s); i++ {
-		v[i] = s[i]
-	}
-	return v
-}
-
 func orDefault(v, def float64) float64 {
 	if v == 0 {
 		return def

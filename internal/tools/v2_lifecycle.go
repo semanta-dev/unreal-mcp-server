@@ -129,8 +129,16 @@ func quitGracefully(ctx context.Context, c *spec.Call, pid int, progress func(st
 	if qerr != nil {
 		progress("quit_editor: " + qerr.Error() + " (expected while the editor exits)")
 	}
-	if waitExit(pid, gracefulQuitWait) {
+	exited, werr := waitExit(ctx, pid, gracefulQuitWait)
+	if werr != nil {
+		// Cancelled mid-shutdown: never escalate to a kill on a cancellation.
+		return false, envelope.New(envelope.Cancelled, "the shutdown was cancelled; the editor was not killed")
+	}
+	if exited {
 		return false, nil
+	}
+	if ctx.Err() != nil {
+		return false, envelope.New(envelope.Cancelled, "the shutdown was cancelled; the editor was not killed")
 	}
 	if st, perr := packagesState(ctx, c, nil); perr == nil && len(st.Dirty) > 0 {
 		return false, dirtyError(st.Dirty, "killing the editor that did not quit")
@@ -159,22 +167,26 @@ func closeEditorSafely(ctx context.Context, c *spec.Call, st *pkgState, progress
 		progress(fmt.Sprintf("discarding %d unsaved package(s) and killing the editor", len(st.Dirty)))
 	}
 	_ = killPID(st.PID)
-	waitExit(st.PID, 20*time.Second)
+	_, _ = waitExit(context.WithoutCancel(ctx), st.PID, 20*time.Second)
 	return rep, nil
 }
 
-func waitExit(pid int, d time.Duration) bool {
+// waitExit waits up to d for pid to exit. A cancelled ctx stops the wait (exited
+// false, ctx.Err()).
+func waitExit(ctx context.Context, pid int, d time.Duration) (bool, error) {
 	if pid <= 0 {
-		return true
+		return true, nil
 	}
 	deadline := time.Now().Add(d)
 	for pidAlive(pid) {
 		if time.Now().After(deadline) {
-			return false
+			return false, nil
 		}
-		time.Sleep(250 * time.Millisecond)
+		if err := sleepCtx(ctx, 250*time.Millisecond); err != nil {
+			return false, err
+		}
 	}
-	return true
+	return true, nil
 }
 
 // waitReady polls editor_ping until the (re)launched editor answers.
@@ -239,6 +251,8 @@ func restartWith(ctx context.Context, c *spec.Call, st *pkgState, step func(cont
 	if step != nil {
 		stepErr = step(ctx)
 	}
+	// The editor is down: bring it back even if the job was cancelled meanwhile.
+	up := context.WithoutCancel(ctx)
 	args := []string{"-nosplash"}
 	if reopen != "" {
 		args = append(args, reopen)
@@ -247,7 +261,7 @@ func restartWith(ctx context.Context, c *spec.Call, st *pkgState, step func(cont
 	if _, err := launchEditor(c.Deps.EngineDir, uproject, args...); err != nil {
 		return rep, errors.Join(stepErr, fmt.Errorf("relaunch: %w", err))
 	}
-	if err := waitReady(ctx, c, 300*time.Second, progress); err != nil {
+	if err := waitReady(up, c, 300*time.Second, progress); err != nil {
 		return rep, errors.Join(stepErr, err)
 	}
 	return rep, stepErr
@@ -266,24 +280,19 @@ type editorLifecycleIn struct {
 
 func editorLifecycleSpec() *spec.Spec {
 	ops := []spec.OpSpec{
-		{Name: "ensure_open", Summary: "launch the editor if none answers", Tier: spec.Mutating, Async: true, Rejects: []string{"save", "discard_dirty"}},
+		{Name: "ensure_open", Summary: "launch the editor if none answers", Tier: spec.Mutating, Async: true, Rejects: []string{"save", "discard_dirty"}, Needs: []string{"project", "engine"}},
 		{Name: "restart", Summary: "safe shutdown + relaunch on the same map", Tier: spec.Destructive, Async: true, Rejects: []string{"map"},
-			Reaches: []string{"packages_state", "pie_stop", "editor_ping", "quit_editor", "save_all"}},
+			Reaches: []string{"packages_state", "pie_stop", "editor_ping", "quit_editor", "save_all"}, Needs: []string{"project", "engine"}},
 		// Mutating, not Ephemeral: reclaiming takes the channel away from whichever client holds it.
 		{Name: "reclaim", Summary: "retake a command channel another client stole", Tier: spec.Mutating, Idempotent: true, Timeout: sync8,
 			Rejects: []string{"map", "save", "discard_dirty", "timeout_s", "wait_s"}, Reaches: []string{"editor_ping"}},
 	}
 	return &spec.Spec{
 		Name: "editor_lifecycle", Title: "Editor process", Toolset: spec.Core, Timeout: sync8, Max: sync28, Ops: ops,
-		Description: "Start, restart or reconnect the Unreal Editor.\n" +
-			"- op=ensure_open (job): launch the project's editor if none answers; waits until it does.\n" +
-			"- op=restart (job): SAFE shutdown — fails with PRECONDITION listing unsaved packages (save=true saves them " +
-			"first; discard_dirty=true throws them away), stops PIE, re-checks, quits gracefully (kill after 30 s, reported), " +
-			"relaunches on the same map. In daemon mode the session's lease is preserved.\n" +
-			"- op=reclaim: another tool took over the editor's command channel (EDITOR_BUSY / channel stolen); take it back.",
-		Schema:   spec.SchemaFor[editorLifecycleIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
-		Replaces: []string{"project_ensure_open", "editor_restart"},
-		Handler:  editorLifecycle,
+		Description: "Start, restart or reconnect the editor.\n- ensure_open (job): launch it if none answers.\n- restart (job): safe shutdown — PRECONDITION listing unsaved packages (save=true saves, discard_dirty=true drops them), stop PIE, graceful quit (kill after 30 s, reported), relaunch on the same map. Daemon: lease kept; other calls get RESTART_IN_PROGRESS meanwhile. Cancelling never escalates to a kill.\n- reclaim: retake a command channel another client took.",
+		Schema:      spec.SchemaFor[editorLifecycleIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
+		Replaces:    []string{"project_ensure_open", "editor_restart"},
+		Handler:     editorLifecycle,
 	}
 }
 
@@ -374,20 +383,17 @@ func ensureOpenV2(ctx context.Context, c *spec.Call, in editorLifecycleIn, progr
 // --- build -----------------------------------------------------------------------
 
 type buildIn struct {
-	Strategy string  `json:"strategy,omitempty" jsonschema:"auto (default: classify the git diff) | livecoding (hot-patch the running editor) | ubt (full Build.bat; closes and reopens the editor)"`
+	Strategy string  `json:"strategy,omitempty" jsonschema:"auto (default) | livecoding | ubt"`
 	WaitS    float64 `json:"wait_s,omitempty" jsonschema:"wait up to this many seconds (max 25) before returning the job"`
 }
 
 func buildSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "build", Title: "Compile C++", Toolset: spec.Core, Timeout: sync8,
-		Ops: []spec.OpSpec{{Tier: spec.Mutating, Async: true, Reaches: []string{"save_all", "packages_state", "pie_stop", "editor_ping", "quit_editor"}}},
-		Description: "Compile the project's C++ (async job; follow with job op=wait). strategy=auto picks from the git diff: " +
-			"header/reflection/new-file changes → ubt (saves, closes the editor safely, runs Build.bat, relaunches on the same " +
-			"map); body-only changes → livecoding (escalates to ubt when Live Coding cannot patch). Result: success, strategy, " +
-			"reason, structured diagnostics.",
-		Schema:   spec.SchemaFor[buildIn](map[string][]any{"strategy": {"auto", "livecoding", "ubt"}}),
-		Replaces: []string{"build_compile", "live_coding_compile"},
+		Ops:         []spec.OpSpec{{Tier: spec.Mutating, Async: true, Reaches: []string{"save_all", "packages_state", "pie_stop", "editor_ping", "quit_editor"}, Needs: []string{"project", "engine"}}},
+		Description: "Compile the project's C++ (async job). strategy=auto picks from the git diff: header/reflection/new files → ubt (save, safe editor shutdown, Build.bat, relaunch on the same map); body-only → livecoding (escalates to ubt if it cannot patch). Result: success, strategy, reason, diagnostics.",
+		Schema:      spec.SchemaFor[buildIn](map[string][]any{"strategy": {"auto", "livecoding", "ubt"}}),
+		Replaces:    []string{"build_compile", "live_coding_compile"},
 		Handler: func(_ context.Context, c *spec.Call) (*spec.Result, error) {
 			var in buildIn
 			if err := c.Decode(&in); err != nil {
@@ -517,7 +523,7 @@ func tailStr(s string) string {
 
 type gitRevertIn struct {
 	To           string  `json:"to" jsonschema:"a checkpoint: umcp/cp/<n> or just <n> (from git op=checkpoint / op=log)"`
-	DiscardDirty bool    `json:"discard_dirty,omitempty" jsonschema:"when reverted assets are open in the editor: THROW AWAY unsaved packages instead of failing with PRECONDITION"`
+	DiscardDirty bool    `json:"discard_dirty,omitempty" jsonschema:"if the editor must close: THROW AWAY unsaved packages instead of PRECONDITION"`
 	DryRun       bool    `json:"dry_run,omitempty" jsonschema:"report what would change (files, editor restart) without doing it"`
 	WaitS        float64 `json:"wait_s,omitempty" jsonschema:"wait up to this many seconds (max 25) before returning the job"`
 }
@@ -525,18 +531,11 @@ type gitRevertIn struct {
 func gitRevertSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "git_revert", Title: "Revert to a checkpoint", Toolset: spec.Core, Timeout: sync20, Max: sync28,
-		Ops: []spec.OpSpec{{Tier: spec.Destructive, Async: true, Required: []string{"to"}, Reaches: []string{"packages_state", "pie_stop", "editor_ping", "quit_editor"}}},
-		Description: "Put the project's files back exactly as they were at a git op=checkpoint (umcp/cp/<n> only; anything " +
-			"else is PRECONDITION). Files changed since are restored, files added since are deleted, untracked files are kept " +
-			"(listed). History is not rewritten: HEAD stays where it is, so the revert shows as working-tree changes (commit " +
-			"them, e.g. with git op=checkpoint, to keep them). Editor-aware: if the editor has any of those assets loaded, it is closed safely first (PRECONDITION " +
-			"listing unsaved packages unless discard_dirty=true) and relaunched on the same map after; otherwise it stays up " +
-			"and those assets are reported possibly_stale. All-or-nothing: the previous files are backed up under " +
-			"Saved/MCP/revert-backup and restored on failure. Result: reverted_files, deleted_files, editor_restarted, " +
-			"discarded_dirty, possibly_stale, rebuild_required (C++ changed: run build).",
-		Schema:   spec.SchemaFor[gitRevertIn](nil, "to"),
-		Replaces: []string{"git_revert_to"},
-		Handler:  gitRevert,
+		Ops:         []spec.OpSpec{{Tier: spec.Destructive, Async: true, Required: []string{"to"}, Reaches: []string{"packages_state", "pie_stop", "editor_ping", "quit_editor"}, Needs: []string{"project"}}},
+		Description: "Restore the project's files to a git op=checkpoint (umcp/cp/<n> only, else PRECONDITION): changed files are restored, files added since are deleted, untracked files are kept. History is not rewritten (the revert shows as working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing via a backup in Saved/MCP/revert-backup. rebuild_required means C++ changed: run build.",
+		Schema:      spec.SchemaFor[gitRevertIn](nil, "to"),
+		Replaces:    []string{"git_revert_to"},
+		Handler:     gitRevert,
 	}
 }
 
@@ -600,7 +599,12 @@ func gitRevert(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		}
 	}
 	untrackedOut, _ := build.Run(ctx, dir, append([]string{"ls-files", "-z", "--others", "--exclude-standard", "--", "."}, gitExcludes...)...)
-	untracked := strings.Join(strings.Split(strings.TrimRight(untrackedOut, "\x00"), "\x00"), " ")
+	untracked := []string{}
+	for _, u := range strings.Split(strings.TrimRight(untrackedOut, "\x00"), "\x00") {
+		if u != "" {
+			untracked = append(untracked, filepath.FromSlash(u))
+		}
+	}
 	var pkgs []string
 	rebuild := false
 	for _, ch := range changes {
@@ -613,7 +617,7 @@ func gitRevert(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		}
 	}
 	plan := map[string]any{"checkpoint": tag, "changes": len(changes), "rebuild_required": rebuild,
-		"untracked_kept": strings.Fields(untracked)}
+		"untracked_kept": untracked}
 	deletedPkgs := map[string]bool{} // packages the revert removes (added since the checkpoint)
 	for _, ch := range changes {
 		if pkg, ok := contentPackage(ch.Path); ok && ch.Status == "A" {

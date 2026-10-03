@@ -36,7 +36,7 @@ func v2Bridge(c *spec.Call) (*bridge.Bridge, error) {
 	}
 	e := envelope.New(envelope.Precondition, "no editor is bound to this session")
 	if c.Deps.Projects != nil {
-		return nil, e.WithHint("call project_attach with the project directory first")
+		return nil, e.WithHint("call project with op=attach and the project directory first")
 	}
 	return nil, e.WithHint("start the Unreal Editor with the project open (remote execution enabled)")
 }
@@ -94,14 +94,6 @@ func pick(args map[string]any, keys ...string) map[string]any {
 	return out
 }
 
-// v2Specs is every v2 tool (grows cluster by cluster until the v1 adapter is gone).
-func v2Specs() []*spec.Spec {
-	specs := append(coreSpecs(), assetSpecs()...)
-	specs = append(specs, playSpecs()...)
-	specs = append(specs, opsSpecs()...)
-	return append(specs, lifecycleSpecs()...)
-}
-
 func coreSpecs() []*spec.Spec {
 	return []*spec.Spec{editorSpec(), pythonSpec(), consoleSpec(), levelSpec(),
 		actorQuerySpec(), actorEditSpec(), actorCallSpec()}
@@ -112,7 +104,7 @@ func coreSpecs() []*spec.Spec {
 type editorIn struct {
 	Op            string `json:"op" jsonschema:"status | ping | health"`
 	ExpectVersion int    `json:"expect_version,omitempty" jsonschema:"health: fail if the companion version is below this (catches a stale module)"`
-	Since         string `json:"since,omitempty" jsonschema:"health: RFC3339 time; crashes at or after it count (default: the last 10 minutes)"`
+	Since         string `json:"since,omitempty" jsonschema:"health: RFC3339; count crashes since (default 10 min ago)"`
 }
 
 func editorSpec() *spec.Spec {
@@ -204,11 +196,9 @@ func pythonSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "python", Title: "Run Python in the editor", Toolset: spec.Core, Max: sync28, Ops: ops,
-		Description: "Run Python inside the Unreal Editor (arbitrary code: gated when approval is required).\n" +
-			"- op=run: execute `code` and return its captured output; evaluate=true returns one expression's value.\n" +
-			"- op=recipe: run a level-recipe file at `path`; clean_slate=true first destroys every actor except WorldSettings; save defaults true.",
-		Schema:   spec.SchemaFor[pythonIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
-		Replaces: []string{"execute_python", "apply_level_recipe"},
+		Description: "Run Python in the editor (arbitrary code).\n- run: `code` → captured output; evaluate=true → one expression's value.\n- recipe: run the level-recipe file `path`; clean_slate=true FIRST destroys every actor except WorldSettings; save defaults true.",
+		Schema:      spec.SchemaFor[pythonIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
+		Replaces:    []string{"execute_python", "apply_level_recipe"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			var in pythonIn
 			if err := c.Decode(&in); err != nil {
@@ -263,13 +253,10 @@ type consoleIn struct {
 func consoleSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "console", Title: "Console command", Toolset: spec.Core, Timeout: sync15, Max: sync28,
-		Ops: []spec.OpSpec{{Tier: spec.Exec, Reaches: []string{"console"}}},
-		Description: "Run an Unreal console command. world=editor (default) runs it in the editor context " +
-			"(viewport/show/stat commands); world=pie routes it through the player controller so cheat/exec " +
-			"commands like 'slomo' apply to the running game. Returns every line the command printed as " +
-			"`output` (e.g. a CVar's current value) and its warnings/errors as `editor_log`.",
-		Schema:   spec.SchemaFor[consoleIn](map[string][]any{"world": {"editor", "pie"}}, "command"),
-		Replaces: []string{"execute_console_command"},
+		Ops:         []spec.OpSpec{{Tier: spec.Exec, Reaches: []string{"console"}}},
+		Description: "Run an Unreal console command. world=editor (default): editor context (viewport/show/stat); world=pie: the player controller (cheats like slomo). Returns every printed line as `output` and warnings/errors as editor_log.",
+		Schema:      spec.SchemaFor[consoleIn](map[string][]any{"world": {"editor", "pie"}}, "command"),
+		Replaces:    []string{"execute_console_command"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			var in consoleIn
 			if err := c.Decode(&in); err != nil {
@@ -301,7 +288,7 @@ func consoleSpec() *spec.Spec {
 type levelIn struct {
 	Op    string `json:"op" jsonschema:"open | save_all | set_world_gamemode"`
 	Level string `json:"level,omitempty" jsonschema:"open: level asset path, e.g. /Game/Maps/L_Arena"`
-	Class string `json:"class,omitempty" jsonschema:"set_world_gamemode: GameMode class (/Script path, /Game Blueprint path, or short name)"`
+	Class string `json:"class,omitempty" jsonschema:"set_world_gamemode: the GameMode class"`
 }
 
 func levelSpec() *spec.Spec {
@@ -350,7 +337,7 @@ type actorQueryIn struct {
 	World      string         `json:"world,omitempty" jsonschema:"editor (default) | pie | auto (PIE when running)"`
 	Actor      string         `json:"actor,omitempty" jsonschema:"get: a label, an object path, @gamestate or @pawn"`
 	Filter     string         `json:"filter,omitempty" jsonschema:"list/find: case-insensitive substring of label or class"`
-	Class      string         `json:"class,omitempty" jsonschema:"list/find: only actors of this class (/Script path, /Game Blueprint path, or short name)"`
+	Class      string         `json:"class,omitempty" jsonschema:"list/find: only this class and its subclasses"`
 	Where      map[string]any `json:"where,omitempty" jsonschema:"find: property -> value equality filter on reflected properties"`
 	Properties []string       `json:"properties,omitempty" jsonschema:"list/find: reflected properties to include per actor"`
 	Limit      int            `json:"limit,omitempty" jsonschema:"max actors returned (default 200; count is always the full total)"`
@@ -364,12 +351,7 @@ func actorQuerySpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "actor_query", Title: "Find actors", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
-		Description: "Read actors in the editor level (world=editor, default) or the running game (world=pie). " +
-			"Every result echoes the world it read.\n" +
-			"- op=list: label/path/class/location of each actor (filter, class to narrow).\n" +
-			"- op=get: one actor (`actor` = label, object path, @gamestate or @pawn) with transform, tags, components. " +
-			"A label shared by several actors is a CONFLICT listing their paths.\n" +
-			"- op=find: like list, plus `where` {prop: value} filtering and `properties` to include.",
+		Description: "Read actors in the editor level (world=editor, default), the running game (pie) or auto. Results echo the world.\n- list: label/path/class/location (filter, class).\n- get: one `actor` (label, object path, @gamestate, @pawn) with transform, tags, components; a shared label is a CONFLICT.\n- find: list + `where` {prop: value} and `properties`.",
 		Schema: spec.SchemaFor[actorQueryIn](map[string][]any{
 			"op": spec.OpEnum(ops...), "world": {"editor", "pie", "auto"}}, "op"),
 		Replaces: []string{"list_actors", "get_actor", "find_actors"},
@@ -411,10 +393,7 @@ func actorEditSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "actor_edit", Title: "Edit actors", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
-		Description: "Change actors. `world` is REQUIRED (editor = the saved level, pie = the running game, gone when PIE stops).\n" +
-			"| op | editor | pie |\n|---|---|---|\n" +
-			"| spawn | yes | UNSUPPORTED |\n| delete | yes (destructive) | yes |\n| transform | yes | yes |\n| set_properties | yes | yes |\n" +
-			"`actor` = label, object path, @gamestate or @pawn; a shared label is a CONFLICT.",
+		Description: "Change actors. `world` is REQUIRED: editor (the saved level) or pie (the running game, discarded on stop).\nspawn: editor only. delete, transform, set_properties: both worlds; editor edits are one undo step.\n`actor` = label, object path, @gamestate, @pawn; a shared label is a CONFLICT.",
 		Schema: spec.SchemaFor[actorEditIn](map[string][]any{
 			"op": spec.OpEnum(ops...), "world": {"editor", "pie"}}, "op", "world"),
 		Replaces: []string{"spawn_actor", "delete_actor", "set_actor_transform", "pie_set_property", "pie_destroy"},
@@ -437,7 +416,7 @@ type actorCallIn struct {
 	Function  string         `json:"function" jsonschema:"the UFUNCTION name to call"`
 	Args      map[string]any `json:"args,omitempty" jsonschema:"parameter name -> value"`
 	World     string         `json:"world,omitempty" jsonschema:"pie (default). editor is UNSUPPORTED in v2.0"`
-	Until     string         `json:"until,omitempty" jsonschema:"poll: call repeatedly until this predicate over {result} holds, e.g. 'result >= 3'. The function RE-RUNS every poll: use side-effect-free getters only"`
+	Until     string         `json:"until,omitempty" jsonschema:"poll until this predicate over {result} holds, e.g. 'result >= 3'; the function RE-RUNS each poll"`
 	TimeoutS  float64        `json:"timeout_s,omitempty" jsonschema:"until: give up after this many seconds (default 20, max 27)"`
 	IntervalS float64        `json:"interval_s,omitempty" jsonschema:"until: seconds between polls (default 0.25)"`
 }
@@ -445,7 +424,7 @@ type actorCallIn struct {
 func actorCallSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "actor_call", Title: "Call a UFUNCTION", Toolset: spec.Core, Timeout: sync28, Max: sync28,
-		Ops: []spec.OpSpec{{Tier: spec.Exec, Required: []string{"actor", "function"}, Reaches: []string{"actor_call"}}},
+		Ops: []spec.OpSpec{{Tier: spec.Exec, Required: []string{"actor", "function"}, Reaches: []string{"actor_call"}, Needs: []string{"pie"}}},
 		Description: "Call a UFUNCTION on an actor in the running game (PIE) and return its result. With `until`, " +
 			"poll the function until a predicate over {result} holds → {met, result, elapsed_s, calls}; met=false " +
 			"on timeout is a normal outcome, not an error. The function runs again on every poll.",

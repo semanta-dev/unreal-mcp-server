@@ -1,11 +1,8 @@
 package tools
 
 import (
-	"errors"
 	"strings"
 )
-
-var errNoProject = errors.New("no project dir configured (set -project / UMCP_PROJECT_DIR)")
 
 // Never stage these generated/machine-local trees in a checkpoint.
 var gitExcludes = []string{":(exclude)Saved", ":(exclude)Intermediate", ":(exclude)DerivedDataCache"}

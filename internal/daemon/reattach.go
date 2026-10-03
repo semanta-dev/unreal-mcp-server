@@ -14,7 +14,7 @@ type ReattachSummary struct {
 	Stale      int
 }
 
-// ReconcileAtStartup is the §6 boot barrier — call it BEFORE serving project_attach.
+// ReconcileAtStartup is the §6 boot barrier — call it BEFORE serving project op=attach.
 func (dm *Daemon) ReconcileAtStartup() ReattachSummary {
 	return dm.reconcileRecords(
 		dm.records.Read(),

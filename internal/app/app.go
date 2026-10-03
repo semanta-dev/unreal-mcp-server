@@ -31,7 +31,7 @@ type Options struct {
 	Resolver session.Resolver
 	// Toolsets are enabled at session start in addition to core.
 	Toolsets []spec.Toolset
-	// DaemonMode enables the daemon toolset (project_attach/release/list).
+	// DaemonMode enables the daemon toolset (the project tool).
 	DaemonMode bool
 	// Gate is the approval policy (nil = off).
 	Gate spec.Gate

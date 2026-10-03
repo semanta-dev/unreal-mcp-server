@@ -56,7 +56,7 @@ type pieIn struct {
 	Op        string  `json:"op" jsonschema:"start | stop | input"`
 	Simulate  bool    `json:"simulate,omitempty" jsonschema:"start: Simulate In Editor (the world runs, no player is possessed)"`
 	Wait      *bool   `json:"wait,omitempty" jsonschema:"start/stop: wait until PIE is actually running/stopped (default true)"`
-	Key       string  `json:"key,omitempty" jsonschema:"input: UE key name — W, A, S, D, SpaceBar, LeftMouseButton, Gamepad_FaceButton_Bottom, ..."`
+	Key       string  `json:"key,omitempty" jsonschema:"input: UE key name, e.g. W, SpaceBar, LeftMouseButton"`
 	Action    string  `json:"action,omitempty" jsonschema:"input: tap (default) | press | release | hold | release_all"`
 	DurationS float64 `json:"duration_s,omitempty" jsonschema:"input action=hold: seconds (default 1)"`
 }
@@ -65,14 +65,11 @@ func pieSpec() *spec.Spec {
 	ops := []spec.OpSpec{
 		{Name: "start", Summary: "start Play In Editor (or Simulate)", Tier: spec.Ephemeral, Idempotent: true, Rejects: []string{"key", "action", "duration_s"}, Reaches: []string{"pie_start", "editor_ping"}},
 		{Name: "stop", Summary: "stop PIE (game-world changes are discarded)", Tier: spec.Ephemeral, Idempotent: true, Rejects: []string{"simulate", "key", "action", "duration_s"}, Reaches: []string{"pie_stop", "editor_ping"}},
-		{Name: "input", Summary: "inject a key/button into the running game", Tier: spec.Ephemeral, Required: []string{"key"}, Rejects: []string{"simulate", "wait"}, Reaches: []string{"pie_input"}},
+		{Name: "input", Summary: "inject a key/button into the running game", Tier: spec.Ephemeral, Required: []string{"key"}, Rejects: []string{"simulate", "wait"}, Reaches: []string{"pie_input"}, Needs: []string{"pie", "plugin"}},
 	}
 	return &spec.Spec{
 		Name: "pie", Title: "Play In Editor", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
-		Description: "Run the game inside the editor and drive it.\n" +
-			"- op=start: begin PIE (simulate=true: no possessed player); waits until it is running.\n" +
-			"- op=stop: end PIE; waits until it has stopped. Everything changed in the pie world is discarded.\n" +
-			"- op=input: tap/press/release/hold `key` as if a player did (needs the UnrealMCP plugin), e.g. hold W to walk.",
+		Description: "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop; everything changed in the pie world is discarded.\n- input: tap/press/release/hold `key` like a player (UnrealMCP plugin).",
 		Schema: spec.SchemaFor[pieIn](map[string][]any{"op": spec.OpEnum(ops...),
 			"action": {"tap", "press", "release", "hold", "release_all"}}, "op"),
 		Replaces: []string{"start_play", "stop_play", "pie_input"},
@@ -148,7 +145,7 @@ type pieObserveIn struct {
 func pieObserveSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "pie_observe", Title: "Observe the running game", Toolset: spec.Core, Timeout: sync15, Max: sync28,
-		Ops: []spec.OpSpec{{Tier: spec.ReadOnly, Idempotent: true, Reaches: []string{"pie_observe"}}},
+		Ops: []spec.OpSpec{{Tier: spec.ReadOnly, Idempotent: true, Reaches: []string{"pie_observe"}, Needs: []string{"pie"}}},
 		Description: "Read the running game (PIE): gamestate properties (discovered by reflection), a class histogram " +
 			"`counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. " +
 			"The output schema is what pie_wait predicates address (gamestate.<prop>, counts.<Class>, pawn.speed).",
@@ -172,7 +169,7 @@ func pieObserveSpec() *spec.Spec {
 }
 
 type pieWaitIn struct {
-	Predicate  string   `json:"predicate" jsonschema:"one comparison over pie_observe output, e.g. 'gamestate.wave_number >= 2', 'counts.EnemyCharacter >= 1', 'pawn.speed > 100'"`
+	Predicate  string   `json:"predicate" jsonschema:"one comparison over pie_observe output, e.g. 'gamestate.wave >= 2', 'counts.Enemy >= 1', 'pawn.speed > 100'"`
 	TimeoutS   float64  `json:"timeout_s,omitempty" jsonschema:"give up after this many seconds (default 20, max 28)"`
 	IntervalS  float64  `json:"interval_s,omitempty" jsonschema:"seconds between observations (default 0.25)"`
 	Properties []string `json:"properties,omitempty" jsonschema:"pin exact gamestate property names so the predicate can use them verbatim"`
@@ -270,23 +267,24 @@ func worldQuerySpec() *spec.Spec {
 	q := func(name, summary, py string, req ...string) spec.OpSpec {
 		return spec.OpSpec{Name: name, Summary: summary, Tier: spec.ReadOnly, Idempotent: true, Required: req, Reaches: []string{py}}
 	}
+	navq := func(name, summary, py string, req ...string) spec.OpSpec {
+		o := q(name, summary, py, req...)
+		o.Needs = []string{"navmesh"}
+		return o
+	}
 	ops := []spec.OpSpec{
 		q("line_trace", "is the line from start to end blocked, and by what", "world_query", "start", "end"),
 		q("sphere_overlap", "actors overlapping a sphere", "world_query", "center"),
-		q("nav_path", "can the AI walk from start to end", "world_query", "start", "end"),
-		q("project_point", "is the point on the navmesh", "world_query", "point"),
+		navq("nav_path", "can the AI walk from start to end", "world_query", "start", "end"),
+		navq("project_point", "is the point on the navmesh", "world_query", "point"),
 		q("instances_count", "ISM/HISM instance counts by mesh", "instances_count"),
 		q("instances_list", "ISM/HISM instance transforms", "instances_list"),
 	}
 	return &spec.Spec{
 		Name: "world_query", Title: "Spatial queries", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
-		Description: "Ask the world spatial questions (world=editor default, pie, or auto). Every result echoes the world.\n" +
-			"- op=line_trace / sphere_overlap: collision (line of sight, what is near a point).\n" +
-			"- op=nav_path / project_point: navigation (needs a built navmesh).\n" +
-			"- op=instances_count / instances_list: ISM/HISM instances — a whole city can live as instances inside ONE actor, " +
-			"invisible to actor_query.",
-		Schema:   spec.SchemaFor[worldQueryIn](map[string][]any{"op": spec.OpEnum(ops...), "world": {"editor", "pie", "auto"}}, "op"),
-		Replaces: []string{"world_query", "instances_count", "instances_list"},
+		Description: "Spatial questions (world=editor default, pie, auto; results echo it).\n- line_trace / sphere_overlap: collision.\n- nav_path / project_point: navigation (built navmesh).\n- instances_count / instances_list: ISM/HISM instances, which actor_query cannot see.",
+		Schema:      spec.SchemaFor[worldQueryIn](map[string][]any{"op": spec.OpEnum(ops...), "world": {"editor", "pie", "auto"}}, "op"),
+		Replaces:    []string{"world_query", "instances_count", "instances_list"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			world, _ := c.Args["world"].(string)
 			world = orStr(world, "editor")
@@ -324,29 +322,22 @@ type snapshotIn struct {
 	Mesh        string  `json:"mesh,omitempty" jsonschema:"digest scope=instances: mesh path substring filter"`
 	PosBucket   float64 `json:"pos_bucket,omitempty" jsonschema:"digest: position quantization in world units (default 1)"`
 	RotBucket   float64 `json:"rot_bucket,omitempty" jsonschema:"digest: rotation quantization in degrees (default 1)"`
-	Limit       int     `json:"limit,omitempty" jsonschema:"digest scope=instances: max instances hashed (default 5,000,000; a larger set fails rather than hashing part of it)"`
+	Limit       int     `json:"limit,omitempty" jsonschema:"digest instances: max hashed (default 5,000,000; more fails)"`
 }
 
 func snapshotSpec() *spec.Spec {
 	ops := []spec.OpSpec{
-		{Name: "take", Summary: "record every actor's path, class, tags and transform", Tier: spec.Ephemeral, Idempotent: true, Reaches: []string{"snapshot_actors"}},
-		{Name: "diff", Summary: "added / removed / moved / retagged between two snapshots (or now)", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"name"}, Reaches: []string{"snapshot_actors"}},
-		{Name: "list", Summary: "stored snapshots", Tier: spec.ReadOnly, Idempotent: true},
+		{Name: "take", Summary: "record every actor's path, class, tags and transform", Tier: spec.Ephemeral, Idempotent: true, Reaches: []string{"snapshot_actors"}, Needs: []string{"project"}},
+		{Name: "diff", Summary: "added / removed / moved / retagged between two snapshots (or now)", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"name"}, Reaches: []string{"snapshot_actors"}, Needs: []string{"project"}},
+		{Name: "list", Summary: "stored snapshots", Tier: spec.ReadOnly, Idempotent: true, Needs: []string{"project"}},
 		{Name: "digest", Summary: "deterministic hash of actor or instance transforms", Tier: spec.ReadOnly, Idempotent: true, Reaches: []string{"snapshot_actors", "instances_list"}},
 	}
 	return &spec.Spec{
 		Name: "snapshot", Title: "Level snapshots", Toolset: spec.Core, Timeout: sync25, Max: sync28, Ops: ops,
-		Description: "Record and compare the editor level (files under Saved/MCP/snapshots).\n" +
-			"- op=take: store `name` (default auto) — actors matched by object path, with class, tags, transform.\n" +
-			"- op=diff: `name` vs `against` (default: the level now) → added, removed, moved, retagged; under World " +
-			"Partition, actors in a cell that was not loaded are `unknown`, never removed.\n" +
-			"- op=list: stored snapshots.\n" +
-			"- op=digest: a quantized SHA1 over actor (scope=actors) or ISM/HISM instance transforms — verify a level hashes " +
-			"to an expected value. Does not store anything.\n" +
-			"Undo moves with snapshot_restore.",
-		Schema:   spec.SchemaFor[snapshotIn](map[string][]any{"op": spec.OpEnum(ops...), "scope": {"instances", "actors"}}, "op"),
-		Replaces: []string{"level_snapshot", "level_diff", "scene_snapshot", "scene_digest"},
-		Handler:  snapshotHandler,
+		Description: "Record and compare the editor level (Saved/MCP/snapshots).\n- take: store `name` (default auto): every actor's path, class, tags, transform.\n- diff: `name` vs `against` (default: now) → added, removed, moved, retagged (by object path); World Partition actors in unloaded cells are unknown, never removed.\n- list.\n- digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.\nUndo moves with snapshot_restore.",
+		Schema:      spec.SchemaFor[snapshotIn](map[string][]any{"op": spec.OpEnum(ops...), "scope": {"instances", "actors"}}, "op"),
+		Replaces:    []string{"level_snapshot", "level_diff", "scene_snapshot", "scene_digest"},
+		Handler:     snapshotHandler,
 	}
 }
 
@@ -509,13 +500,10 @@ type snapshotRestoreIn struct {
 func snapshotRestoreSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "snapshot_restore", Title: "Restore a snapshot", Toolset: spec.Core, Timeout: sync25, Max: sync28,
-		Ops: []spec.OpSpec{{Tier: spec.Destructive, Idempotent: true, Reaches: []string{"snapshot_restore"}}},
-		Description: "Move every actor that still exists back to its transform in snapshot `name` (matched by object path; " +
-			"parents before attached children), as one undo step, then save. TRANSFORMS ONLY: actors spawned since are not " +
-			"deleted and deleted actors are not recreated — both are listed in not_restored {added, removed} (and, under " +
-			"World Partition, `unknown` for actors in cells that are not loaded). For those use scene_clear or git_revert.",
-		Schema:   spec.SchemaFor[snapshotRestoreIn](nil),
-		Replaces: []string{"scene_restore"},
+		Ops:         []spec.OpSpec{{Tier: spec.Destructive, Idempotent: true, Reaches: []string{"snapshot_restore"}, Needs: []string{"project"}}},
+		Description: "Move every actor that still exists back to its transform in snapshot `name` (by object path, parents first), as one undo step, then save. TRANSFORMS ONLY: spawned/deleted actors are listed in not_restored {added, removed, unknown (unloaded WP cells)}; for those use scene_clear or git_revert.",
+		Schema:      spec.SchemaFor[snapshotRestoreIn](nil),
+		Replaces:    []string{"scene_restore"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			var in snapshotRestoreIn
 			if err := c.Decode(&in); err != nil {
@@ -567,19 +555,15 @@ type screenshotIn struct {
 func screenshotSpec() *spec.Spec {
 	ops := []spec.OpSpec{
 		{Name: "viewport", Summary: "render the editor world from the viewport (or a given) camera", Tier: spec.Ephemeral, Idempotent: true, Reaches: []string{"take_screenshot"}},
-		{Name: "pie", Summary: "the running game's screen (HighResShot)", Tier: spec.Ephemeral, Idempotent: true, Reaches: []string{"pie_screenshot"}},
+		{Name: "pie", Summary: "the running game's screen (HighResShot)", Tier: spec.Ephemeral, Idempotent: true, Reaches: []string{"pie_screenshot"}, Needs: []string{"pie"}},
 		{Name: "orbit", Summary: "N angles around a target as one contact sheet", Tier: spec.Ephemeral, Idempotent: true, Reaches: []string{"scene_bounds", "capture_poses"}},
 	}
 	return &spec.Spec{
 		Name: "screenshot", Title: "Screenshot", Toolset: spec.Core, Timeout: sync25, Max: sync28, Ops: ops,
-		Description: "Look at the world; returns PNG image content.\n" +
-			"- op=viewport: the editor world via a scene capture (works with the editor in the background).\n" +
-			"- op=pie: the running game's rendered screen (needs a visible game viewport).\n" +
-			"- op=orbit: `actors` (or the level) from num_angles angles in one contact sheet — a quick all-sides check.\n" +
-			"Transient capture actors may dirty the level; the result lists any map they dirtied.",
-		Schema:   spec.SchemaFor[screenshotIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
-		Replaces: []string{"take_screenshot", "pie_screenshot", "scene_contact_sheet"},
-		Handler:  screenshot,
+		Description: "Look at the world (PNG).\n- viewport: the editor world via a scene capture (works backgrounded).\n- pie: the running game's screen (needs a visible viewport).\n- orbit: `actors` (or the level) from num_angles angles in one sheet.\nResults list any map the capture actors dirtied.",
+		Schema:      spec.SchemaFor[screenshotIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
+		Replaces:    []string{"take_screenshot", "pie_screenshot", "scene_contact_sheet"},
+		Handler:     screenshot,
 	}
 }
 
@@ -710,7 +694,7 @@ type captureIn struct {
 	Op          string    `json:"op" jsonschema:"start | status | stop | read | clear"`
 	Session     string    `json:"session,omitempty" jsonschema:"start: a session id (default generated); status/stop/read/clear: the session"`
 	World       string    `json:"world,omitempty" jsonschema:"start: editor (default) | pie"`
-	Source      string    `json:"source,omitempty" jsonschema:"start: scene_capture (default; editor/simulate, works backgrounded) | pie_highres (possessed PIE, needs a visible viewport) | game_scene (live PIE via the UnrealMCP plugin, works backgrounded)"`
+	Source      string    `json:"source,omitempty" jsonschema:"start: scene_capture (default; editor) | pie_highres (possessed PIE) | game_scene (PIE, plugin)"`
 	IntervalS   float64   `json:"interval_s,omitempty" jsonschema:"start: seconds between frames (default 0.25)"`
 	CellWidth   int       `json:"cell_width,omitempty" jsonschema:"start: frame width (default 480)"`
 	CellHeight  int       `json:"cell_height,omitempty" jsonschema:"start: frame height (default 270)"`
@@ -745,12 +729,7 @@ func captureSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "capture", Title: "Record frames", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
-		Description: "Film the world: an in-editor recorder saves a frame + observed state every interval_s with no per-frame " +
-			"round trip.\n" +
-			"- op=start → session.  - op=status: frames so far.\n" +
-			"- op=stop: ONE contact-sheet image + a timeline (per-frame world time, state, cell).\n" +
-			"- op=read: a contact sheet of a past session or a `path` of frames.\n" +
-			"- op=clear: delete one session's files, or all=true for every MCP capture (Saved/MCP/capture only).",
+		Description: "Film the world: an in-editor recorder saves a frame + state every interval_s.\n- start → session.\n- status.\n- stop: ONE contact sheet + a timeline (world time, state, cell).\n- read: a past session or a `path` of frames.\n- clear: a session, or all=true (Saved/MCP/capture only).",
 		Schema: spec.SchemaFor[captureIn](map[string][]any{"op": spec.OpEnum(ops...), "world": {"editor", "pie"},
 			"source": {"scene_capture", "pie_highres", "game_scene"}, "camera_mode": {"viewport", "fixed", "actor"}}, "op"),
 		Replaces: []string{"capture_start", "capture_status", "capture_stop", "capture_clear", "read_capture"},
@@ -895,16 +874,16 @@ func captureClear(c *spec.Call, in captureIn) (*spec.Result, error) {
 // --- scene / scene_clear ---------------------------------------------------------
 
 type sceneIn struct {
-	Op        string            `json:"op" jsonschema:"apply | check | preview | env_preset"`
-	Path      string            `json:"path,omitempty" jsonschema:"apply/check: an unreal.scene/v1 spec file"`
-	JSON      string            `json:"json,omitempty" jsonschema:"apply/check: the spec as inline JSON (instead of path)"`
-	DryRun    bool              `json:"dry_run,omitempty" jsonschema:"apply: report add/update/missing assets without changing the level"`
-	Save      *bool             `json:"save,omitempty" jsonschema:"apply/env_preset: save afterwards (default true)"`
-	Checks    *scenespec.Checks `json:"checks,omitempty" jsonschema:"check: invariants to require (default: lit, no missing meshes, a PlayerStart)"`
-	Layout    *scenespec.Layout `json:"layout,omitempty" jsonschema:"preview: {type: grid|ring|line|scatter, ...}"`
-	Preset    string            `json:"preset,omitempty" jsonschema:"env_preset: daytime_clear | overcast | dusk | night | studio"`
-	Overrides map[string]any    `json:"overrides,omitempty" jsonschema:"env_preset: e.g. {sun_rotation_pyr: [-45, 30, 0], sun_intensity_lux: 75000, exposure_ev100: 11}"`
-	SceneID   string            `json:"scene_id,omitempty" jsonschema:"env_preset: scene id for the environment actors (default env)"`
+	Op        string          `json:"op" jsonschema:"apply | check | preview | env_preset"`
+	Path      string          `json:"path,omitempty" jsonschema:"apply/check: an unreal.scene/v1 spec file"`
+	JSON      string          `json:"json,omitempty" jsonschema:"apply/check: the spec as inline JSON (instead of path)"`
+	DryRun    bool            `json:"dry_run,omitempty" jsonschema:"apply: report add/update/missing assets without changing the level"`
+	Save      *bool           `json:"save,omitempty" jsonschema:"apply/env_preset: save afterwards (default true)"`
+	Checks    map[string]bool `json:"checks,omitempty" jsonschema:"check: {require_environment_lit, require_no_missing_meshes, require_player_start, require_nav_bounds, spawns_within_bounds: bool}"`
+	Layout    map[string]any  `json:"layout,omitempty" jsonschema:"preview: {type: grid|ring|line|scatter, count, spacing, rows, cols, radius, start, end, center, extent, seed}"`
+	Preset    string          `json:"preset,omitempty" jsonschema:"env_preset: daytime_clear | overcast | dusk | night | studio"`
+	Overrides map[string]any  `json:"overrides,omitempty" jsonschema:"env_preset: e.g. {sun_rotation_pyr: [-45, 30, 0], sun_intensity_lux: 75000, exposure_ev100: 11}"`
+	SceneID   string          `json:"scene_id,omitempty" jsonschema:"env_preset: scene id for the environment actors (default env)"`
 }
 
 func sceneSpec() *spec.Spec {
@@ -916,13 +895,7 @@ func sceneSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "scene", Title: "Declarative scenes", Toolset: spec.Core, Timeout: sync25, Max: sync28, Ops: ops,
-		Description: "Build levels from a declarative unreal.scene/v1 spec (`path` or `json`).\n" +
-			"- op=apply: create/update the spec's actors in one undo step and save; dry_run=true reports the diff only. " +
-			"ADDITIVE: actors are matched by the scene's tag (mcp_scene:<id>), never by label alone, and nothing is deleted " +
-			"(remove stale ones with scene_clear op=prune).\n" +
-			"- op=check: lint the level (lit, no missing meshes, PlayerStart, nav bounds).\n" +
-			"- op=preview: offline — where a layout would place things.\n" +
-			"- op=env_preset: lighting/sky/exposure preset as scene actors (the sun always points down).",
+		Description: "Build levels from an unreal.scene/v1 spec (`path` or `json`).\n- apply: create/update the spec's actors (one undo step) and save; dry_run reports the diff. Additive: matched by the scene tag, never by label alone; stale actors go via scene_clear op=prune.\n- check: lint the level (lit, meshes present, PlayerStart, nav).\n- preview: offline layout placements.\n- env_preset: lighting/sky/exposure preset (sun always points down).",
 		Schema: spec.SchemaFor[sceneIn](map[string][]any{"op": spec.OpEnum(ops...),
 			"preset": {"daytime_clear", "overcast", "dusk", "night", "studio"}}, "op"),
 		Replaces: []string{"scene_apply", "scene_plan", "design_check", "layout_preview", "env_preset_apply"},
@@ -967,7 +940,12 @@ func sceneHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	}
 	switch c.Op.Name {
 	case "preview":
-		pts := scenespec.Expand(*in.Layout, scenespec.Transform{Scale: [3]float64{1, 1, 1}})
+		var layout scenespec.Layout
+		raw, _ := json.Marshal(in.Layout)
+		if err := strictDecode(raw, &layout); err != nil {
+			return nil, err
+		}
+		pts := scenespec.Expand(layout, scenespec.Transform{Scale: [3]float64{1, 1, 1}})
 		out := make([]map[string]any, len(pts))
 		for i, p := range pts {
 			out[i] = map[string]any{"location": p.Location, "rotation": p.RotationPyr}
@@ -976,7 +954,11 @@ func sceneHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	case "check":
 		checks := scenespec.Checks{RequireEnvironmentLit: true, RequireNoMissingMeshes: true, RequirePlayerStart: true}
 		if in.Checks != nil {
-			checks = *in.Checks
+			raw, _ := json.Marshal(in.Checks)
+			checks = scenespec.Checks{}
+			if err := strictDecode(raw, &checks); err != nil {
+				return nil, err
+			}
 		} else if in.Path != "" || in.JSON != "" {
 			sp, _, _, err := loadScene(in.Path, in.JSON)
 			if err != nil {
@@ -1076,15 +1058,10 @@ func sceneClearSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "scene_clear", Title: "Remove scene actors", Toolset: spec.Core, Timeout: sync25, Max: sync28, Ops: ops,
-		Description: "Delete actors a scene created (only actors tagged mcp_scene:<id>; hand-placed actors are never touched), " +
-			"as one undo step, then save.\n" +
-			"- op=all: every actor of `scene_id`.\n" +
-			"- op=prune: the scene's actors whose label is not in the spec (`path` or `json`) — run after scene apply " +
-			"to drop stale ones. A separate step from apply, not atomic with it.\n" +
-			"dry_run=true lists what would go.",
-		Schema:   spec.SchemaFor[sceneClearIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
-		Replaces: []string{"scene_clear"},
-		Handler:  sceneClear,
+		Description: "Delete actors a scene created (tagged mcp_scene:<id> only; hand-placed actors never), one undo step, then save.\n- all: every actor of `scene_id`.\n- prune: the scene's actors not in the spec (`path`/`json`) — after scene apply; not atomic with it.\ndry_run lists them.",
+		Schema:      spec.SchemaFor[sceneClearIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
+		Replaces:    []string{"scene_clear"},
+		Handler:     sceneClear,
 	}
 }
 
@@ -1152,18 +1129,15 @@ type audioIn struct {
 
 func audioSpec() *spec.Spec {
 	ops := []spec.OpSpec{
-		{Name: "capture_start", Summary: "tap the main submix (RMS/peak envelope)", Tier: spec.Ephemeral, Reaches: []string{"audio_capture_start"}},
-		{Name: "capture_stop", Summary: "stop; write the envelope (Saved/MCP/audio)", Tier: spec.Ephemeral, Reaches: []string{"audio_capture_stop"}},
-		{Name: "play", Summary: "play a sound into the game (a test signal)", Tier: spec.Ephemeral, Required: []string{"sound"}, Reaches: []string{"play_test_sound"}},
+		{Name: "capture_start", Summary: "tap the main submix (RMS/peak envelope)", Tier: spec.Ephemeral, Reaches: []string{"audio_capture_start"}, Needs: []string{"pie", "plugin"}},
+		{Name: "capture_stop", Summary: "stop; write the envelope (Saved/MCP/audio)", Tier: spec.Ephemeral, Reaches: []string{"audio_capture_stop"}, Needs: []string{"pie", "plugin"}},
+		{Name: "play", Summary: "play a sound into the game (a test signal)", Tier: spec.Ephemeral, Required: []string{"sound"}, Reaches: []string{"play_test_sound"}, Needs: []string{"pie"}},
 	}
 	return &spec.Spec{
 		Name: "audio", Title: "Game audio", Toolset: spec.Core, Timeout: sync15, Max: sync28, Ops: ops,
-		Description: "Listen to the running game (PIE only; audio renders only in play; needs the UnrealMCP plugin).\n" +
-			"- op=capture_start: record the main submix's RMS/peak envelope.\n" +
-			"- op=capture_stop: stop → {path, points, max_rms, duration} (feeds design_audit kind=audio_audit).\n" +
-			"- op=play: play `sound` as a known test signal.",
-		Schema:   spec.SchemaFor[audioIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
-		Replaces: []string{"audio_capture_start", "audio_capture_stop", "play_test_sound"},
+		Description: "Listen to the running game (PIE only, UnrealMCP plugin).\n- capture_start: record the main submix envelope.\n- capture_stop → {path, points, max_rms, duration} for design_audit kind=audio.\n- play `sound` as a test signal.",
+		Schema:      spec.SchemaFor[audioIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
+		Replaces:    []string{"audio_capture_start", "audio_capture_stop", "play_test_sound"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			py := map[string]string{"capture_start": "audio_capture_start", "capture_stop": "audio_capture_stop", "play": "play_test_sound"}[c.Op.Name]
 			out, err := v2Op(ctx, c, py, pick(c.Args, "session", "sound", "volume"))

@@ -34,6 +34,8 @@ jobs:
           fi
       - name: race test
         run: go test -race ./...
+      - name: coverage gates (merged; repo 75, tools 70, app 80, config 90)
+        run: bash scripts/coverage.sh
 
   build-windows:
     name: build + integration (windows)

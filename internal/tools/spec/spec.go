@@ -205,7 +205,8 @@ func boolp(b bool) *bool { return &b }
 
 // Annotations derives the MCP annotations from the worst op (§2.1 table).
 func (s *Spec) Annotations() *mcp.ToolAnnotations {
-	a := &mcp.ToolAnnotations{Title: s.Title, OpenWorldHint: boolp(!s.Offline)}
+	// The title lives on the Tool itself (it would be sent twice otherwise).
+	a := &mcp.ToolAnnotations{OpenWorldHint: boolp(!s.Offline)}
 	switch t := s.Tier(); t {
 	case ReadOnly:
 		a.ReadOnlyHint = true

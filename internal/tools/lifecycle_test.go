@@ -223,3 +223,23 @@ func TestHungQuitWithUnsavedWorkIsNotKilled(t *testing.T) {
 		t.Fatalf("a hung editor with unsaved work must not be killed: %v killed=%v", out, sim.killed)
 	}
 }
+
+func TestCancelledShutdownNeverKills(t *testing.T) {
+	sim := &editorSim{dirty: [][]string{{}}, exitOnQit: false} // the quit hangs
+	withProcessStubs(t, sim)
+	d := lifecycleDeps(t, sim)
+	started := restartResult(t, d, map[string]any{"op": "restart"})
+	id, _ := started["job_id"].(string)
+	if id == "" {
+		t.Fatalf("restart did not start a job: %v", started)
+	}
+	time.Sleep(300 * time.Millisecond) // inside the graceful wait
+	if res, err := callToolDeps(t, d, "job", map[string]any{"op": "cancel", "job_id": id}); err != nil || res.IsError {
+		t.Fatalf("cancel: %v %v", err, res)
+	}
+	j, _ := d.Jobs.Get(id)
+	snap := j.Wait()
+	if len(sim.killed) != 0 || len(sim.launched) != 0 {
+		t.Fatalf("a cancelled shutdown must not kill or relaunch: killed=%v launched=%v (job %s %s)", sim.killed, sim.launched, snap.Status, snap.Err)
+	}
+}

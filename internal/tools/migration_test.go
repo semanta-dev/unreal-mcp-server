@@ -88,9 +88,9 @@ func TestMigrationAccounting(t *testing.T) {
 	}
 }
 
-// TestV2SpecsLint applies the static design rules (plan §2.1/§2.2) to every v2 spec.
+// TestV2SpecsLint applies the static design rules (plan §2.1/§2.2) to every tool.
 func TestV2SpecsLint(t *testing.T) {
-	if v := spec.Lint(v2Specs()); len(v) > 0 {
+	if v := spec.Lint(allSpecs()); len(v) > 0 {
 		t.Fatalf("v2 spec lint:\n  %s", strings.Join(v, "\n  "))
 	}
 }

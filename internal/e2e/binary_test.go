@@ -66,7 +66,9 @@ func TestBinaryStdio(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	cs, err := mcp.NewClient(&mcp.Implementation{Name: "t3", Version: "1"}, nil).
+	listChanged := make(chan struct{}, 4)
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "t3", Version: "1"}, &mcp.ClientOptions{
+		ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) { listChanged <- struct{}{} }}).
 		Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
 	if err != nil {
 		t.Fatalf("connect: %v\nstderr:\n%s", err, stderr.String())
@@ -93,6 +95,18 @@ func TestBinaryStdio(t *testing.T) {
 	res, _ = cs.CallTool(ctx, &mcp.CallToolParams{Name: "actor_query", Arguments: map[string]any{"op": "list"}})
 	if !strings.Contains(text(res), "1 actors") {
 		t.Fatalf("actor_query via binary: %s", text(res))
+	}
+	// Toolsets over the real binary: enabling one changes tools/list and notifies.
+	if res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "toolsets", Arguments: map[string]any{"op": "enable", "toolset": "design"}}); err != nil || res.IsError {
+		t.Fatalf("toolsets enable via binary: %v %s", err, text(res))
+	}
+	select {
+	case <-listChanged:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no tools/list_changed from the binary after toolsets enable")
+	}
+	if tl2, _ := cs.ListTools(ctx, nil); len(tl2.Tools) != len(tl.Tools)+2 {
+		t.Fatalf("design toolset should add 2 tools: %d -> %d", len(tl.Tools), len(tl2.Tools))
 	}
 	// Any non-JSON-RPC write to stdout would already have broken the transport.
 
@@ -163,12 +177,12 @@ func TestBinaryDaemonTwoSessions(t *testing.T) {
 		for _, tool := range tl.Tools {
 			names[tool.Name] = true
 		}
-		if !names["project_attach"] || !names["project_list"] {
+		if !names["project"] {
 			t.Fatalf("session %d: daemon toolset missing: %d tools", i, len(tl.Tools))
 		}
-		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "project_list"})
+		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "project", Arguments: map[string]any{"op": "list"}})
 		if err != nil || res.IsError {
-			t.Fatalf("session %d project_list: %v %s", i, err, text(res))
+			t.Fatalf("session %d project op=list: %v %s", i, err, text(res))
 		}
 		// An unattached session gets an enveloped error, not a crash.
 		res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "editor", Arguments: map[string]any{"op": "status"}})

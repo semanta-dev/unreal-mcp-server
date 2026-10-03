@@ -10,6 +10,7 @@
 package bridgetest
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"github.com/jdziat/unreal-mcp-server/internal/uexec/uexectest"
 )
 
@@ -31,6 +33,7 @@ type OpError struct {
 	Code      string
 	Message   string
 	Retryable bool
+	Details   map[string]any // e.g. CONFLICT candidates
 }
 
 // OpFunc handles one op: it receives the decoded JSON args and returns a JSON-able
@@ -50,6 +53,7 @@ type Emulator struct {
 	installed    string // decoded source of the last successful install
 	calls        []string
 	pyScripts    []string
+	natives      int // ops served over RPCNative
 }
 
 // New returns an emulator with no ops registered and nothing installed.
@@ -262,9 +266,48 @@ func (e *Emulator) dispatch(op, b64 string) uexectest.CommandResponse {
 	}
 	res, opErr := fn(args)
 	if opErr != nil {
-		return emit(map[string]any{"ok": false, "error": opErr.Message, "code": opErr.Code, "retryable": opErr.Retryable})
+		return emit(map[string]any{"ok": false, "error": opErr.Message, "code": opErr.Code, "retryable": opErr.Retryable, "details": opErr.Details})
 	}
 	return emit(map[string]any{"ok": true, "result": res})
+}
+
+// RPCNative makes the emulator a bridge.NativeDispatcher: the op runs the same
+// handlers, and the result comes back as a framed envelope — with a failure's details
+// carried in result.details, as the companion's _emit does for MCPCore (which forwards
+// only ok/result/error/code/retryable/traceback).
+func (e *Emulator) RPCNative(_ context.Context, op string, args json.RawMessage, _, _ string) (bridge.NativeResult, error) {
+	e.mu.Lock()
+	fn := e.ops[op]
+	e.calls = append(e.calls, op)
+	e.natives++
+	e.mu.Unlock()
+	a := map[string]any{}
+	if len(args) > 0 {
+		_ = json.Unmarshal(args, &a)
+	}
+	if fn == nil {
+		return bridge.NativeResult{Error: "unknown op: " + op, Code: "UNKNOWN_OP"}, nil
+	}
+	res, opErr := fn(a)
+	if opErr != nil {
+		nr := bridge.NativeResult{Error: opErr.Message, Code: opErr.Code, Retryable: opErr.Retryable}
+		if len(opErr.Details) > 0 {
+			nr.Result, _ = json.Marshal(map[string]any{"details": opErr.Details})
+		}
+		return nr, nil
+	}
+	raw, err := json.Marshal(res)
+	if err != nil {
+		return bridge.NativeResult{}, err
+	}
+	return bridge.NativeResult{OK: true, Result: raw}, nil
+}
+
+// NativeCalls counts ops served over the native backend.
+func (e *Emulator) NativeCalls() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.natives
 }
 
 func emit(env map[string]any) uexectest.CommandResponse {

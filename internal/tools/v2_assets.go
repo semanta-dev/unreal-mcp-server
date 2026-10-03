@@ -57,7 +57,7 @@ type viewportIn struct {
 	Pilot         string    `json:"pilot,omitempty" jsonschema:"set: pilot this actor (label or object path) with the camera"`
 	Eject         bool      `json:"eject,omitempty" jsonschema:"set: stop piloting"`
 	GameView      *bool     `json:"game_view,omitempty" jsonschema:"set: Game View on/off (hides editor-only actors, like pressing G)"`
-	Actors        []string  `json:"actors,omitempty" jsonschema:"focus/select: actor labels or object paths (focus default: the current selection)"`
+	Actors        []string  `json:"actors,omitempty" jsonschema:"focus/select: labels or object paths (focus default: selection)"`
 	Mode          string    `json:"mode,omitempty" jsonschema:"select: replace (default) | add | remove | none"`
 	Frame         bool      `json:"frame,omitempty" jsonschema:"select: frame the selection afterwards"`
 	Pitch         float64   `json:"pitch,omitempty" jsonschema:"focus: camera pitch in degrees (default -30, negative looks down)"`
@@ -75,15 +75,9 @@ func viewportSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "viewport", Title: "Editor viewport", Toolset: spec.Core, Timeout: sync15, Max: sync28, Ops: ops,
-		Description: "The editor viewport camera and selection (UI state; nothing is saved).\n" +
-			"- op=get: camera {location, rotation} + game_view.\n" +
-			"- op=set: location/rotation, pilot (actor) or eject, game_view.\n" +
-			"- op=focus: aim the camera at `actors` (default: the selection).\n" +
-			"- op=select: select `actors` (mode replace|add|remove|none), frame=true to focus them.\n" +
-			"- op=selection: the selected actors (label, path, class).\n" +
-			"Console commands moved to the console tool.",
-		Schema:   spec.SchemaFor[viewportIn](map[string][]any{"op": spec.OpEnum(ops...), "mode": {"replace", "add", "remove", "none"}}, "op"),
-		Replaces: []string{"viewport_set", "viewport_get", "focus_actors", "select_actors", "get_selection"},
+		Description: "Editor viewport camera and selection (UI state, nothing saved).\n- get: camera + game_view.\n- set: location/rotation, pilot or eject, game_view.\n- focus: frame `actors` (default the selection).\n- select: `actors` (mode replace|add|remove|none), frame.\n- selection. Console commands: use console.",
+		Schema:      spec.SchemaFor[viewportIn](map[string][]any{"op": spec.OpEnum(ops...), "mode": {"replace", "add", "remove", "none"}}, "op"),
+		Replaces:    []string{"viewport_set", "viewport_get", "focus_actors", "select_actors", "get_selection"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			py := map[string]string{"get": "viewport_get", "set": "viewport_set", "focus": "focus_actors",
 				"select": "select_actors", "selection": "get_selection"}[c.Op.Name]
@@ -129,15 +123,9 @@ func assetQuerySpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "asset_query", Title: "Find and inspect assets", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
-		Description: "Find and inspect Content Browser assets.\n" +
-			"- op=list: asset paths under `folder`.\n" +
-			"- op=info: one asset's class, bounds, LODs, Nanite.\n" +
-			"- op=search: by `classes` (/Script paths) and `folder`; blueprints=true finds Blueprints deriving them.\n" +
-			"- op=deps: what the asset needs and what needs it.\n" +
-			"- op=tags: registry tags (ParentClass, NativeParentClass) without loading.\n" +
-			"- op=thumbnail: see a StaticMesh — PNG image + tris/verts/LODs/material slots/bounds (writes Saved/MCP/AssetThumbs).",
-		Schema:   spec.SchemaFor[assetQueryIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
-		Replaces: []string{"list_assets", "asset_info", "asset_query", "asset_deps", "asset_tags", "asset_thumbnail"},
+		Description: "Find and inspect Content Browser assets.\n- list: assets under `folder`.\n- info: class, bounds, LODs, Nanite.\n- search: by /Script `classes` and `folder`; blueprints=true finds Blueprints deriving them.\n- deps / tags: dependencies + referencers / registry tags (lineage), no loading.\n- thumbnail: PNG of a StaticMesh + tris/verts/LODs/slots/bounds.",
+		Schema:      spec.SchemaFor[assetQueryIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
+		Replaces:    []string{"list_assets", "asset_info", "asset_query", "asset_deps", "asset_tags", "asset_thumbnail"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			a := c.Args
 			var py string
@@ -189,7 +177,7 @@ type assetCreateIn struct {
 	Op        string         `json:"op" jsonschema:"create (fails with CONFLICT if dest exists) | replace (DELETES an existing dest first)"`
 	Kind      string         `json:"kind" jsonschema:"blueprint | data_asset | data_table | material_instance | widget_blueprint"`
 	Dest      string         `json:"dest" jsonschema:"new asset path, e.g. /Game/BP/BP_LaserTurret"`
-	Class     string         `json:"class,omitempty" jsonschema:"blueprint: parent class; data_asset: the DataAsset class; widget_blueprint: parent UserWidget class (default UserWidget). /Script path, /Game Blueprint, Module.Class or short name"`
+	Class     string         `json:"class,omitempty" jsonschema:"blueprint/widget_blueprint: parent class; data_asset: its class"`
 	RowStruct string         `json:"row_struct,omitempty" jsonschema:"data_table: row struct (/Script/Module.Row or a UserDefinedStruct asset)"`
 	Parent    string         `json:"parent,omitempty" jsonschema:"material_instance: parent material asset"`
 	Params    map[string]any `json:"params,omitempty" jsonschema:"material_instance: {scalar:{name:value}, vector:{name:[r,g,b,a]}, texture:{name:asset}}"`
@@ -205,12 +193,7 @@ func assetCreateSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "asset_create", Title: "Create an asset", Toolset: spec.Core, Timeout: sync25, Max: sync28, Ops: ops,
-		Description: "Create a Blueprint, DataAsset, DataTable, material instance or Widget Blueprint at `dest` (saved).\n" +
-			"- op=create: fails with CONFLICT when dest already exists.\n" +
-			"- op=replace: DELETES the existing asset at dest first (destructive; references to it break).\n" +
-			"Per kind: blueprint needs class (the parent); data_asset needs class; data_table needs row_struct; " +
-			"material_instance needs parent (+ optional params); widget_blueprint takes optional class and root_panel " +
-			"— then author its tree with widget_edit.",
+		Description: "Create an asset at `dest` (saved).\n- create: CONFLICT if dest exists.\n- replace: DELETES the existing asset first (references break).\nkind: blueprint (class = parent) | data_asset (class) | data_table (row_struct) | material_instance (parent, params) | widget_blueprint (class?, root_panel?; then widget_edit).",
 		Schema: spec.SchemaFor[assetCreateIn](map[string][]any{"op": spec.OpEnum(ops...),
 			"kind": {"blueprint", "data_asset", "data_table", "material_instance", "widget_blueprint"}}, "op", "kind", "dest"),
 		Replaces: []string{"blueprint_create", "dataasset_create", "datatable_create", "create_material_instance", "widget_create"},
@@ -357,7 +340,7 @@ type reflectIn struct {
 	Actor      string   `json:"actor,omitempty" jsonschema:"object: label, object path, or in PIE @gamestate, @pawn or @controller"`
 	World      string   `json:"world,omitempty" jsonschema:"object: editor (default) | pie | auto"`
 	Class      string   `json:"class,omitempty" jsonschema:"class: /Script path, /Game Blueprint, Module.Class or short name"`
-	Enum       string   `json:"enum,omitempty" jsonschema:"enum: a UENUM(BlueprintType) name (e.g. EWaveState) or a UserDefinedEnum asset path"`
+	Enum       string   `json:"enum,omitempty" jsonschema:"enum: a UENUM(BlueprintType) name or UserDefinedEnum asset"`
 	Include    []string `json:"include,omitempty" jsonschema:"object/class: glob patterns of property names to include (default all)"`
 	Exclude    []string `json:"exclude,omitempty" jsonschema:"object/class: glob patterns to exclude"`
 	Properties []string `json:"properties,omitempty" jsonschema:"object/class: read exactly these properties (overrides include/exclude)"`
@@ -397,7 +380,7 @@ func reflectSpec() *spec.Spec {
 
 type projectConfigIn struct {
 	Op      string  `json:"op" jsonschema:"set_default_gamemode | input_action | input_axis | gameplay_tag"`
-	Class   string  `json:"class,omitempty" jsonschema:"set_default_gamemode: GameMode class path, e.g. /Game/BP/BP_GM.BP_GM_C or /Script/Module.MyGameMode"`
+	Class   string  `json:"class,omitempty" jsonschema:"set_default_gamemode: GameMode class path, e.g. /Game/BP/BP_GM.BP_GM_C"`
 	Name    string  `json:"name,omitempty" jsonschema:"input_action/input_axis: mapping name, e.g. Dash or MoveForward"`
 	Key     string  `json:"key,omitempty" jsonschema:"input_action/input_axis: UE key name, e.g. SpaceBar, W, LeftMouseButton"`
 	Shift   bool    `json:"shift,omitempty" jsonschema:"input_action: modifier"`
@@ -411,7 +394,7 @@ type projectConfigIn struct {
 
 func projectConfigSpec() *spec.Spec {
 	op := func(name, summary string, req ...string) spec.OpSpec {
-		return spec.OpSpec{Name: name, Summary: summary, Tier: spec.Mutating, Idempotent: true, Required: req}
+		return spec.OpSpec{Name: name, Summary: summary, Tier: spec.Mutating, Idempotent: true, Required: req, Needs: []string{"project"}}
 	}
 	ops := []spec.OpSpec{
 		op("set_default_gamemode", "project default GameMode (DefaultEngine.ini)", "class"),
@@ -421,13 +404,10 @@ func projectConfigSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "project_config", Title: "Project config (.ini)", Toolset: spec.Core, Offline: true, Timeout: sync8, Max: sync8, Ops: ops,
-		Description: "Edit the project's Config/*.ini files directly — no editor needed; idempotent. The editor " +
-			"reads most of these at startup, so restart it (editor_lifecycle) to see changes there.\n" +
-			"- op=set_default_gamemode: `class`.\n- op=input_action: `name`, `key`, modifiers.\n" +
-			"- op=input_axis: `name`, `key`, `scale`.\n- op=gameplay_tag: `tag`, `comment`.",
-		Schema:   spec.SchemaFor[projectConfigIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
-		Replaces: []string{"set_gamemode", "input_action", "input_axis", "gameplay_tag_add"},
-		Handler:  projectConfig,
+		Description: "Edit Config/*.ini directly (no editor; idempotent; the editor reads most at startup).\n- set_default_gamemode `class`.\n- input_action `name` `key` modifiers.\n- input_axis `name` `key` `scale`.\n- gameplay_tag `tag` `comment`.",
+		Schema:      spec.SchemaFor[projectConfigIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
+		Replaces:    []string{"set_gamemode", "input_action", "input_axis", "gameplay_tag_add"},
+		Handler:     projectConfig,
 	}
 }
 
@@ -435,7 +415,7 @@ func projectDir(c *spec.Call) (string, error) {
 	if c.Deps.ProjectDir == "" {
 		e := envelope.New(envelope.Precondition, "no project is configured for this session")
 		if c.Deps.Projects != nil {
-			return "", e.WithHint("call project_attach with the project directory first")
+			return "", e.WithHint("call project with op=attach and the project directory first")
 		}
 		return "", e.WithHint("start the server with -project <dir> or set UMCP_PROJECT_DIR")
 	}
@@ -482,18 +462,14 @@ type projectMapIn struct {
 
 func projectMapSpec() *spec.Spec {
 	ops := []spec.OpSpec{
-		{Name: "project", Summary: "modules + every UCLASS/USTRUCT/UENUM, parsed offline", Tier: spec.ReadOnly, Idempotent: true, Timeout: sync20},
+		{Name: "project", Summary: "modules + every UCLASS/USTRUCT/UENUM, parsed offline", Tier: spec.ReadOnly, Idempotent: true, Timeout: sync20, Needs: []string{"project"}},
 		{Name: "level", Summary: "the level's GameMode wiring (+ live classes in PIE)", Tier: spec.ReadOnly, Idempotent: true, Timeout: sync15, Reaches: []string{"map_gameplay"}},
 	}
 	return &spec.Spec{
 		Name: "project_map", Title: "Map the project", Toolset: spec.Core, Max: sync28, Ops: ops,
-		Description: "Orient in an unfamiliar project.\n" +
-			"- op=project: works WITHOUT the editor — modules, dependencies and every UCLASS/USTRUCT/UENUM with its " +
-			"/Script path and header, parsed from .uproject/Build.cs/headers. Fails with PRECONDITION when no project is configured.\n" +
-			"- op=level: needs the editor — the level's WorldSettings GameMode, the project default GameMode, and in PIE " +
-			"the live mode/state/controller/pawn classes.",
-		Schema:   spec.SchemaFor[projectMapIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
-		Replaces: []string{"project_map", "map_gameplay"},
+		Description: "Orient in a project.\n- project: offline (no editor) — modules, dependencies, every UCLASS/USTRUCT/UENUM with /Script path and header.\n- level: the level's GameMode wiring, plus live classes in PIE.",
+		Schema:      spec.SchemaFor[projectMapIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
+		Replaces:    []string{"project_map", "map_gameplay"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			if c.Op.Name == "level" {
 				out, err := v2Op(ctx, c, "map_gameplay", nil)
@@ -518,7 +494,7 @@ func projectMapSpec() *spec.Spec {
 type widgetQueryIn struct {
 	Op     string `json:"op" jsonschema:"tree | describe | render"`
 	Asset  string `json:"asset,omitempty" jsonschema:"tree: the WidgetBlueprint asset path"`
-	Class  string `json:"class,omitempty" jsonschema:"describe: a widget class (omit for the whole palette); render: the UserWidget class, e.g. /Script/MyGame.HudWidget or /Game/UI/WBP_HUD.WBP_HUD_C"`
+	Class  string `json:"class,omitempty" jsonschema:"describe: a widget class (omit for the palette); render: the UserWidget class"`
 	Width  int    `json:"width,omitempty" jsonschema:"render: pixels (default 1280)"`
 	Height int    `json:"height,omitempty" jsonschema:"render: pixels (default 720)"`
 }
@@ -527,16 +503,13 @@ func widgetQuerySpec() *spec.Spec {
 	ops := []spec.OpSpec{
 		{Name: "tree", Summary: "canonical widget tree + structural digest", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"asset"}, Reaches: []string{"widget_tree"}},
 		{Name: "describe", Summary: "the authorable palette, or one class's props and slot", Tier: spec.ReadOnly, Idempotent: true, Reaches: []string{"widget_describe"}},
-		{Name: "render", Summary: "render a widget class offscreen to a PNG", Tier: spec.Ephemeral, Idempotent: true, Required: []string{"class"}, Reaches: []string{"widget_render"}},
+		{Name: "render", Summary: "render a widget class offscreen to a PNG", Tier: spec.Ephemeral, Idempotent: true, Required: []string{"class"}, Reaches: []string{"widget_render"}, Needs: []string{"plugin"}},
 	}
 	return &spec.Spec{
 		Name: "widget_query", Title: "Inspect UMG widgets", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
-		Description: "Inspect UMG widgets without PIE.\n" +
-			"- op=tree: a WidgetBlueprint's tree as JSON + digest (compare digests to verify an edit).\n" +
-			"- op=describe: the authorable palette (no class) or a class's editable props and slot type.\n" +
-			"- op=render: SEE a UserWidget class — offscreen PNG (needs the plugin's MCPAuthoring module; writes Saved/MCP/WidgetRenders).",
-		Schema:   spec.SchemaFor[widgetQueryIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
-		Replaces: []string{"widget_tree", "widget_describe", "widget_render"},
+		Description: "Inspect UMG widgets without PIE.\n- tree: a WidgetBlueprint's tree + digest.\n- describe: the palette, or one class's props and slot type.\n- render: a UserWidget class as a PNG (MCPAuthoring module).",
+		Schema:      spec.SchemaFor[widgetQueryIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
+		Replaces:    []string{"widget_tree", "widget_describe", "widget_render"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			switch c.Op.Name {
 			case "tree":

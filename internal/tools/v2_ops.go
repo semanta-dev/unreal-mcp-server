@@ -42,7 +42,7 @@ func jobsOf(c *spec.Call) (*jobs.Registry, error) {
 type jobIn struct {
 	Op    string  `json:"op" jsonschema:"status | wait | cancel | list"`
 	JobID string  `json:"job_id,omitempty" jsonschema:"status/wait/cancel: the job"`
-	WaitS float64 `json:"wait_s,omitempty" jsonschema:"wait: seconds to wait for it to finish (default and max 25); progress is streamed meanwhile"`
+	WaitS float64 `json:"wait_s,omitempty" jsonschema:"wait: seconds (default and max 25)"`
 }
 
 func jobSpec() *spec.Spec {
@@ -54,14 +54,9 @@ func jobSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "job", Title: "Background jobs", Toolset: spec.Core, Offline: true, Timeout: sync28, Max: sync28, Ops: ops,
-		Description: "Follow long-running work (build, playtest run, editor_lifecycle, git_revert, headless): those return " +
-			"{job_id, state} unless called with wait_s.\n" +
-			"- op=status: state (running|succeeded|failed|cancelled), last progress, result or error.\n" +
-			"- op=wait: block up to wait_s (default 25) for it to finish, streaming progress.\n" +
-			"- op=cancel: request cancellation; the job reports cancelled when it stops.\n" +
-			"- op=list: every job of this project. Jobs belong to the project, so a later session can poll them.",
-		Schema:   spec.SchemaFor[jobIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
-		Replaces: []string{"job_status", "job_cancel"},
+		Description: "Follow async work (build, playtest run, editor_lifecycle, git_revert, headless), which returns {job_id, state} unless called with wait_s.\n- status: state, last progress, result or error.\n- wait: up to wait_s (default 25), streaming progress.\n- cancel.\n- list: this project's jobs (any session of the project can poll them).",
+		Schema:      spec.SchemaFor[jobIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
+		Replaces:    []string{"job_status", "job_cancel"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			reg, err := jobsOf(c)
 			if err != nil {
@@ -98,7 +93,7 @@ type logsIn struct {
 	Op          string   `json:"op" jsonschema:"mark | tail | since | events"`
 	Marker      string   `json:"marker,omitempty" jsonschema:"since: a marker from op=mark; events: an offset from a previous events call"`
 	Lines       int      `json:"lines,omitempty" jsonschema:"tail: how many lines (default 200)"`
-	MinSeverity string   `json:"min_severity,omitempty" jsonschema:"tail/since: Verbose | Log | Display | Warning | Error (default Display for tail, Warning for since)"`
+	MinSeverity string   `json:"min_severity,omitempty" jsonschema:"tail/since: minimum severity (default Display / Warning)"`
 	Categories  []string `json:"categories,omitempty" jsonschema:"tail: only these log categories, e.g. LogLiveCoding"`
 	Type        string   `json:"type,omitempty" jsonschema:"events: only this event type (e.g. issue)"`
 	Limit       int      `json:"limit,omitempty" jsonschema:"events: most recent N (default 200)"`
@@ -106,7 +101,7 @@ type logsIn struct {
 
 func logsSpec() *spec.Spec {
 	ro := func(name, summary string, req ...string) spec.OpSpec {
-		return spec.OpSpec{Name: name, Summary: summary, Tier: spec.ReadOnly, Idempotent: true, Required: req}
+		return spec.OpSpec{Name: name, Summary: summary, Tier: spec.ReadOnly, Idempotent: true, Required: req, Needs: []string{"project"}}
 	}
 	ops := []spec.OpSpec{
 		ro("mark", "a marker into the editor log, for op=since"),
@@ -116,13 +111,10 @@ func logsSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "logs", Title: "Editor logs", Toolset: spec.Core, Offline: true, Timeout: sync15, Max: sync28, Ops: ops,
-		Description: "Read the project's editor log files directly — works while the editor is busy or gone.\n" +
-			"- op=mark → marker; do something; op=since marker → that window's lines + error/warning/ensure counts.\n" +
-			"- op=tail: the last `lines` at min_severity.\n" +
-			"- op=events: structured events (issues, PIE start/stop) from `marker` offset; returns the next offset.",
-		Schema:   spec.SchemaFor[logsIn](map[string][]any{"op": spec.OpEnum(ops...), "min_severity": {"Verbose", "Log", "Display", "Warning", "Error"}}, "op"),
-		Replaces: []string{"logs_mark", "logs_tail", "logs_since", "editor_events"},
-		Handler:  logsHandler,
+		Description: "Read the editor log files (works while the editor is busy or gone).\n- mark → marker; later since `marker` → those lines + error/warning/ensure counts.\n- tail: last `lines` at min_severity.\n- events: structured events from offset `marker`.",
+		Schema:      spec.SchemaFor[logsIn](map[string][]any{"op": spec.OpEnum(ops...), "min_severity": {"Verbose", "Log", "Display", "Warning", "Error"}}, "op"),
+		Replaces:    []string{"logs_mark", "logs_tail", "logs_since", "editor_events"},
+		Handler:     logsHandler,
 	}
 }
 
@@ -193,7 +185,7 @@ type analyzeIn struct {
 	Op       string             `json:"op" jsonschema:"rubric | perf | image_diff | scenarios"`
 	Timeline []timelineFrame    `json:"timeline,omitempty" jsonschema:"rubric: recorded frames [{index, t_world, state}] (a playtest result's timeline)"`
 	Logs     *logCounts         `json:"logs,omitempty" jsonschema:"rubric: {errors, warnings, ensures} for log checks"`
-	Rubric   []eval.RubricCheck `json:"rubric,omitempty" jsonschema:"rubric: checks [{id, kind, path, params?, severity?}]; kind is reached|entered|increased|decreased|changed|stayed|range|min|max|nonzero_count|log_zero|log_max"`
+	Rubric   []eval.RubricCheck `json:"rubric,omitempty" jsonschema:"rubric: [{id, kind, path, params?, severity?}]"`
 	Path     string             `json:"path,omitempty" jsonschema:"perf: a CsvProfiler .csv or a .memreport; image_diff: an image"`
 	Baseline string             `json:"baseline,omitempty" jsonschema:"image_diff: the image to compare against"`
 	HitchMs  float64            `json:"hitch_ms,omitempty" jsonschema:"perf: frames slower than this are hitches (default 33.3)"`
@@ -225,14 +217,10 @@ func analyzeSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "analyze", Title: "Analyze results offline", Toolset: spec.Core, Offline: true, Timeout: sync20, Max: sync28, Ops: ops,
-		Description: "Score evidence without the editor.\n" +
-			"- op=rubric: re-score a playtest timeline against `rubric` → PASS|WARN|FAIL with frame evidence.\n" +
-			"- op=perf: a CsvProfiler CSV → p50/p95/p99/max frame time + hitches; a .memreport → memory buckets.\n" +
-			"- op=image_diff: `path` vs `baseline` → dHash/aHash distance, luma delta, pass.\n" +
-			"- op=scenarios: list the saved playtest scenarios (.mcp/scenarios) with name and validity.",
-		Schema:   spec.SchemaFor[analyzeIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
-		Replaces: []string{"playtest_evaluate", "perf_parse", "image_compare", "scenario_list"},
-		Handler:  analyze,
+		Description: "Score evidence offline.\n- rubric: re-score a playtest `timeline` → PASS|WARN|FAIL with frame evidence.\n- perf: CsvProfiler CSV → frame-time percentiles + hitches; .memreport → memory buckets.\n- image_diff: `path` vs `baseline` → hash distance, luma delta, pass.\n- scenarios: the saved playtest suite.",
+		Schema:      spec.SchemaFor[analyzeIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
+		Replaces:    []string{"playtest_evaluate", "perf_parse", "image_compare", "scenario_list"},
+		Handler:     analyze,
 	}
 }
 
@@ -317,28 +305,24 @@ func analyze(_ context.Context, c *spec.Call) (*spec.Result, error) {
 
 type gitIn struct {
 	Op      string   `json:"op" jsonschema:"status | diff | log | checkpoint"`
-	Paths   []string `json:"paths,omitempty" jsonschema:"diff: limit to these paths; checkpoint: stage only these (default: everything except Saved/Intermediate/DerivedDataCache)"`
+	Paths   []string `json:"paths,omitempty" jsonschema:"diff: limit to these; checkpoint: stage only these"`
 	Limit   int      `json:"limit,omitempty" jsonschema:"log: commits (default 20)"`
 	Message string   `json:"message,omitempty" jsonschema:"checkpoint: commit message"`
 }
 
 func gitSpec() *spec.Spec {
 	ops := []spec.OpSpec{
-		{Name: "status", Summary: "branch, staged, unstaged, untracked", Tier: spec.ReadOnly, Idempotent: true},
-		{Name: "diff", Summary: "working-tree diff", Tier: spec.ReadOnly, Idempotent: true},
-		{Name: "log", Summary: "recent commits + checkpoint tags", Tier: spec.ReadOnly, Idempotent: true},
-		{Name: "checkpoint", Summary: "commit + tag umcp/cp/<n>", Tier: spec.Mutating, Required: []string{"message"}},
+		{Name: "status", Summary: "branch, staged, unstaged, untracked", Tier: spec.ReadOnly, Idempotent: true, Needs: []string{"project"}},
+		{Name: "diff", Summary: "working-tree diff", Tier: spec.ReadOnly, Idempotent: true, Needs: []string{"project"}},
+		{Name: "log", Summary: "recent commits + checkpoint tags", Tier: spec.ReadOnly, Idempotent: true, Needs: []string{"project"}},
+		{Name: "checkpoint", Summary: "commit + tag umcp/cp/<n>", Tier: spec.Mutating, Required: []string{"message"}, Needs: []string{"project"}},
 	}
 	return &spec.Spec{
 		Name: "git", Title: "Project git", Toolset: spec.Core, Offline: true, Timeout: sync25, Max: sync28, Ops: ops,
-		Description: "The project's git repository (no editor needed).\n" +
-			"- op=status / diff / log.\n" +
-			"- op=checkpoint: stage (default everything except Saved/Intermediate/DerivedDataCache), commit `message` " +
-			"(hooks run; never bypassed) and tag it umcp/cp/<n> → {commit, tag}. With nothing to commit, HEAD is tagged. " +
-			"git_revert only goes back to these checkpoints.",
-		Schema:   spec.SchemaFor[gitIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
-		Replaces: []string{"git_status", "git_diff", "git_log", "git_checkpoint"},
-		Handler:  gitHandler,
+		Description: "The project's git repo (no editor).\n- status / diff / log (+ checkpoints).\n- checkpoint: stage (default all but Saved/Intermediate/DerivedDataCache), commit `message` (hooks run) and tag umcp/cp/<n>; nothing to commit tags HEAD. git_revert only goes back to these.",
+		Schema:      spec.SchemaFor[gitIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
+		Replaces:    []string{"git_status", "git_diff", "git_log", "git_checkpoint"},
+		Handler:     gitHandler,
 	}
 }
 
@@ -432,10 +416,9 @@ func gitHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		return nil, gitFail("add", err)
 	}
 	committed := true
-	commit := []string{"commit", "-m", in.Message}
-	if len(in.Paths) > 0 {
-		commit = append(append(commit, "--"), in.Paths...) // only these, not whatever else is staged
-	}
+	// Commit only what this checkpoint staged (the given paths, else the project tree
+	// minus generated dirs) — never other changes already staged elsewhere in the repo.
+	commit := append([]string{"commit", "-m", in.Message, "--"}, add[2:]...)
 	if staged, _ := build.Run(ctx, dir, "diff", "--cached", "--name-only"); strings.TrimSpace(staged) == "" {
 		committed = false // nothing new: checkpoint the current HEAD
 	} else if _, err := build.Run(ctx, dir, commit...); err != nil {
@@ -450,7 +433,8 @@ func gitHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	if len(cps) > 0 {
 		n = cpNum(cps[0]) + 1
 	}
-	// A concurrent checkpoint may take n first: the tag creation is the arbiter.
+	// A concurrent checkpoint may take n first: on a failed tag, move on only if the
+	// name is now taken (checked with rev-parse, independent of git's message language).
 	var tag string
 	for attempt := 0; ; attempt++ {
 		tag = "umcp/cp/" + strconv.Itoa(n+attempt)
@@ -458,7 +442,7 @@ func gitHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		if terr == nil {
 			break
 		}
-		if attempt == 4 || !strings.Contains(terr.Error(), "already exists") {
+		if _, exists := build.Run(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/tags/"+tag); attempt == 4 || exists != nil {
 			return nil, gitFail("tag", terr)
 		}
 	}
@@ -481,7 +465,7 @@ type headlessIn struct {
 
 func headlessSpec() *spec.Spec {
 	op := func(name, summary string, req ...string) spec.OpSpec {
-		return spec.OpSpec{Name: name, Summary: summary, Tier: spec.Exec, Async: true, Required: req}
+		return spec.OpSpec{Name: name, Summary: summary, Tier: spec.Exec, Async: true, Required: req, Needs: []string{"project", "engine"}}
 	}
 	ops := []spec.OpSpec{
 		op("commandlet", "run a commandlet", "commandlet"),
@@ -584,15 +568,10 @@ func playtestSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "playtest", Title: "Automated playtest", Toolset: spec.Core, Timeout: sync15, Max: sync28, Ops: ops,
-		Description: "Validate that the game WORKS.\n" +
-			"- op=run (async job; scenario/v1 from `path` or `json`): open the level, play (mode pie|simulate|editor), " +
-			"record frames + state, run timed beats (exec = call a UFUNCTION — arbitrary code, hence Exec; console; " +
-			"wait_until), stop, and score the rubric → {verdict PASS|WARN|FAIL, rubric, logs, crash?, timeline} with the " +
-			"contact sheet (failed-check frames outlined in red) as an image when read via wait_s / job.\n" +
-			"The saved suite: analyze op=scenarios.",
-		Schema:   spec.SchemaFor[playtestIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
-		Replaces: []string{"playtest_capture", "scenario_run"},
-		Handler:  playtestHandler,
+		Description: "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats (exec = call a UFUNCTION, arbitrary code; console; wait_until), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, timeline} plus a contact sheet image via wait_s / job. Saved suite: analyze op=scenarios.",
+		Schema:      spec.SchemaFor[playtestIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
+		Replaces:    []string{"playtest_capture", "scenario_run"},
+		Handler:     playtestHandler,
 	}
 }
 

@@ -16,7 +16,7 @@ func TestRecoverMiddlewareContainsPanic(t *testing.T) {
 	srv := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1"}, &mcp.ServerOptions{Logger: logger})
 	InstallMiddleware(srv, logger)
 	mcp.AddTool(srv, &mcp.Tool{Name: "boom", Description: "panics"},
-		func(ctx context.Context, _ *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, any, error) {
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 			panic("intentional test panic")
 		})
 

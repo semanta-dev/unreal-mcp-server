@@ -749,3 +749,112 @@ Non-blocking findings, also fixed:
 - `job status/wait` reports `image_error` when the playtest image is unreadable;
 - playtest setup failures land in `beat_errors`, and a PIE that dies on start or `capture_start` is diagnosed from
   the crash dump.
+
+**Gate P5d after fixes: A-** (no blocking findings). Non-blocking findings, fixed:
+- *Cancellation never escalates to a kill.*
+  - `waitExit` watches the job context.
+  - A cancelled graceful wait aborts with CANCELLED and never takes the kill fallback.
+  - Once the editor is down, relaunch and re-pin run on a detached context, in stdio and in the daemon's
+    `RestartLease`, so a cancelled restart never strands the session without an editor.
+  - Unit-tested: `TestCancelledShutdownNeverKills`.
+- `untracked_kept` stays a proper list, so names with spaces survive.
+- The nested-project test also covers a file committed after the checkpoint (deleted).
+- `editor_lifecycle` documents RESTART_IN_PROGRESS during the shutdown.
+- `git checkpoint` commits only the paths it staged.
+- Tag allocation retries by checking `rev-parse`, not git's English error text.
+
+## P5e — toolsets / project / design / desktop / polyworld; the v1 adapter is gone
+
+**Landed** in `internal/tools/v2_extras.go`:
+
+| Tool | Toolset | Ops / shape | Notes |
+|---|---|---|---|
+| `toolsets` | core | list, enable, disable, describe | |
+| `project` | daemon | attach, list, release | |
+| `design_audit` | design | `kind` + one `input` object | 11 kinds; strict per-kind decode, unknown fields are INVALID_ARGUMENT; R2 caps op enums at 8, so `kind` is a param |
+| `design_explore` | design | sweep, explore | the design package gained snake_case JSON tags (plan §0 PascalCase leak) |
+| `desktop_capture` | desktop | list_windows, screen, window | read-only: `focus` moved to `desktop_input`; non-Windows ⇒ UNSUPPORTED_PLATFORM |
+| `desktop_input` | desktop | focus, mouse, keys, type | Exec |
+| `polyworld` | polyworld | status, build, select, road | PIE only |
+| `polyworld_demolish` | polyworld | — | PIE only |
+
+**Surface: 45 tools, 36 core.** All 155 v1 names are accounted for (`TestMigrationAccounting`).
+
+**The v1 adapter is deleted:**
+- `spec.Typed`, `add`/`addIn`, `registrar`, `v1Tier`/`v1ToolTiers`, `structHandler`/`textHandler`;
+- the `affordances` package;
+- `register*` for design, desktop, company, cockpit, project and headless.
+
+`register.go` is now just `Specs(d)` over the v2 spec families. The leftover helpers were renamed after what they are
+(`montage.go`, `images.go`, `git_support.go`, `playtest_support.go`, `visual_support.go`, `scene_support.go`,
+`headless_support.go`, `design_inputs.go`).
+
+**Hazards closed:**
+- *company `world=auto`.* The companion's `company_*` ops are wrapped with `_pie_only`: NOT_IN_PIE, never the editor
+  level. pytest covers it.
+- *cockpit token.* `toolsets describe` returns the cockpit URL with its token fragment stripped. The token lets
+  whoever holds it approve gates, so the agent must never see it. The human gets the tokened URL from the launcher.
+
+**`toolsets describe` ⇒ per-op `needs`.** A new `OpSpec.Needs` (pie, plugin, navmesh, project, engine) is annotated
+on every op that has such a precondition. `describe` returns tier, async and needs per op (editor is implied unless
+the tool is offline), plus the rollback ladder and the cockpit status. This replaces the v1 affordances manifest,
+which was keyed by retired names.
+
+**Budgets** (`TestToolListBudgets`):
+- 45 tools / 36 core;
+- core tools/list **44,803 B ≤ 45,000**; all toolsets **58,559 B ≤ 75,000**.
+
+How the budget was met:
+1. Mechanical savings: no duplicate title in annotations; no `op` description when the enum lists the ops; nullable
+   `["null", T]` collapsed to `T` (`dropNull`, which also makes validation stricter).
+2. Descriptions trimmed, never tools: ~30 tool descriptions and ~20 property descriptions.
+3. `scene`'s nested Checks/Layout schemas became documented objects, decoded strictly server-side.
+
+**Tests:**
+- **Every (tool, op) runs end to end** (`TestEveryOpIsWired`, §2.4). 121 cells against the emulator with generated
+  arguments, a real git repo with a checkpoint, a log file and PNG fixtures. Each call must come back enveloped,
+  never INTERNAL and never UNKNOWN_OP; via the harness, every dispatched Python op must be declared in `Reaches`.
+  It immediately found a real bug: git's error text was only stderr, while some failures print on stdout;
+  `build.Run` now reports both.
+- **Both dispatch backends** (`TestBothBackends`): lifecycle, CONFLICT details (native carries them in
+  `result.details`), UNKNOWN_OP and a retryable EDITOR_BUSY behave identically over uexec and native. The emulator is
+  now a `bridge.NativeDispatcher`; this is the `bridgetest → bridge` edge the plan's DAG already allows.
+- **Crash → relaunch** (`TestDaemonEditorCrashThenReattach`): a leased editor dies, and the reaper (fake liveness)
+  drops the lease. The holder gets PRECONDITION with the re-attach hint (stale `project_attach` hints fixed), and
+  re-attaching spawns a fresh editor that answers.
+- **Toolsets:**
+  - a disabled toolset's tool gives PRECONDITION with a hint;
+  - enable/disable change the session's tool list, and core cannot be disabled;
+  - describe reports needs;
+  - list_changed reaches the client in T1 **and over the real binary in T3** (stdio).
+- Design audits drive the real audit and balance code through the tools; the desktop coord-hint logic is unit-tested
+  on `shotData`.
+- The live test (`-tags live`) is rewritten for v2: actor_edit spawn/delete and actor_query get/find.
+
+**Counts and coverage.**
+- T1 + T3: 59 scenario functions, plus 121 every-op cells and 8 two-backend cells.
+- Fault scenarios (≥ 14):
+  - vanished client, sweeper with a held stream, vanish mid-job, session churn;
+  - Python exception, mutating timeout ⇒ outcome unknown, editor not running;
+  - companion reinstall after an editor restart, channel drops;
+  - unknown op ×2 backends, EDITOR_BUSY ×2;
+  - editor crash ⇒ re-attach, PIE stopping during a wait;
+  - refused git_revert with unsaved work, refused/cancelled/hung shutdowns (unit).
+- Merged coverage, now gated in CI by `scripts/coverage.sh`:
+
+  | Scope | Coverage | Floor |
+  |---|---|---|
+  | repo | 77.9 % | 75 |
+  | tools | 70.5 % | 70 |
+  | app | 100 % | 80 |
+  | config | 95.1 % | 90 |
+
+**Evidence.**
+- `go vet ./...` (also `-tags live`) clean; gofmt clean.
+- `go test ./...` all pass; `-race ./internal/...` passes.
+- pytest: 50 passed. ruff in the CI form: clean. archtest passes.
+- Golden regenerated.
+
+**Not run: the §3.5 tool-selection eval.** It needs `ANTHROPIC_API_KEY` and real API spend, and the user asked to
+approve that before it runs. The harness design is in the plan; it is the first item to take up with the user, along
+with P7.

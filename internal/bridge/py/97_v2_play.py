@@ -295,3 +295,16 @@ def _op_audio_capture_stop_v2(args):
 def _op_play_test_sound_v2(args):
     _audio_world()
     return _op_play_test_sound(dict(args, world="pie"))
+
+
+# --- PolyWorld (Company-MVP): PIE only -------------------------------------------
+
+def _pie_only(fn):
+    """The company_* ops act on the running game. Their v1 world=auto fell back to the
+    EDITOR level when PIE was off (building into the saved map): v2 refuses instead."""
+    def op(args):
+        if not _pie_running():
+            raise _V2Error("NOT_IN_PIE", "PolyWorld runs only in PIE (start it with pie op=start)")
+        return fn(dict(args, world="pie"))
+    op.__name__ = fn.__name__
+    return op

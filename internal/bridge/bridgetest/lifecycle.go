@@ -86,6 +86,9 @@ func (r *Recorder) Install(e *Emulator) {
 	})
 }
 
+// WritePNG writes a small solid-grey PNG (test fixtures).
+func WritePNG(path string, shade uint8) error { return writePNG(path, shade) }
+
 func writePNG(path string, shade uint8) error {
 	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
 	for y := 0; y < 8; y++ {
