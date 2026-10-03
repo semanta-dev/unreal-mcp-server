@@ -1,0 +1,86 @@
+name: release
+
+# Push a v* tag (with a matching CHANGELOG.md section) to publish a signed release:
+# the full CI suite runs first, then every target is built from the tag, checksummed,
+# signed with Sigstore cosign (keyless, GitHub OIDC), given a build-provenance
+# attestation, and published as a GitHub release. See docs/operations.md "Releases".
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: build, sign, publish
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # create the GitHub release
+      id-token: write      # Sigstore keyless signing + provenance (OIDC)
+      attestations: write  # build-provenance attestation
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - name: release notes from CHANGELOG.md (fails without a section for the tag)
+        run: bash scripts/release-notes.sh "$TAG" > "$RUNNER_TEMP/notes.md"
+
+      - name: tag matches the build
+        run: |
+          test "$(git describe --tags --exact-match)" = "$TAG" || { echo "HEAD is not exactly $TAG"; exit 1; }
+
+      - name: package all targets
+        run: bash scripts/package.sh "$TAG"
+
+      - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+
+      - name: sign (keyless; one Sigstore bundle per file)
+        working-directory: dist/release
+        run: |
+          for f in *.zip *.tar.gz SHA256SUMS; do
+            cosign sign-blob --yes --bundle "$f.sigstore.json" "$f"
+          done
+
+      - name: verify every signature against this workflow's identity
+        working-directory: dist/release
+        env:
+          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+        run: |
+          for f in *.zip *.tar.gz SHA256SUMS; do
+            cosign verify-blob --bundle "$f.sigstore.json" \
+              --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com "$f"
+          done
+
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: |
+            dist/release/*.zip
+            dist/release/*.tar.gz
+
+      - name: publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pre=""
+          case "$TAG" in *-*) pre="--prerelease";; esac
+          gh release create "$TAG" dist/release/* --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" $pre

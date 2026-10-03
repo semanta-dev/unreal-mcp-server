@@ -11,9 +11,34 @@ Build, deploy, run, validate and roll back the server. The design behind each st
 .\dist\unreal-mcp.exe -version
 ```
 
-CI (`.github/workflows/ci.yml`) runs on every push: `go vet`, gofmt, the stdout-purity gate, `go test -race`, the
-merged coverage gates (`scripts/coverage.sh`), companion compile + ruff + pytest, and a Windows build with the real
-loopback multicast integration test.
+CI (`.github/workflows/ci.yml`) runs on every branch push and pull request: `go vet`, gofmt, the stdout-purity gate,
+the generated-docs check, `go test -race`, the merged coverage gates (`scripts/coverage.sh`), the tool-selection
+eval's offline dry run, companion compile + ruff + pytest, `go test` on Windows with the real loopback multicast
+integration test and a Windows build, and the release packaging of every target (`scripts/package.sh`).
+
+## Releases
+
+1. Add a `## vX.Y.Z — <date>` section to `CHANGELOG.md` (the release notes are taken from it; a tag without one
+   fails), commit, and push a tag: `git tag -a vX.Y.Z -m … && git push origin vX.Y.Z`. A tag with a `-` (e.g.
+   `v2.1.0-rc1`) is published as a pre-release.
+2. `.github/workflows/release.yml` runs the full CI suite, then builds from the tag with `scripts/package.sh`:
+   `unreal-mcp_<tag>_{windows_amd64,windows_arm64}.zip`, `_{linux_amd64,darwin_arm64}.tar.gz` (binary, README,
+   CHANGELOG), `UnrealMCP-plugin_<tag>.zip` (plugin source) and `SHA256SUMS`.
+3. Every file is signed with [Sigstore cosign](https://docs.sigstore.dev) keyless (the workflow's GitHub OIDC
+   identity; no keys to manage) into `<file>.sigstore.json`, the signatures are verified in the same job, a SLSA
+   build-provenance attestation is recorded, and the GitHub release is created with all of it attached.
+
+Verify a download (cosign 2.x):
+
+```bash
+cosign verify-blob --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity-regexp '^https://github.com/semanta-dev/unreal-mcp-server/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing          # then check the archive against the signed sums
+gh attestation verify unreal-mcp_<tag>_windows_amd64.zip -R semanta-dev/unreal-mcp-server   # provenance
+```
+
+Actions in both workflows are pinned to commit SHAs (the version is in a trailing comment).
 
 ## Deploy into a game project
 

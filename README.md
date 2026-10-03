@@ -17,6 +17,9 @@ MCP client ── stdio ─────────▶ unreal-mcp ── UDP/TCP
 
 ## Quick start
 
+Releases ship signed builds for Windows, Linux and macOS (cosign keyless + build provenance); to verify one,
+see [`docs/operations.md`](docs/operations.md#releases). To build from source:
+
 1. Enable Python remote execution in the game project's `Config/DefaultEngine.ini`:
    ```ini
    [/Script/PythonScriptPlugin.PythonScriptPluginSettings]
