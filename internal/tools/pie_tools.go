@@ -11,8 +11,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
-	"github.com/jdziat/unreal-mcp-server/internal/logtail"
-	"github.com/jdziat/unreal-mcp-server/internal/predicate"
+	"github.com/jdziat/unreal-mcp-server/internal/logs"
+	"github.com/jdziat/unreal-mcp-server/internal/eval"
 )
 
 type pieObserveIn struct {
@@ -111,7 +111,7 @@ func pieScreenshot(b *bridge.Bridge) mcp.ToolHandlerFor[pieScreenshotIn, any] {
 
 func pieWaitUntil(b *bridge.Bridge) mcp.ToolHandlerFor[pieWaitIn, map[string]any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in pieWaitIn) (*mcp.CallToolResult, map[string]any, error) {
-		pred, err := predicate.Parse(in.Predicate)
+		pred, err := eval.ParsePredicate(in.Predicate)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -164,8 +164,8 @@ func registerLogTools(s *mcp.Server, d Deps) {
 			if resolveDeps(ctx, d).ProjectDir == "" {
 				return nil, nil, errNoProject
 			}
-			path := logtail.LogPath(resolveDeps(ctx, d).ProjectDir)
-			return nil, map[string]any{"marker": strconv.FormatInt(logtail.Size(path), 10)}, nil
+			path := logs.LogPath(resolveDeps(ctx, d).ProjectDir)
+			return nil, map[string]any{"marker": strconv.FormatInt(logs.LogSize(path), 10)}, nil
 		})
 
 	add(s, "logs_tail", "Return recent project log lines filtered by severity/category.",
@@ -173,8 +173,8 @@ func registerLogTools(s *mcp.Server, d Deps) {
 			if resolveDeps(ctx, d).ProjectDir == "" {
 				return nil, nil, errNoProject
 			}
-			path := logtail.LogPath(resolveDeps(ctx, d).ProjectDir)
-			text, _, err := logtail.ReadFrom(path, 0)
+			path := logs.LogPath(resolveDeps(ctx, d).ProjectDir)
+			text, _, err := logs.ReadFrom(path, 0)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -182,7 +182,7 @@ func registerLogTools(s *mcp.Server, d Deps) {
 			if sev == "" {
 				sev = "Display"
 			}
-			lines := logtail.FilterLines(text, sev, in.Categories)
+			lines := logs.FilterLines(text, sev, in.Categories)
 			n := in.Lines
 			if n <= 0 {
 				n = 200
@@ -199,8 +199,8 @@ func registerLogTools(s *mcp.Server, d Deps) {
 				return nil, nil, errNoProject
 			}
 			off, _ := strconv.ParseInt(in.Marker, 10, 64)
-			path := logtail.LogPath(resolveDeps(ctx, d).ProjectDir)
-			text, _, err := logtail.ReadFrom(path, off)
+			path := logs.LogPath(resolveDeps(ctx, d).ProjectDir)
+			text, _, err := logs.ReadFrom(path, off)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -208,8 +208,8 @@ func registerLogTools(s *mcp.Server, d Deps) {
 			if sev == "" {
 				sev = "Warning"
 			}
-			lines := logtail.FilterLines(text, sev, nil)
-			errs, warns, ensures := logtail.CountBySeverity(lines)
+			lines := logs.FilterLines(text, sev, nil)
+			errs, warns, ensures := logs.CountBySeverity(lines)
 			return nil, map[string]any{"lines": lines, "errors": errs, "warnings": warns, "ensures": ensures}, nil
 		})
 }

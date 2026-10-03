@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
-	"github.com/jdziat/unreal-mcp-server/internal/rubric"
+	"github.com/jdziat/unreal-mcp-server/internal/eval"
 )
 
 // v7ToolNames are the tools added for playtest capture, high-level design, and
@@ -58,13 +58,13 @@ func TestOrderBeats(t *testing.T) {
 }
 
 func TestFailedFrameIndices(t *testing.T) {
-	r := rubric.Report{Checks: []rubric.CheckResult{
-		{ID: "a", Passed: true, Evidence: &rubric.Evidence{FrameIndex: 1}},   // passed -> not marked
-		{ID: "b", Passed: false, Evidence: &rubric.Evidence{FrameIndex: 5}},  // failed -> 5
-		{ID: "c", Passed: false, Evidence: &rubric.Evidence{FrameIndex: 5}},  // dup -> once
-		{ID: "d", Passed: false, Evidence: &rubric.Evidence{FrameIndex: -1}}, // log check -> skip
+	r := eval.Report{Checks: []eval.CheckResult{
+		{ID: "a", Passed: true, Evidence: &eval.Evidence{FrameIndex: 1}},   // passed -> not marked
+		{ID: "b", Passed: false, Evidence: &eval.Evidence{FrameIndex: 5}},  // failed -> 5
+		{ID: "c", Passed: false, Evidence: &eval.Evidence{FrameIndex: 5}},  // dup -> once
+		{ID: "d", Passed: false, Evidence: &eval.Evidence{FrameIndex: -1}}, // log check -> skip
 		{ID: "e", Passed: false, Evidence: nil},                              // no evidence -> skip
-		{ID: "f", Passed: false, Evidence: &rubric.Evidence{FrameIndex: 8}},
+		{ID: "f", Passed: false, Evidence: &eval.Evidence{FrameIndex: 8}},
 	}}
 	got := failedFrameIndices(r)
 	if len(got) != 2 || got[0] != 5 || got[1] != 8 {
@@ -73,9 +73,9 @@ func TestFailedFrameIndices(t *testing.T) {
 }
 
 func TestReportToJSON(t *testing.T) {
-	r := rubric.Report{Verdict: "FAIL", Checks: []rubric.CheckResult{
+	r := eval.Report{Verdict: "FAIL", Checks: []eval.CheckResult{
 		{ID: "wave", Kind: "reached", Severity: "fail", Passed: false, Message: "never reached",
-			Evidence: &rubric.Evidence{FrameIndex: 3, TWorld: 1.5, Value: "Active"}},
+			Evidence: &eval.Evidence{FrameIndex: 3, TWorld: 1.5, Value: "Active"}},
 	}}
 	m := reportToJSON(r)
 	if m["verdict"] != "FAIL" {

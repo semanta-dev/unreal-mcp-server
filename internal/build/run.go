@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jdziat/unreal-mcp-server/internal/gitutil"
 )
 
 // Result is the outcome of a compile.
@@ -30,14 +29,14 @@ func ResolveStrategy(ctx context.Context, projectDir, requested string) (Strateg
 		return StrategyLiveCoding, "explicitly requested Live Coding"
 	}
 	// auto
-	if projectDir == "" || !gitutil.IsRepo(ctx, projectDir) {
+	if projectDir == "" || !IsRepo(ctx, projectDir) {
 		return StrategyFull, "no git repo to diff; defaulting to full rebuild"
 	}
-	nameStatus, err := gitutil.Run(ctx, projectDir, "diff", "--name-status", "HEAD")
+	nameStatus, err := Run(ctx, projectDir, "diff", "--name-status", "HEAD")
 	if err != nil {
 		return StrategyFull, "git diff failed; defaulting to full rebuild"
 	}
-	diff, _ := gitutil.Run(ctx, projectDir, "diff", "HEAD")
+	diff, _ := Run(ctx, projectDir, "diff", "HEAD")
 	return ClassifyStrategy(ParseNameStatus(nameStatus), diff)
 }
 

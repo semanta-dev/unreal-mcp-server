@@ -5,60 +5,52 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/jdziat/unreal-mcp-server/internal/audioaudit"
-	"github.com/jdziat/unreal-mcp-server/internal/balance"
-	"github.com/jdziat/unreal-mcp-server/internal/decisionaudit"
-	"github.com/jdziat/unreal-mcp-server/internal/explore"
-	"github.com/jdziat/unreal-mcp-server/internal/feelaudit"
-	"github.com/jdziat/unreal-mcp-server/internal/gametrace"
-	"github.com/jdziat/unreal-mcp-server/internal/lumaudit"
-	"github.com/jdziat/unreal-mcp-server/internal/primitiveaudit"
-	"github.com/jdziat/unreal-mcp-server/internal/renderhealth"
-	"github.com/jdziat/unreal-mcp-server/internal/stylecohesion"
-	"github.com/jdziat/unreal-mcp-server/internal/utilization"
+	"github.com/jdziat/unreal-mcp-server/internal/audit"
+	"github.com/jdziat/unreal-mcp-server/internal/design"
+	"github.com/jdziat/unreal-mcp-server/internal/visual"
 )
 
 type primitiveAuditIn struct {
-	Scene gametrace.Scene `json:"scene"`
+	Scene audit.Scene `json:"scene"`
 }
 
 type decisionAuditIn struct {
-	Points []gametrace.DecisionPoint `json:"points"`
+	Points []audit.DecisionPoint `json:"points"`
 }
 
 type noveltyAuditIn struct {
-	Trace          gametrace.SessionTrace `json:"trace"`
+	Trace          audit.SessionTrace `json:"trace"`
 	MaxDeadStretch float64                `json:"max_dead_stretch,omitempty"`
 }
 
 type feelAuditIn struct {
-	Events        []gametrace.Event `json:"events"`
+	Events        []audit.Event `json:"events"`
 	WithinMs      float64           `json:"within_ms,omitempty"`
 	MaxFXPerEvent int               `json:"max_fx_per_event,omitempty"`
 }
 
 type verbResponseIn struct {
-	Burst    []gametrace.BurstSample `json:"burst"`
-	Envelope gametrace.VerbEnvelope  `json:"envelope"`
+	Burst    []audit.BurstSample `json:"burst"`
+	Envelope audit.VerbEnvelope  `json:"envelope"`
 }
 
 type inMotionAuditIn struct {
-	Samples []gametrace.MotionSample `json:"samples"`
+	Samples []audit.MotionSample `json:"samples"`
 }
 
 type renderHealthIn struct {
-	Config       gametrace.EngineConfig     `json:"config"`
-	Timeline     []gametrace.TimelineSample `json:"timeline,omitempty"`
+	Config       audit.EngineConfig     `json:"config"`
+	Timeline     []audit.TimelineSample `json:"timeline,omitempty"`
 	TimelinePath string                     `json:"timeline_path,omitempty"`
 }
 
 type audioAuditIn struct {
-	Track  []gametrace.AudioSample `json:"track"`
-	Events []gametrace.Event       `json:"events"`
+	Track  []audit.AudioSample `json:"track"`
+	Events []audit.Event       `json:"events"`
 }
 
 type assetUtilizationIn struct {
-	Inventory gametrace.PackInventory `json:"inventory"`
+	Inventory audit.PackInventory `json:"inventory"`
 }
 
 type luminanceReportIn struct {
@@ -66,8 +58,8 @@ type luminanceReportIn struct {
 }
 
 type luminanceReportOut struct {
-	Aggregate lumaudit.Report   `json:"aggregate"`
-	PerFrame  []lumaudit.Report `json:"per_frame"`
+	Aggregate visual.LumReport   `json:"aggregate"`
+	PerFrame  []visual.LumReport `json:"per_frame"`
 	Error     string            `json:"error,omitempty"`
 }
 
@@ -76,19 +68,19 @@ type styleCohesionIn struct {
 }
 
 type styleCohesionOut struct {
-	Aggregate stylecohesion.Report   `json:"aggregate"`
-	PerFrame  []stylecohesion.Report `json:"per_frame"`
+	Aggregate visual.StyleReport   `json:"aggregate"`
+	PerFrame  []visual.StyleReport `json:"per_frame"`
 	Error     string                 `json:"error,omitempty"`
 }
 
 type balanceSweepIn struct {
-	Scaffold balance.Scaffold `json:"scaffold"`
-	Grid     balance.Grid     `json:"grid,omitempty"`
+	Scaffold design.Scaffold `json:"scaffold"`
+	Grid     design.Grid     `json:"grid,omitempty"`
 }
 
 type balanceSweepOut struct {
 	Sweep balanceSweepReportOut `json:"sweep"`
-	Gate  balance.GateReport    `json:"gate"`
+	Gate  design.GateReport    `json:"gate"`
 }
 
 type balanceSweepReportOut struct {
@@ -97,20 +89,20 @@ type balanceSweepReportOut struct {
 	AxisLiveness        float64                   `json:"axis_liveness"`
 	FencedCorners       []string                  `json:"fenced_corners"`
 	WinRateBySpike      map[string]float64        `json:"win_rate_by_spike"`
-	BestPolicyByVariant map[string]balance.Policy `json:"best_policy_by_variant"`
+	BestPolicyByVariant map[string]design.Policy `json:"best_policy_by_variant"`
 }
 
 type designExploreIn struct {
-	Seed        explore.Genotype   `json:"seed"`
+	Seed        design.Genotype   `json:"seed"`
 	Evaluations int                `json:"evaluations,omitempty"`
 	SearchSeed  int64              `json:"search_seed,omitempty"`
 	TopK        int                `json:"top_k,omitempty"`
-	Donors      []balance.Scaffold `json:"donors,omitempty"`
+	Donors      []design.Scaffold `json:"donors,omitempty"`
 }
 
 type designExploreOut struct {
 	Filled int                `json:"filled"`
-	Elites []explore.Genotype `json:"elites"`
+	Elites []design.Genotype `json:"elites"`
 }
 
 func registerDesignTools(s *mcp.Server) {
@@ -129,22 +121,22 @@ func registerDesignTools(s *mcp.Server) {
 	add(s, "design_explore", "Run the design exploration keystone search (readonly) from a seed genotype.", designExplore)
 }
 
-func primitiveAudit(ctx context.Context, _ *mcp.CallToolRequest, in primitiveAuditIn) (*mcp.CallToolResult, primitiveaudit.Report, error) {
-	return nil, primitiveaudit.Audit(in.Scene), nil
+func primitiveAudit(ctx context.Context, _ *mcp.CallToolRequest, in primitiveAuditIn) (*mcp.CallToolResult, audit.PrimitiveReport, error) {
+	return nil, audit.Audit(in.Scene), nil
 }
 
-func decisionAudit(ctx context.Context, _ *mcp.CallToolRequest, in decisionAuditIn) (*mcp.CallToolResult, decisionaudit.DecisionReport, error) {
-	return nil, decisionaudit.DecisionAudit(in.Points), nil
+func decisionAudit(ctx context.Context, _ *mcp.CallToolRequest, in decisionAuditIn) (*mcp.CallToolResult, audit.DecisionReport, error) {
+	return nil, audit.DecisionAudit(in.Points), nil
 }
 
-func noveltyAudit(ctx context.Context, _ *mcp.CallToolRequest, in noveltyAuditIn) (*mcp.CallToolResult, decisionaudit.NoveltyReport, error) {
+func noveltyAudit(ctx context.Context, _ *mcp.CallToolRequest, in noveltyAuditIn) (*mcp.CallToolResult, audit.NoveltyReport, error) {
 	if in.MaxDeadStretch > 0 {
-		return nil, decisionaudit.NoveltyAudit(in.Trace, in.MaxDeadStretch), nil
+		return nil, audit.NoveltyAudit(in.Trace, in.MaxDeadStretch), nil
 	}
-	return nil, decisionaudit.NoveltyAuditDefault(in.Trace), nil
+	return nil, audit.NoveltyAuditDefault(in.Trace), nil
 }
 
-func feelAudit(ctx context.Context, _ *mcp.CallToolRequest, in feelAuditIn) (*mcp.CallToolResult, feelaudit.FeelReport, error) {
+func feelAudit(ctx context.Context, _ *mcp.CallToolRequest, in feelAuditIn) (*mcp.CallToolResult, audit.FeelReport, error) {
 	withinMs := in.WithinMs
 	if withinMs == 0 {
 		withinMs = 120
@@ -153,39 +145,39 @@ func feelAudit(ctx context.Context, _ *mcp.CallToolRequest, in feelAuditIn) (*mc
 	if maxFXPerEvent == 0 {
 		maxFXPerEvent = 4
 	}
-	return nil, feelaudit.FeelAudit(in.Events, withinMs, maxFXPerEvent), nil
+	return nil, audit.FeelAudit(in.Events, withinMs, maxFXPerEvent), nil
 }
 
-func verbResponse(ctx context.Context, _ *mcp.CallToolRequest, in verbResponseIn) (*mcp.CallToolResult, feelaudit.VerbReport, error) {
-	return nil, feelaudit.VerbResponse(in.Burst, in.Envelope), nil
+func verbResponse(ctx context.Context, _ *mcp.CallToolRequest, in verbResponseIn) (*mcp.CallToolResult, audit.VerbReport, error) {
+	return nil, audit.VerbResponse(in.Burst, in.Envelope), nil
 }
 
-func inMotionAudit(ctx context.Context, _ *mcp.CallToolRequest, in inMotionAuditIn) (*mcp.CallToolResult, feelaudit.MotionReport, error) {
-	return nil, feelaudit.InMotionAuditDefault(in.Samples), nil
+func inMotionAudit(ctx context.Context, _ *mcp.CallToolRequest, in inMotionAuditIn) (*mcp.CallToolResult, audit.MotionReport, error) {
+	return nil, audit.InMotionAuditDefault(in.Samples), nil
 }
 
-func renderHealth(ctx context.Context, _ *mcp.CallToolRequest, in renderHealthIn) (*mcp.CallToolResult, renderhealth.Report, error) {
+func renderHealth(ctx context.Context, _ *mcp.CallToolRequest, in renderHealthIn) (*mcp.CallToolResult, audit.RenderHealthReport, error) {
 	timeline := in.Timeline
 	if in.TimelinePath != "" {
 		var err error
-		timeline, err = gametrace.LoadTimeline(in.TimelinePath)
+		timeline, err = audit.LoadTimeline(in.TimelinePath)
 		if err != nil {
-			return nil, renderhealth.Report{}, err
+			return nil, audit.RenderHealthReport{}, err
 		}
 	}
-	return nil, renderhealth.RenderHealth(in.Config, timeline), nil
+	return nil, audit.RenderHealth(in.Config, timeline), nil
 }
 
-func audioAudit(ctx context.Context, _ *mcp.CallToolRequest, in audioAuditIn) (*mcp.CallToolResult, audioaudit.Report, error) {
-	return nil, audioaudit.AudioAuditDefault(in.Track, in.Events), nil
+func audioAudit(ctx context.Context, _ *mcp.CallToolRequest, in audioAuditIn) (*mcp.CallToolResult, audit.AudioReport, error) {
+	return nil, audit.AudioAuditDefault(in.Track, in.Events), nil
 }
 
-func assetUtilization(ctx context.Context, _ *mcp.CallToolRequest, in assetUtilizationIn) (*mcp.CallToolResult, utilization.Report, error) {
-	return nil, utilization.Utilization(in.Inventory), nil
+func assetUtilization(ctx context.Context, _ *mcp.CallToolRequest, in assetUtilizationIn) (*mcp.CallToolResult, audit.UtilizationReport, error) {
+	return nil, audit.Utilization(in.Inventory), nil
 }
 
 func luminanceReport(ctx context.Context, _ *mcp.CallToolRequest, in luminanceReportIn) (*mcp.CallToolResult, luminanceReportOut, error) {
-	perFrame, aggregate, err := lumaudit.AnalyzeFrames(framesFromPaths(in.FramePaths))
+	perFrame, aggregate, err := visual.AnalyzeLuminanceFrames(framesFromPaths(in.FramePaths))
 	out := luminanceReportOut{Aggregate: aggregate, PerFrame: perFrame}
 	if err != nil {
 		out.Error = err.Error()
@@ -194,7 +186,7 @@ func luminanceReport(ctx context.Context, _ *mcp.CallToolRequest, in luminanceRe
 }
 
 func styleCohesion(ctx context.Context, _ *mcp.CallToolRequest, in styleCohesionIn) (*mcp.CallToolResult, styleCohesionOut, error) {
-	perFrame, aggregate, err := stylecohesion.AnalyzeFrames(framesFromPaths(in.FramePaths))
+	perFrame, aggregate, err := visual.AnalyzeStyleFrames(framesFromPaths(in.FramePaths))
 	out := styleCohesionOut{Aggregate: aggregate, PerFrame: perFrame}
 	if err != nil {
 		out.Error = err.Error()
@@ -204,13 +196,13 @@ func styleCohesion(ctx context.Context, _ *mcp.CallToolRequest, in styleCohesion
 
 func balanceSweep(ctx context.Context, _ *mcp.CallToolRequest, in balanceSweepIn) (*mcp.CallToolResult, balanceSweepOut, error) {
 	grid := in.Grid
-	if grid == (balance.Grid{}) {
-		grid = balance.Grid{SSteps: 5, ESteps: 5, SplashSteps: 5}
+	if grid == (design.Grid{}) {
+		grid = design.Grid{SSteps: 5, ESteps: 5, SplashSteps: 5}
 	}
-	sweep := balance.Sweep(in.Scaffold, grid)
+	sweep := design.Sweep(in.Scaffold, grid)
 	return nil, balanceSweepOut{
 		Sweep: balanceSweepReport(sweep),
-		Gate:  balance.Gate(in.Scaffold, grid),
+		Gate:  design.Gate(in.Scaffold, grid),
 	}, nil
 }
 
@@ -223,7 +215,7 @@ func designExplore(ctx context.Context, _ *mcp.CallToolRequest, in designExplore
 	if topK == 0 {
 		topK = 8
 	}
-	result := explore.Search(in.Seed, explore.Config{
+	result := design.Search(in.Seed, design.Config{
 		Evaluations: evaluations,
 		Seed:        in.SearchSeed,
 		TopK:        topK,
@@ -232,15 +224,15 @@ func designExplore(ctx context.Context, _ *mcp.CallToolRequest, in designExplore
 	return nil, designExploreOut{Filled: result.Filled, Elites: result.Elites}, nil
 }
 
-func framesFromPaths(paths []string) []gametrace.Frame {
-	frames := make([]gametrace.Frame, len(paths))
+func framesFromPaths(paths []string) []audit.Frame {
+	frames := make([]audit.Frame, len(paths))
 	for i, path := range paths {
-		frames[i] = gametrace.Frame{Path: path}
+		frames[i] = audit.Frame{Path: path}
 	}
 	return frames
 }
 
-func balanceSweepReport(report balance.SweepReport) balanceSweepReportOut {
+func balanceSweepReport(report design.SweepReport) balanceSweepReportOut {
 	return balanceSweepReportOut{
 		DominantPolicy:      report.DominantPolicy,
 		DegenerateOptimum:   report.DegenerateOptimum,

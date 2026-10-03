@@ -12,7 +12,7 @@ import (
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"github.com/jdziat/unreal-mcp-server/internal/crash"
-	"github.com/jdziat/unreal-mcp-server/internal/events"
+	"github.com/jdziat/unreal-mcp-server/internal/logs"
 )
 
 type editorEventsIn struct {
@@ -42,7 +42,7 @@ func registerRobustnessTools(s *mcp.Server, d Deps) {
 			if resolveDeps(ctx, d).ProjectDir == "" {
 				return nil, nil, errNoProject
 			}
-			evs, off, err := events.Tail(events.Path(resolveDeps(ctx, d).ProjectDir), in.SinceOffset)
+			evs, off, err := logs.Tail(logs.Path(resolveDeps(ctx, d).ProjectDir), in.SinceOffset)
 			if err != nil {
 				return nil, nil, err
 			}

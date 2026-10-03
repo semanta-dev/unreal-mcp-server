@@ -14,7 +14,7 @@ import (
 	"github.com/jdziat/unreal-mcp-server/internal/build"
 	"github.com/jdziat/unreal-mcp-server/internal/jobs"
 	"github.com/jdziat/unreal-mcp-server/internal/lifecycle"
-	"github.com/jdziat/unreal-mcp-server/internal/logtail"
+	"github.com/jdziat/unreal-mcp-server/internal/logs"
 	"github.com/jdziat/unreal-mcp-server/internal/uexec"
 )
 
@@ -95,8 +95,8 @@ func runBuildCompile(ctx context.Context, d Deps, requested string, progress fun
 // runLiveCoding triggers LiveCoding.Compile and tails the log for the result.
 // Returns (result, escalateToFull).
 func runLiveCoding(ctx context.Context, d Deps, progress func(string)) (build.Result, bool) {
-	logPath := logtail.LogPath(d.ProjectDir)
-	offset := logtail.Size(logPath)
+	logPath := logs.LogPath(d.ProjectDir)
+	offset := logs.LogSize(logPath)
 
 	progress("triggering LiveCoding.Compile")
 	_, err := d.Bridge.RunPython(ctx, `unreal.SystemLibrary.execute_console_command(None, "LiveCoding.Compile")`, uexec.ModeExecFile)
@@ -115,7 +115,7 @@ func runLiveCoding(ctx context.Context, d Deps, progress func(string)) (build.Re
 			return build.Result{Strategy: build.StrategyLiveCoding, Success: false, Reason: "cancelled"}, false
 		case <-time.After(1 * time.Second):
 		}
-		chunk, newOffset, rerr := logtail.ReadFrom(logPath, offset)
+		chunk, newOffset, rerr := logs.ReadFrom(logPath, offset)
 		if rerr != nil {
 			continue
 		}

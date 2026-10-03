@@ -11,8 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
-	"github.com/jdziat/unreal-mcp-server/internal/framing"
-	"github.com/jdziat/unreal-mcp-server/internal/montage"
+	"github.com/jdziat/unreal-mcp-server/internal/visual"
 )
 
 type captureStartIn struct {
@@ -323,13 +322,13 @@ func buildMontageResult(dir string, frames []captureFrame, cols int, drawLabels 
 			return ""
 		}
 	}
-	res, err := montage.Build(montage.BuildOpts{CellPaths: cellPaths, Cols: cols, Gutter: 6, MarkCells: marks, LabelForCell: labelFn})
+	res, err := visual.Build(visual.BuildOpts{CellPaths: cellPaths, Cols: cols, Gutter: 6, MarkCells: marks, LabelForCell: labelFn})
 	if err != nil {
 		return nil, nil, err
 	}
 	tl := make([]map[string]any, len(survivors))
 	for pos, f := range survivors {
-		row, col := montage.CellForFrame(pos, res.Cols)
+		row, col := visual.CellForFrame(pos, res.Cols)
 		tl[pos] = map[string]any{"i": pos, "frame": f.Index, "t": f.TWorld, "cell": []int{row, col}, "state": f.State}
 	}
 	sidecar := map[string]any{
@@ -369,7 +368,7 @@ func sceneContactSheet(b *bridge.Bridge) mcp.ToolHandlerFor[sceneContactSheetIn,
 		if err := json.Unmarshal(braw, &br); err != nil {
 			return nil, nil, err
 		}
-		bounds := framing.Bounds{Origin: toVec3(br.Combined.Origin), Extent: toVec3(br.Combined.Extent)}
+		bounds := visual.Bounds{Origin: toVec3(br.Combined.Origin), Extent: toVec3(br.Combined.Extent)}
 
 		// 2. Go computes the orbit poses (pure framing math).
 		num := in.NumAngles
@@ -384,7 +383,7 @@ func sceneContactSheet(b *bridge.Bridge) mcp.ToolHandlerFor[sceneContactSheetIn,
 		poses := make([]map[string]any, num)
 		for i := 0; i < num; i++ {
 			az := 360.0 * float64(i) / float64(num)
-			p := framing.FrameShot(bounds, az, elevation, fov, fill)
+			p := visual.FrameShot(bounds, az, elevation, fov, fill)
 			poses[i] = map[string]any{
 				"location":     []float64{p.Location[0], p.Location[1], p.Location[2]},
 				"rotation_pyr": []float64{p.RotationPyr[0], p.RotationPyr[1], p.RotationPyr[2]},

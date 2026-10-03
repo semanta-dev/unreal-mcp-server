@@ -11,7 +11,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/jdziat/unreal-mcp-server/internal/gitutil"
+	"github.com/jdziat/unreal-mcp-server/internal/build"
 )
 
 func TestParseStatus(t *testing.T) {
@@ -73,7 +73,7 @@ func git(t *testing.T, dir string, args ...string) {
 // TestGitToolsAgainstTempRepo drives the git tools end-to-end through the MCP
 // client against a real throwaway repository.
 func TestGitToolsAgainstTempRepo(t *testing.T) {
-	if !gitutil.Available() {
+	if !build.Available() {
 		t.Skip("git not on PATH")
 	}
 	repo := t.TempDir()

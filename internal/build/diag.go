@@ -1,4 +1,4 @@
-// Package build orchestrates C++ compilation (Build.bat / Live Coding), parses
+// build (merged into package build) orchestrates C++ compilation (Build.bat / Live Coding), parses
 // compiler diagnostics, and classifies the right build strategy from a diff.
 // The parsing/classification are pure and unit-tested; the subprocess run is
 // live (GO_REWRITE_PLAN.md §9 Group F, §10).

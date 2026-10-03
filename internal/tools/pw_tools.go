@@ -10,9 +10,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
-	"github.com/jdziat/unreal-mcp-server/internal/digest"
-	"github.com/jdziat/unreal-mcp-server/internal/imgdiff"
-	"github.com/jdziat/unreal-mcp-server/internal/predicate"
+	"github.com/jdziat/unreal-mcp-server/internal/snapshot"
+	"github.com/jdziat/unreal-mcp-server/internal/visual"
+	"github.com/jdziat/unreal-mcp-server/internal/eval"
 )
 
 type instancesIn struct {
@@ -99,14 +99,14 @@ func sceneDigest(b *bridge.Bridge) mcp.ToolHandlerFor[sceneDigestIn, map[string]
 		if scope == "" {
 			scope = "instances"
 		}
-		var items []digest.Transform
+		var items []snapshot.Transform
 		if scope == "actors" {
 			raw, err := bridgeFromCtx(ctx, b).Call(ctx, "actor_transforms", map[string]any{"class_filter": in.ClassFilter})
 			if err != nil {
 				return nil, nil, err
 			}
 			var r struct {
-				Transforms []digest.Transform `json:"transforms"`
+				Transforms []snapshot.Transform `json:"transforms"`
 			}
 			if err := json.Unmarshal(raw, &r); err != nil {
 				return nil, nil, err
@@ -131,7 +131,7 @@ func sceneDigest(b *bridge.Bridge) mcp.ToolHandlerFor[sceneDigestIn, map[string]
 				return nil, nil, err
 			}
 			var r struct {
-				Instances []digest.Transform `json:"instances"`
+				Instances []snapshot.Transform `json:"instances"`
 				Truncated bool               `json:"truncated"`
 			}
 			if err := json.Unmarshal(raw, &r); err != nil {
@@ -145,7 +145,7 @@ func sceneDigest(b *bridge.Bridge) mcp.ToolHandlerFor[sceneDigestIn, map[string]
 			}
 			items = r.Instances
 		}
-		res := digest.Digest(items, digest.Quant{PosBucket: in.PosBucket, RotBucket: in.RotBucket})
+		res := snapshot.Digest(items, snapshot.Quant{PosBucket: in.PosBucket, RotBucket: in.RotBucket})
 		return nil, map[string]any{
 			"scope": scope, "hash": res.Hash, "count": res.Count,
 			"worst_pos_margin_uu": res.WorstPosMargin, "worst_rot_margin_deg": res.WorstRotMargin,
@@ -155,7 +155,7 @@ func sceneDigest(b *bridge.Bridge) mcp.ToolHandlerFor[sceneDigestIn, map[string]
 
 func pieVerify(b *bridge.Bridge) mcp.ToolHandlerFor[pieVerifyIn, map[string]any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in pieVerifyIn) (*mcp.CallToolResult, map[string]any, error) {
-		pred, err := predicate.Parse(in.Predicate)
+		pred, err := eval.ParsePredicate(in.Predicate)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -222,15 +222,15 @@ func pieVerify(b *bridge.Bridge) mcp.ToolHandlerFor[pieVerifyIn, map[string]any]
 
 func imageCompare() mcp.ToolHandlerFor[imageCompareIn, map[string]any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in imageCompareIn) (*mcp.CallToolResult, map[string]any, error) {
-		ia, err := imgdiff.Load(in.A)
+		ia, err := visual.Load(in.A)
 		if err != nil {
 			return nil, nil, fmt.Errorf("load a: %w", err)
 		}
-		ib, err := imgdiff.Load(in.B)
+		ib, err := visual.Load(in.B)
 		if err != nil {
 			return nil, nil, fmt.Errorf("load b: %w", err)
 		}
-		res := imgdiff.Compare(ia, ib)
+		res := visual.Compare(ia, ib)
 		maxD := 8
 		if in.MaxDHash != nil {
 			maxD = *in.MaxDHash

@@ -6,9 +6,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/jdziat/unreal-mcp-server/internal/balance"
-	"github.com/jdziat/unreal-mcp-server/internal/gametrace"
-	"github.com/jdziat/unreal-mcp-server/internal/primitiveaudit"
+	"github.com/jdziat/unreal-mcp-server/internal/design"
+	"github.com/jdziat/unreal-mcp-server/internal/audit"
 )
 
 func callDesignTool(t *testing.T, name string, args map[string]any) (*mcp.CallToolResult, error) {
@@ -38,7 +37,7 @@ func callDesignTool(t *testing.T, name string, args map[string]any) (*mcp.CallTo
 func TestDesignToolsRepresentativeAudits(t *testing.T) {
 	t.Run("decision_audit metronome fails", func(t *testing.T) {
 		res, err := callDesignTool(t, "decision_audit", map[string]any{
-			"points": gametrace.MetronomeDecisions(30),
+			"points": audit.MetronomeDecisions(30),
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -52,12 +51,12 @@ func TestDesignToolsRepresentativeAudits(t *testing.T) {
 
 	t.Run("primitive_audit cube scene fails", func(t *testing.T) {
 		res, err := callDesignTool(t, "primitive_audit", map[string]any{
-			"scene": gametrace.CubeScene(),
+			"scene": audit.CubeScene(),
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		var out primitiveaudit.Report
+		var out audit.PrimitiveReport
 		decodeStructured(t, res, &out)
 		if out.Pass {
 			t.Fatalf("primitive_audit pass = true, want false: %+v", out)
@@ -66,7 +65,7 @@ func TestDesignToolsRepresentativeAudits(t *testing.T) {
 
 	t.Run("balance_sweep metronome gate fails", func(t *testing.T) {
 		res, err := callDesignTool(t, "balance_sweep", map[string]any{
-			"scaffold": balance.MetronomeScaffold(),
+			"scaffold": design.MetronomeScaffold(),
 		})
 		if err != nil {
 			t.Fatal(err)

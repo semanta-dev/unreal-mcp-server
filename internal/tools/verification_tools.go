@@ -13,11 +13,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
-	"github.com/jdziat/unreal-mcp-server/internal/imgdiff"
-	"github.com/jdziat/unreal-mcp-server/internal/logtail"
+	"github.com/jdziat/unreal-mcp-server/internal/visual"
+	"github.com/jdziat/unreal-mcp-server/internal/logs"
 	"github.com/jdziat/unreal-mcp-server/internal/perf"
-	"github.com/jdziat/unreal-mcp-server/internal/rubric"
-	"github.com/jdziat/unreal-mcp-server/internal/scenario"
+	"github.com/jdziat/unreal-mcp-server/internal/eval"
 )
 
 type worldQueryIn struct {
@@ -103,9 +102,9 @@ func registerVerificationTools(s *mcp.Server, d Deps) {
 			for _, p := range matches {
 				item := map[string]any{"file": p}
 				if data, err := os.ReadFile(p); err == nil {
-					if sc, diags, err := scenario.Parse(data); err == nil {
+					if sc, diags, err := eval.ParseScenario(data); err == nil {
 						item["name"] = sc.Name
-						item["valid"] = !scenario.HasErrors(diags)
+						item["valid"] = !eval.HasErrors(diags)
 					}
 				}
 				out = append(out, item)
@@ -139,11 +138,11 @@ func scenarioRun(b *bridge.Bridge, d Deps) mcp.ToolHandlerFor[scenarioRunIn, any
 		} else {
 			return nil, nil, fmt.Errorf("provide path or json")
 		}
-		sc, diags, perr := scenario.Parse(data)
+		sc, diags, perr := eval.ParseScenario(data)
 		if perr != nil {
 			return nil, nil, fmt.Errorf("parse scenario: %w", perr)
 		}
-		if scenario.HasErrors(diags) {
+		if eval.HasErrors(diags) {
 			return nil, map[string]any{"error": "scenario has errors", "diagnostics": diags}, nil
 		}
 
@@ -155,7 +154,7 @@ func scenarioRun(b *bridge.Bridge, d Deps) mcp.ToolHandlerFor[scenarioRunIn, any
 		runStart := time.Now()
 		var logMarker int64
 		if d.ProjectDir != "" {
-			logMarker = logtail.Size(logtail.LogPath(d.ProjectDir))
+			logMarker = logs.LogSize(logs.LogPath(d.ProjectDir))
 		}
 		if sc.Level != "" {
 			if _, err := b.CallText(ctx, "open_level", map[string]any{"level_path": sc.Level}); err != nil {
@@ -224,20 +223,20 @@ func scenarioRun(b *bridge.Bridge, d Deps) mcp.ToolHandlerFor[scenarioRunIn, any
 			return nil, map[string]any{"scenario": sc.Name, "error": "0 frames captured"}, nil
 		}
 
-		logs := rubric.LogSummary{}
+		logSum := eval.LogSummary{}
 		if d.ProjectDir != "" {
-			if text, _, rerr := logtail.ReadFrom(logtail.LogPath(d.ProjectDir), logMarker); rerr == nil {
-				lines := logtail.FilterLines(text, "Warning", nil)
-				logs.Errors, logs.Warnings, logs.Ensures = logtail.CountBySeverity(lines)
+			if text, _, rerr := logs.ReadFrom(logs.LogPath(d.ProjectDir), logMarker); rerr == nil {
+				lines := logs.FilterLines(text, "Warning", nil)
+				logSum.Errors, logSum.Warnings, logSum.Ensures = logs.CountBySeverity(lines)
 			}
 		}
 		enrichVisual(cr.Dir, cr.Frames) // add per-frame visual.luma so a rubric can gate black frames
 		samples := framesToSamples(cr.Frames)
-		report := rubric.Evaluate(samples, logs, scenarioRubric(sc.Rubric))
+		report := eval.Evaluate(samples, logSum, scenarioRubric(sc.Rubric))
 		crashRep := detectCrash(d.ProjectDir, logMarker, runStart)
 		extra := map[string]any{
 			"scenario": sc.Name, "verdict": report.Verdict, "rubric_result": reportToJSON(report),
-			"logs": map[string]any{"errors": logs.Errors, "warnings": logs.Warnings, "ensures": logs.Ensures},
+			"logs": map[string]any{"errors": logSum.Errors, "warnings": logSum.Warnings, "ensures": logSum.Ensures},
 		}
 		if crashRep != nil {
 			extra["crash"] = crashRep
@@ -248,9 +247,9 @@ func scenarioRun(b *bridge.Bridge, d Deps) mcp.ToolHandlerFor[scenarioRunIn, any
 
 // runScenarioBeats runs the scenario's beats (exec / wait_until / console) in
 // scheduled order over the window.
-func runScenarioBeats(ctx context.Context, b *bridge.Bridge, beats []scenario.Beat, duration float64) {
+func runScenarioBeats(ctx context.Context, b *bridge.Bridge, beats []eval.Beat, duration float64) {
 	start := time.Now()
-	ordered := append([]scenario.Beat(nil), beats...)
+	ordered := append([]eval.Beat(nil), beats...)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].AtS < ordered[j].AtS })
 	for _, bt := range ordered {
 		if bt.AtS > 0 && sleepUntil(ctx, start.Add(secs(bt.AtS))) != nil {
@@ -269,10 +268,10 @@ func runScenarioBeats(ctx context.Context, b *bridge.Bridge, beats []scenario.Be
 	sleepUntil(ctx, start.Add(secs(duration)))
 }
 
-func scenarioRubric(checks []scenario.RubricCheck) rubric.RubricSpec {
-	spec := rubric.RubricSpec{Checks: make([]rubric.Check, len(checks))}
+func scenarioRubric(checks []eval.RubricCheck) eval.RubricSpec {
+	spec := eval.RubricSpec{Checks: make([]eval.Check, len(checks))}
 	for i, c := range checks {
-		spec.Checks[i] = rubric.Check{ID: c.ID, Kind: c.Kind, Path: c.Path, Params: c.Params, Severity: c.Severity}
+		spec.Checks[i] = eval.Check{ID: c.ID, Kind: c.Kind, Path: c.Path, Params: c.Params, Severity: c.Severity}
 	}
 	return spec
 }
@@ -282,13 +281,13 @@ func scenarioRubric(checks []scenario.RubricCheck) rubric.RubricSpec {
 // catches a black/unrendered frame.
 func enrichVisual(dir string, frames []captureFrame) {
 	for i := range frames {
-		img, err := imgdiff.Load(filepath.Join(dir, frames[i].File))
+		img, err := visual.Load(filepath.Join(dir, frames[i].File))
 		if err != nil {
 			continue
 		}
 		if frames[i].State == nil {
 			frames[i].State = map[string]any{}
 		}
-		frames[i].State["visual"] = map[string]any{"luma": imgdiff.MeanLuma(img)}
+		frames[i].State["visual"] = map[string]any{"luma": visual.MeanLuma(img)}
 	}
 }

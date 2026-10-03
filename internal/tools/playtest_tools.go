@@ -11,9 +11,8 @@ import (
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"github.com/jdziat/unreal-mcp-server/internal/crash"
-	"github.com/jdziat/unreal-mcp-server/internal/logtail"
-	"github.com/jdziat/unreal-mcp-server/internal/predicate"
-	"github.com/jdziat/unreal-mcp-server/internal/rubric"
+	"github.com/jdziat/unreal-mcp-server/internal/logs"
+	"github.com/jdziat/unreal-mcp-server/internal/eval"
 )
 
 type playtestExecBeat struct {
@@ -79,12 +78,12 @@ func registerPlaytestTools(s *mcp.Server, d Deps) {
 	add(s, "playtest_evaluate",
 		"Re-score a recorded playtest timeline against a rubric WITHOUT re-running the game (pure). Returns the checklist + verdict, evidence pointing at frame indices.",
 		func(ctx context.Context, _ *mcp.CallToolRequest, in playtestEvaluateIn) (*mcp.CallToolResult, map[string]any, error) {
-			samples := make([]rubric.Sample, len(in.Timeline))
+			samples := make([]eval.Sample, len(in.Timeline))
 			for i, s := range in.Timeline {
-				samples[i] = rubric.Sample{Index: s.Index, TWorld: s.TWorld, State: s.State}
+				samples[i] = eval.Sample{Index: s.Index, TWorld: s.TWorld, State: s.State}
 			}
-			logs := rubric.LogSummary{Errors: in.Logs.Errors, Warnings: in.Logs.Warnings, Ensures: in.Logs.Ensures}
-			report := rubric.Evaluate(samples, logs, toRubricSpec(in.Rubric))
+			logSum := eval.LogSummary{Errors: in.Logs.Errors, Warnings: in.Logs.Warnings, Ensures: in.Logs.Ensures}
+			report := eval.Evaluate(samples, logSum, toRubricSpec(in.Rubric))
 			return nil, reportToJSON(report), nil
 		})
 }
@@ -102,7 +101,7 @@ func playtestCapture(b *bridge.Bridge, d Deps) mcp.ToolHandlerFor[playtestCaptur
 		runStart := time.Now()
 		var logMarker int64
 		if resolveDeps(ctx, d).ProjectDir != "" {
-			logMarker = logtail.Size(logtail.LogPath(resolveDeps(ctx, d).ProjectDir))
+			logMarker = logs.LogSize(logs.LogPath(resolveDeps(ctx, d).ProjectDir))
 		}
 		// 2. open the level if requested.
 		if in.Level != "" {
@@ -196,11 +195,11 @@ func playtestCapture(b *bridge.Bridge, d Deps) mcp.ToolHandlerFor[playtestCaptur
 
 		// 8. attribute the log window AND look for a crash (a hard crash kills
 		// the in-editor bridge, so the Go-side crash reader is the only witness).
-		logs := rubric.LogSummary{}
+		logSum := eval.LogSummary{}
 		if resolveDeps(ctx, d).ProjectDir != "" {
-			if text, _, rerr := logtail.ReadFrom(logtail.LogPath(resolveDeps(ctx, d).ProjectDir), logMarker); rerr == nil {
-				lines := logtail.FilterLines(text, "Warning", nil)
-				logs.Errors, logs.Warnings, logs.Ensures = logtail.CountBySeverity(lines)
+			if text, _, rerr := logs.ReadFrom(logs.LogPath(resolveDeps(ctx, d).ProjectDir), logMarker); rerr == nil {
+				lines := logs.FilterLines(text, "Warning", nil)
+				logSum.Errors, logSum.Warnings, logSum.Ensures = logs.CountBySeverity(lines)
 			}
 		}
 		crashRep := detectCrash(resolveDeps(ctx, d).ProjectDir, logMarker, runStart)
@@ -208,7 +207,7 @@ func playtestCapture(b *bridge.Bridge, d Deps) mcp.ToolHandlerFor[playtestCaptur
 		if len(cr.Frames) == 0 {
 			// Zero frames usually means the run died early — surface the crash if there is one.
 			out := map[string]any{"error": "playtest produced 0 frames (was the world ticking? for possessed PIE use mode=pie)",
-				"logs": map[string]any{"errors": logs.Errors, "warnings": logs.Warnings, "ensures": logs.Ensures}}
+				"logs": map[string]any{"errors": logSum.Errors, "warnings": logSum.Warnings, "ensures": logSum.Ensures}}
 			if crashRep != nil {
 				out["crash"] = crashRep
 			}
@@ -217,7 +216,7 @@ func playtestCapture(b *bridge.Bridge, d Deps) mcp.ToolHandlerFor[playtestCaptur
 
 		// 9. evaluate the rubric over the recorded timeline.
 		samples := framesToSamples(cr.Frames)
-		report := rubric.Evaluate(samples, logs, toRubricSpec(in.Rubric))
+		report := eval.Evaluate(samples, logSum, toRubricSpec(in.Rubric))
 		markCells := failedFrameIndices(report)
 
 		// 10. one montage (failed-check frames get a red border) + full sidecar.
@@ -225,7 +224,7 @@ func playtestCapture(b *bridge.Bridge, d Deps) mcp.ToolHandlerFor[playtestCaptur
 		extra := map[string]any{
 			"verdict":       report.Verdict,
 			"rubric_result": reportToJSON(report),
-			"logs":          map[string]any{"errors": logs.Errors, "warnings": logs.Warnings, "ensures": logs.Ensures},
+			"logs":          map[string]any{"errors": logSum.Errors, "warnings": logSum.Warnings, "ensures": logSum.Ensures},
 			"session_dir":   cr.Dir,
 		}
 		if crashRep != nil {
@@ -267,7 +266,7 @@ func orderBeats(beats []playtestBeat) []playtestBeat {
 
 // waitPredicate polls pie_observe until the predicate holds or timeout.
 func waitPredicate(ctx context.Context, b *bridge.Bridge, expr string, timeoutS float64) {
-	pred, err := predicate.Parse(expr)
+	pred, err := eval.ParsePredicate(expr)
 	if err != nil {
 		return
 	}
@@ -297,7 +296,7 @@ func detectCrash(projectDir string, marker int64, since time.Time) *crash.Report
 		return nil
 	}
 	var rep *crash.Report
-	if text, _, err := logtail.ReadFrom(logtail.LogPath(projectDir), marker); err == nil {
+	if text, _, err := logs.ReadFrom(logs.LogPath(projectDir), marker); err == nil {
 		rep = crash.ScanLog(text)
 	}
 	if rep == nil || rep.File == "" {
@@ -321,23 +320,23 @@ func stopPlay(ctx context.Context, b *bridge.Bridge, mode string) {
 	}
 }
 
-func framesToSamples(frames []captureFrame) []rubric.Sample {
-	out := make([]rubric.Sample, len(frames))
+func framesToSamples(frames []captureFrame) []eval.Sample {
+	out := make([]eval.Sample, len(frames))
 	for i, f := range frames {
-		out[i] = rubric.Sample{Index: f.Index, TWorld: f.TWorld, State: f.State}
+		out[i] = eval.Sample{Index: f.Index, TWorld: f.TWorld, State: f.State}
 	}
 	return out
 }
 
-func toRubricSpec(checks []rubricCheckIn) rubric.RubricSpec {
-	spec := rubric.RubricSpec{Checks: make([]rubric.Check, len(checks))}
+func toRubricSpec(checks []rubricCheckIn) eval.RubricSpec {
+	spec := eval.RubricSpec{Checks: make([]eval.Check, len(checks))}
 	for i, c := range checks {
-		spec.Checks[i] = rubric.Check{ID: c.ID, Kind: c.Kind, Path: c.Path, Params: c.Params, Severity: c.Severity}
+		spec.Checks[i] = eval.Check{ID: c.ID, Kind: c.Kind, Path: c.Path, Params: c.Params, Severity: c.Severity}
 	}
 	return spec
 }
 
-func reportToJSON(r rubric.Report) map[string]any {
+func reportToJSON(r eval.Report) map[string]any {
 	checks := make([]map[string]any, len(r.Checks))
 	for i, c := range r.Checks {
 		m := map[string]any{"id": c.ID, "kind": c.Kind, "severity": c.Severity, "passed": c.Passed, "message": c.Message}
@@ -351,7 +350,7 @@ func reportToJSON(r rubric.Report) map[string]any {
 
 // failedFrameIndices returns the distinct frame indices cited by failed checks,
 // so the montage can red-border the visual evidence of each failure.
-func failedFrameIndices(r rubric.Report) []int {
+func failedFrameIndices(r eval.Report) []int {
 	seen := map[int]bool{}
 	var out []int
 	for _, c := range r.Checks {

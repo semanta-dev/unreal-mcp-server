@@ -7,7 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/jdziat/unreal-mcp-server/internal/gitutil"
+	"github.com/jdziat/unreal-mcp-server/internal/build"
 )
 
 var errNoProject = errors.New("no project dir configured (set -project / UMCP_PROJECT_DIR)")
@@ -60,7 +60,7 @@ func registerGitTools(s *mcp.Server, d Deps) {
 			if dir == "" {
 				return nil, gitStatusOut{}, errNoProject
 			}
-			out, err := gitutil.Run(ctx, dir, "status", "--porcelain=v1", "--branch")
+			out, err := build.Run(ctx, dir, "status", "--porcelain=v1", "--branch")
 			if err != nil {
 				return nil, gitStatusOut{}, err
 			}
@@ -77,7 +77,7 @@ func registerGitTools(s *mcp.Server, d Deps) {
 			if len(in.Paths) > 0 {
 				args = append(append(args, "--"), in.Paths...)
 			}
-			out, err := gitutil.Run(ctx, dir, args...)
+			out, err := build.Run(ctx, dir, args...)
 			if err != nil {
 				return nil, gitDiffOut{}, err
 			}
@@ -100,13 +100,13 @@ func registerGitTools(s *mcp.Server, d Deps) {
 				addArgs = append(addArgs, ".")
 				addArgs = append(addArgs, gitExcludes...)
 			}
-			if _, err := gitutil.Run(ctx, dir, addArgs...); err != nil {
+			if _, err := build.Run(ctx, dir, addArgs...); err != nil {
 				return nil, gitCheckpointOut{}, err
 			}
-			if _, err := gitutil.Run(ctx, dir, "commit", "-m", in.Message); err != nil {
+			if _, err := build.Run(ctx, dir, "commit", "-m", in.Message); err != nil {
 				return nil, gitCheckpointOut{}, err
 			}
-			hash, _ := gitutil.Run(ctx, dir, "rev-parse", "HEAD")
+			hash, _ := build.Run(ctx, dir, "rev-parse", "HEAD")
 			return nil, gitCheckpointOut{Commit: strings.TrimSpace(hash), Message: in.Message}, nil
 		})
 
@@ -119,10 +119,10 @@ func registerGitTools(s *mcp.Server, d Deps) {
 			if strings.TrimSpace(in.Ref) == "" {
 				return nil, gitCheckpointOut{}, errors.New("ref required")
 			}
-			if _, err := gitutil.Run(ctx, dir, "reset", "--hard", in.Ref); err != nil {
+			if _, err := build.Run(ctx, dir, "reset", "--hard", in.Ref); err != nil {
 				return nil, gitCheckpointOut{}, err
 			}
-			hash, _ := gitutil.Run(ctx, dir, "rev-parse", "HEAD")
+			hash, _ := build.Run(ctx, dir, "rev-parse", "HEAD")
 			return nil, gitCheckpointOut{Commit: strings.TrimSpace(hash), Message: "reset --hard " + in.Ref}, nil
 		})
 
@@ -136,7 +136,7 @@ func registerGitTools(s *mcp.Server, d Deps) {
 			if limit <= 0 {
 				limit = 20
 			}
-			out, err := gitutil.Run(ctx, dir, "log", "-n", itoa(limit), "--pretty=format:%H\x1f%s\x1f%cI")
+			out, err := build.Run(ctx, dir, "log", "-n", itoa(limit), "--pretty=format:%H\x1f%s\x1f%cI")
 			if err != nil {
 				return nil, gitLogOut{}, err
 			}
