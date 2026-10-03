@@ -1,8 +1,8 @@
 package tools
 
 import (
-	"os"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"

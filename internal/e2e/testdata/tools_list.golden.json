@@ -805,59 +805,59 @@
           "grid": {
             "additionalProperties": false,
             "properties": {
-              "ESteps": {
+              "e_steps": {
                 "type": "integer"
               },
-              "SSteps": {
+              "s_steps": {
                 "type": "integer"
               },
-              "SplashSteps": {
+              "splash_steps": {
                 "type": "integer"
               }
             },
             "required": [
-              "SSteps",
-              "ESteps",
-              "SplashSteps"
+              "s_steps",
+              "e_steps",
+              "splash_steps"
             ],
             "type": "object"
           },
           "scaffold": {
             "additionalProperties": false,
             "properties": {
-              "BaseDamage": {
+              "base_damage": {
                 "type": "number"
               },
-              "ExpandGrowth": {
+              "expand_growth": {
                 "type": "number"
               },
-              "Focus": {
+              "focus": {
                 "type": "integer"
               },
-              "SplashMin": {
+              "splash_min": {
                 "type": "number"
               },
-              "Spread": {
+              "spread": {
                 "type": "integer"
               },
-              "Waves": {
+              "waves": {
                 "items": {
                   "additionalProperties": false,
                   "properties": {
-                    "Count": {
+                    "count": {
                       "type": "integer"
                     },
-                    "HP": {
+                    "hp": {
                       "type": "number"
                     },
-                    "Spike": {
+                    "spike": {
                       "type": "boolean"
                     }
                   },
                   "required": [
-                    "Count",
-                    "HP",
-                    "Spike"
+                    "count",
+                    "hp",
+                    "spike"
                   ],
                   "type": "object"
                 },
@@ -868,12 +868,12 @@
               }
             },
             "required": [
-              "Waves",
-              "BaseDamage",
-              "Focus",
-              "Spread",
-              "SplashMin",
-              "ExpandGrowth"
+              "waves",
+              "base_damage",
+              "focus",
+              "spread",
+              "splash_min",
+              "expand_growth"
             ],
             "type": "object"
           }
@@ -1347,39 +1347,39 @@
             "items": {
               "additionalProperties": false,
               "properties": {
-                "BaseDamage": {
+                "base_damage": {
                   "type": "number"
                 },
-                "ExpandGrowth": {
+                "expand_growth": {
                   "type": "number"
                 },
-                "Focus": {
+                "focus": {
                   "type": "integer"
                 },
-                "SplashMin": {
+                "splash_min": {
                   "type": "number"
                 },
-                "Spread": {
+                "spread": {
                   "type": "integer"
                 },
-                "Waves": {
+                "waves": {
                   "items": {
                     "additionalProperties": false,
                     "properties": {
-                      "Count": {
+                      "count": {
                         "type": "integer"
                       },
-                      "HP": {
+                      "hp": {
                         "type": "number"
                       },
-                      "Spike": {
+                      "spike": {
                         "type": "boolean"
                       }
                     },
                     "required": [
-                      "Count",
-                      "HP",
-                      "Spike"
+                      "count",
+                      "hp",
+                      "spike"
                     ],
                     "type": "object"
                   },
@@ -1390,12 +1390,12 @@
                 }
               },
               "required": [
-                "Waves",
-                "BaseDamage",
-                "Focus",
-                "Spread",
-                "SplashMin",
-                "ExpandGrowth"
+                "waves",
+                "base_damage",
+                "focus",
+                "spread",
+                "splash_min",
+                "expand_growth"
               ],
               "type": "object"
             },
@@ -1413,62 +1413,62 @@
           "seed": {
             "additionalProperties": false,
             "properties": {
-              "Policy": {
+              "policy": {
                 "additionalProperties": false,
                 "properties": {
-                  "E": {
+                  "e": {
                     "type": "number"
                   },
-                  "S": {
+                  "s": {
                     "type": "number"
                   },
-                  "Splash": {
+                  "splash": {
                     "type": "number"
                   }
                 },
                 "required": [
-                  "S",
-                  "Splash",
-                  "E"
+                  "s",
+                  "splash",
+                  "e"
                 ],
                 "type": "object"
               },
-              "Scaffold": {
+              "scaffold": {
                 "additionalProperties": false,
                 "properties": {
-                  "BaseDamage": {
+                  "base_damage": {
                     "type": "number"
                   },
-                  "ExpandGrowth": {
+                  "expand_growth": {
                     "type": "number"
                   },
-                  "Focus": {
+                  "focus": {
                     "type": "integer"
                   },
-                  "SplashMin": {
+                  "splash_min": {
                     "type": "number"
                   },
-                  "Spread": {
+                  "spread": {
                     "type": "integer"
                   },
-                  "Waves": {
+                  "waves": {
                     "items": {
                       "additionalProperties": false,
                       "properties": {
-                        "Count": {
+                        "count": {
                           "type": "integer"
                         },
-                        "HP": {
+                        "hp": {
                           "type": "number"
                         },
-                        "Spike": {
+                        "spike": {
                           "type": "boolean"
                         }
                       },
                       "required": [
-                        "Count",
-                        "HP",
-                        "Spike"
+                        "count",
+                        "hp",
+                        "spike"
                       ],
                       "type": "object"
                     },
@@ -1479,19 +1479,19 @@
                   }
                 },
                 "required": [
-                  "Waves",
-                  "BaseDamage",
-                  "Focus",
-                  "Spread",
-                  "SplashMin",
-                  "ExpandGrowth"
+                  "waves",
+                  "base_damage",
+                  "focus",
+                  "spread",
+                  "splash_min",
+                  "expand_growth"
                 ],
                 "type": "object"
               }
             },
             "required": [
-              "Policy",
-              "Scaffold"
+              "policy",
+              "scaffold"
             ],
             "type": "object"
           },
@@ -1738,7 +1738,7 @@
         "openWorldHint": true,
         "title": "Revert to a checkpoint"
       },
-      "description": "Put the project's files back exactly as they were at a git op=checkpoint (umcp/cp/\u003cn\u003e only; anything else is PRECONDITION). Files changed since are restored, files added since are deleted, untracked files are kept (listed). Editor-aware: if the editor has any of those assets loaded, it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty=true) and relaunched on the same map after; otherwise it stays up and those assets are reported possibly_stale. All-or-nothing: the previous files are backed up under Saved/MCP/revert-backup and restored on failure. Result: reverted_files, deleted_files, editor_restarted, discarded_dirty, possibly_stale, rebuild_required (C++ changed: run build).",
+      "description": "Put the project's files back exactly as they were at a git op=checkpoint (umcp/cp/\u003cn\u003e only; anything else is PRECONDITION). Files changed since are restored, files added since are deleted, untracked files are kept (listed). History is not rewritten: HEAD stays where it is, so the revert shows as working-tree changes (commit them, e.g. with git op=checkpoint, to keep them). Editor-aware: if the editor has any of those assets loaded, it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty=true) and relaunched on the same map after; otherwise it stays up and those assets are reported possibly_stale. All-or-nothing: the previous files are backed up under Saved/MCP/revert-backup and restored on failure. Result: reverted_files, deleted_files, editor_restarted, discarded_dirty, possibly_stale, rebuild_required (C++ changed: run build).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
