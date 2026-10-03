@@ -8,7 +8,8 @@ record is [`plans/OVERHAUL_PLAN.md`](plans/OVERHAUL_PLAN.md); this page describe
 ```
 client ──tools/call──▶ app (per-session mcp.Server, middleware: recover, log, session deps, toolsets, SafetyNet)
                         └▶ spec.Spec.handler: validate args (JSON Schema) → resolve op → per-op Required/Rejects
-                             → approval gate (destructive/exec, when gate_policy=require) → deadline (op Timeout,
+                             → approval gate (destructive/exec when a spec.Gate requires it; gate_policy=require is
+                               spec.DenyGate — fail closed — until the cockpit approval UI is wired) → deadline (op Timeout,
                                timeout_s ≤ Max) → Handler
                                  └▶ bridge.Bridge: dispatch(op, base64-JSON args)
                                       ├▶ uexec: remote-execution command → "_mcp2_dispatch(op, args)" → stdout marker

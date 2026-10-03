@@ -13,8 +13,9 @@ see [`docs/migration-v2.md`](docs/migration-v2.md) for all 155 v1 names.
   `@gamestate`, `@pawn`, `@controller`), `class` (paths or short names), `[x, y, z]` vectors.
 - One result/error contract: objects only; `{"error": {code, message, hint, retryable, outcome, details}}` with a closed
   code set and `outcome: unknown` for mutating calls that may have run.
-- Per-op safety tiers drive MCP annotations and the cockpit approval gate; `toolsets op=describe` reports each op's
-  tier and needs.
+- Per-op safety tiers drive MCP annotations and the approval gate; `gate_policy: "require"` fails closed (gated ops
+  are refused) until the cockpit approval UI is wired to tool calls. `toolsets op=describe` reports each op's tier and
+  needs. `-toolsets` / `UMCP_TOOLSETS` and `.umcp.json` toolsets apply at stdio startup.
 - 16 advertised-but-unimplemented HUD tools removed.
 
 ### New capabilities
@@ -42,7 +43,7 @@ see [`docs/migration-v2.md`](docs/migration-v2.md) for all 155 v1 names.
 - A non-idempotent op could run twice after a reconnect; dispatch is exactly-once with `outcome: unknown`.
 
 ### Architecture & reliability
-- 48 → 29 top-level packages with an enforced import DAG; one supervisor for stdio and daemon; per-session servers in the
+- 48 → 29 top-level packages (plan target 28) with an enforced import DAG; one supervisor for stdio and daemon; per-session servers in the
   daemon with lease adoption and draining.
 - The companion runs in its own namespace (`__main__._mcp2`) alongside a v1 companion; rollback is a binary swap.
 - Tests: in-memory e2e over both dispatch backends, every (tool, op) exercised against an op emulator, the real binary

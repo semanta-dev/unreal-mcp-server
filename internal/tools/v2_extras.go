@@ -196,6 +196,11 @@ func projectSpec(pm session.ProjectManager) *spec.Spec {
 			out := map[string]any{"attached": true, "instance": id, "project": project}
 			if ts, ok := spec.ToolsetsFrom(ctx); ok {
 				pf, perr := session.LoadProjectFile(project)
+				if perr == nil && pf.GatePolicy == "require" {
+					pm.Release(sid) // fail closed: this server cannot ask a human for approval
+					return nil, envelope.New(envelope.Precondition, "%s", spec.NoApprovalSurface).
+						WithHint("set gate_policy to \"off\" in the project's .umcp.json, or use a server version with approvals")
+				}
 				if perr != nil {
 					out["project_file_error"] = perr.Error()
 				} else {

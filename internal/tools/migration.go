@@ -150,7 +150,7 @@ var V1Calls = map[string]string{
 	"set_actor_transform":      "actor_edit op=transform world=editor (location/rotation/scale as [x,y,z])",
 	"set_gamemode":             "project_config op=set_default_gamemode (class_path → class)",
 	"set_world_gamemode":       "level op=set_world_gamemode (class_path → class)",
-	"spawn_actor":              "actor_edit op=spawn world=editor (class_path → class, x/y/z → location)",
+	"spawn_actor":              "actor_edit op=spawn world=editor (class_path → class, x/y/z → location, pitch/yaw/roll → rotation, static_mesh_path → static_mesh)",
 	"start_play":               "pie op=start (waits until running)",
 	"stop_play":                "pie op=stop",
 	"style_cohesion":           "design_audit kind=style",

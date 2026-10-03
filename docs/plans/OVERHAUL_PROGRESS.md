@@ -913,3 +913,26 @@ the user together with P7.
 - **the paid §3.5 eval**.
 
 Both need the user.
+
+**Gate P5e-fixes + P6, round 1: P5e A, P6 B+.** Blocking: *the docs described an approval gate and stdio
+`.umcp.json` toolsets that nothing wired.* `app.Options.Gate` was never set, so `gate_policy: "require"` silently
+allowed everything. Fixed in the code, not just the docs:
+- `require` now **fails closed**. The new `spec.DenyGate` refuses destructive and exec ops with an explanation
+  (`spec.NoApprovalSurface`). The daemon refuses to attach a `require` project and releases the lease. Wiring the
+  cockpit's approval UI to tool calls is P7 work.
+- `app.StartupPolicy` applies `.umcp.json` toolsets plus the new `-toolsets`/`UMCP_TOOLSETS` flag at stdio startup.
+- T1 (`policy_test.go`):
+  - a mutating op passes, but a destructive delete and a python run are refused and the delete never runs;
+  - toolsets from the file and the flag are on;
+  - an invalid policy is rejected at startup;
+  - the daemon refuses a `require` project.
+
+Docs say exactly this (README, operations, architecture, CHANGELOG).
+
+Non-blocking notes, also fixed:
+- migration rows name their toolset when it is not core, with an enable note;
+- the `spawn_actor` row is complete;
+- the stale cockpit comment in main.go is fixed;
+- the paid eval sits under its own heading in operations.md;
+- the package-count deviation is recorded (29 top-level vs the plan's 28: `calibration` and `version` stayed separate
+  leaf packages).

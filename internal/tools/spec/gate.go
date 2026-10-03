@@ -36,3 +36,21 @@ const (
 	// MaxWait caps a caller's wait_s for async ops.
 	MaxWait = 25 * time.Second
 )
+
+// DenyGate is the gate for gate_policy "require" when no approval surface is wired:
+// every Destructive/Exec op is refused (fail closed) — never silently allowed.
+type DenyGate struct{ Reason string }
+
+// Required reports true: the policy is "require".
+func (DenyGate) Required() bool { return true }
+
+// Request denies at once.
+func (g DenyGate) Request(GateRequest) (<-chan Decision, func()) {
+	ch := make(chan Decision, 1)
+	ch <- Decision{Approved: false, Reason: g.Reason}
+	return ch, func() {}
+}
+
+// NoApprovalSurface explains a DenyGate refusal.
+const NoApprovalSurface = "gate_policy is \"require\" but no approval surface is available in this server " +
+	"version (the cockpit approval UI is not wired to tool calls yet): destructive and exec ops are refused"

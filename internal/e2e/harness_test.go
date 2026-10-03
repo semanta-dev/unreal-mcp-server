@@ -37,6 +37,7 @@ type harnessOpts struct {
 	project  string // Deps.ProjectDir (offline tools)
 	native   bool   // dispatch op results over the native framed backend
 	client   *mcp.ClientOptions
+	gate     spec.Gate      // approval policy (nil = off)
 	toolsets []spec.Toolset // enabled at session start in addition to core
 }
 
@@ -101,7 +102,7 @@ func startHarness(t *testing.T, o harnessOpts) *harness {
 	}
 	h.bridge = b
 	deps := tools.Deps{Bridge: b, Jobs: jobs.NewRegistry(), ProjectDir: o.project}
-	srv := app.NewServer(app.Options{Deps: deps, Toolsets: o.toolsets}, nil).MCP
+	srv := app.NewServer(app.Options{Deps: deps, Toolsets: o.toolsets, Gate: o.gate}, nil).MCP
 	h.specs = map[string]*spec.Spec{}
 	for _, sp := range tools.Specs(deps) {
 		h.specs[sp.Name] = sp

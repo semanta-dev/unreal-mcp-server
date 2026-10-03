@@ -30,6 +30,7 @@ type Config struct {
 	DaemonAddr       string        // if set, run the multi-project daemon (StreamableHTTP) on this addr
 	SessionIdle      time.Duration // daemon: end a session after this long without activity
 	Cockpit          string        // "off" | "on": attach the MCPCore cockpit (one Go peer per editor)
+	Toolsets         string        // comma-separated toolsets enabled at session start (besides core)
 }
 
 func boolEnv(key string) bool {
@@ -79,6 +80,7 @@ func LoadFrom(fs *flag.FlagSet, args []string) (Config, error) {
 	fs.BoolVar(&c.SelfTest, "selftest", false, "connect to the editor, round-trip editor_status, and exit (0 ok, non-zero on failure)")
 	fs.StringVar(&c.DaemonAddr, "daemon-addr", envOr("UMCP_DAEMON_ADDR", ""), "run the multi-project daemon (StreamableHTTP, one editor lease per session) on this addr, e.g. 127.0.0.1:6111")
 	fs.StringVar(&c.Cockpit, "cockpit", envOr("UMCP_COCKPIT", "off"), "attach the MCPCore cockpit (native channel + browser page): off|on. The plugin accepts ONE Go peer per editor")
+	fs.StringVar(&c.Toolsets, "toolsets", envOr("UMCP_TOOLSETS", ""), "comma-separated toolsets enabled at session start, e.g. design,ui (adds to the project's .umcp.json toolsets)")
 	fs.DurationVar(&c.SessionIdle, "session-idle", 30*time.Minute, "daemon: end an MCP session after this long without activity (its lease drains while a project job runs)")
 	if err := fs.Parse(args); err != nil {
 		return c, err

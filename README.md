@@ -45,8 +45,10 @@ MCP client ── stdio ─────────▶ unreal-mcp ── UDP/TCP
 | Project | `project_map`, `project_config`, `git`, `git_revert`, `job`, `toolsets` |
 
 Every call returns a structured object; every failure is `{"error": {code, message, hint, retryable, outcome,
-details}}` with a closed code set. Ops are tiered `readonly` → `ephemeral` → `mutating` → `destructive` → `exec`;
-with `gate_policy: "require"` destructive and exec ops wait for a human's approval in the cockpit.
+details}}` with a closed code set. Ops are tiered `readonly` → `ephemeral` → `mutating` → `destructive` → `exec`.
+With `gate_policy: "require"`, destructive and exec ops need human approval — in this version no approval surface is
+wired to tool calls yet, so `require` **fails closed**: those ops are refused (and the daemon will not attach such a
+project). Leave it `off` to allow them.
 
 **Rollback ladder:** `snapshot_restore` (actor transforms) → `scene_clear` (a scene's actors) → `git_revert` (files, to
 a `git op=checkpoint`; closes and relaunches the editor safely when the assets are loaded).
@@ -64,6 +66,7 @@ a `git op=checkpoint`; closes and relaunches the editor safely when the assets a
 | `-auto-relaunch` | `UMCP_AUTO_RELAUNCH` | `false` | relaunch the editor if it disappears (needs `-project` + engine) |
 | `-discovery-timeout`, `-command-timeout` | `UMCP_DISCOVERY_TIMEOUT`, `UMCP_COMMAND_TIMEOUT` | | protocol timeouts |
 | `-log-level`, `-log-format` | `UMCP_LOG_LEVEL`, `UMCP_LOG_FORMAT` | `info`, `json` | logs (stderr only — stdout is the MCP stream) |
+| `-toolsets` | `UMCP_TOOLSETS` | — | comma-separated toolsets enabled at session start (stdio), e.g. `design,ui` |
 | `-session-idle` | | `30m` | daemon: end an idle MCP session |
 | `-selftest`, `-version` | | | connect + `editor_status`, exit / print the version |
 
@@ -73,7 +76,7 @@ Per project, `<project>/.umcp.json`:
 { "toolsets": ["design", "ui"], "gate_policy": "require", "keep_package_recovery": false }
 ```
 
-`keep_package_recovery: true` stops the server from passing `-AutoDeclinePackageRecovery` when it launches the
+`toolsets` are enabled at startup (stdio) or on `project op=attach` (daemon). `keep_package_recovery: true` stops the server from passing `-AutoDeclinePackageRecovery` when it launches the
 editor (keep it for projects also edited by hand; see operations.md).
 
 ## Developing

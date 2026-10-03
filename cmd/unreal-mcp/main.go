@@ -89,17 +89,24 @@ func main() {
 	}
 
 	// The cockpit (browser control+observability surface) opens itself once the editor's
-	// native MCPCore channel is reachable; the launcher surfaces its URL via a log line, a
-	// Saved/PyMCP/cockpit_url.txt file, and the cockpit_url tool.
+	// native MCPCore channel is reachable; the launcher surfaces its URL via a log line and
+	// a Saved/PyMCP/cockpit_url.txt file (toolsets op=describe reports it without the token).
 	launcher := attach.NewLauncher()
 	if cfg.Cockpit == "on" {
 		go launcher.Run(ctx, b, attach.LaunchConfig{Project: cfg.ProjectDir, ProjectDir: cfg.ProjectDir}, logger)
 	}
 
+	toolsets, gate, perr := app.StartupPolicy(cfg.ProjectDir, cfg.Toolsets)
+	if perr != nil {
+		logger.Error("invalid project settings", "err", perr)
+		os.Exit(2)
+	}
 	st := session.NewState("stdio")
 	defer st.Teardown()
 	srv := app.NewServer(app.Options{
-		Logger: logger,
+		Logger:   logger,
+		Toolsets: toolsets,
+		Gate:     gate,
 		Deps: session.Deps{
 			Bridge:     b,
 			Jobs:       jobs.NewRegistry(),

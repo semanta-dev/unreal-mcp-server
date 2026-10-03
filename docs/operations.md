@@ -21,8 +21,10 @@ loopback multicast integration test.
    `[/Script/PythonScriptPlugin.PythonScriptPluginSettings] bRemoteExecution=True`.
 2. Render `.mcp.json`:
    `.\scripts\render-mcp-config.ps1 -ProjectDir <game> -EngineDir <UE_5.7>` (from `deploy/mcp.json.tmpl`).
-3. Optional `<game>/.umcp.json`: `toolsets` enabled at session start, `gate_policy` (`off` | `require`),
-   `keep_package_recovery`.
+3. Optional `<game>/.umcp.json`: `toolsets` enabled at session start (stdio) or at `project op=attach` (daemon),
+   `gate_policy` (`off` | `require` — `require` currently fails closed: destructive and exec ops are refused and the
+   daemon refuses to attach the project, because no approval surface is wired to tool calls yet), and
+   `keep_package_recovery`. `-toolsets`/`UMCP_TOOLSETS` adds toolsets for a stdio session.
 4. Optional plugin (`plugin/UnrealMCP`): needed for `pie op=input`, `audio`, `capture source=game_scene`,
    `widget_query op=render` and the cockpit. Copy it into `<game>/Plugins/`, then `build strategy=ubt`.
 
@@ -42,8 +44,8 @@ editors are spawned on demand and kept warm between sessions. A session idle for
 its editor drains while a project job still runs.
 
 **cockpit**: `-cockpit on` attaches to the plugin's MCPCore channel and opens the browser control panel (its URL,
-with the access token, is printed by the launcher — tools never return it). With `gate_policy: "require"`,
-destructive and exec ops wait there for approval.
+with the access token, is printed by the launcher — tools never return it). Wiring its gate panel to tool-call
+approvals is P7 work; until then `gate_policy: "require"` refuses gated ops instead of waiting.
 
 **One Go peer per editor.** The editor's remote-execution node holds a single command connection: two clients on one
 editor steal it from each other (`EDITOR_BUSY`; `editor_lifecycle op=reclaim` takes it back explicitly). Give each
@@ -73,7 +75,9 @@ the emulator cannot:
    open in an editor tab during the revert; a nested project directory.
 8. `playtest op=run` with a saved scenario: verdict, contact sheet, crash diagnosis on a deliberately broken map.
 9. Daemon: two projects, two sessions, no cross-talk; restart and revert keep the lease and reopen the map.
-10. The tool-selection eval (plan §3.5) — paid API runs; needs explicit approval.
+
+**Tool-selection eval** (plan §3.5) — not a live-editor check: paid API runs of agents choosing tools on mined tasks;
+needs explicit approval of the spend after a 5-task pilot.
 
 ## Plugin rebuild drill
 

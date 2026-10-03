@@ -161,9 +161,13 @@ func MigrationMarkdown(specs []*spec.Spec) string {
 		"`wait_s` (≤ 25) or poll `job`.\n" +
 		"- **Safety**: overwrites and deletions are separate destructive ops (`asset_create op=replace`, `scene_clear op=prune`, " +
 		"`widget_edit op=prune`); `python op=recipe` no longer wipes the level by default; output files are server-owned.\n\n")
-	b.WriteString("## Tool by tool\n\n| v1 tool | v2 call |\n|---|---|\n")
+	b.WriteString("## Tool by tool\n\nTools outside the core toolset are marked: enable them first with `toolsets op=enable " +
+		"toolset=<name>` (or a project's `.umcp.json` `toolsets`, or `-toolsets`). The daemon's `project` tool is on in " +
+		"daemon mode.\n\n| v1 tool | v2 call |\n|---|---|\n")
 	replacedBy := map[string]string{}
+	toolsetOf := map[string]spec.Toolset{}
 	for _, s := range specs {
+		toolsetOf[s.Name] = s.Toolset
 		for _, r := range s.Replaces {
 			replacedBy[r] = s.Name
 		}
@@ -178,6 +182,9 @@ func MigrationMarkdown(specs []*spec.Spec) string {
 				call = "`" + tool + "` " + rest
 			} else {
 				call = "`" + call + "`"
+			}
+			if ts := toolsetOf[replacedBy[name]]; ts != spec.Core {
+				call += fmt.Sprintf(" — toolset `%s`", ts)
 			}
 			fmt.Fprintf(&b, "| `%s` | %s |\n", name, call)
 		default:

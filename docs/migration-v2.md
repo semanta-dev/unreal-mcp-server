@@ -18,6 +18,8 @@ v2 replaces v1's 155 tools with 45. Tool names are not compatible: update prompt
 
 ## Tool by tool
 
+Tools outside the core toolset are marked: enable them first with `toolsets op=enable toolset=<name>` (or a project's `.umcp.json` `toolsets`, or `-toolsets`). The daemon's `project` tool is on in daemon mode.
+
 | v1 tool | v2 call |
 |---|---|
 | `affordances` | `toolsets` op=describe |
@@ -28,12 +30,12 @@ v2 replaces v1's 155 tools with 45. Tool names are not compatible: update prompt
 | `asset_reimport` | `asset_import` op=reimport |
 | `asset_tags` | `asset_query` op=tags |
 | `asset_thumbnail` | `asset_query` op=thumbnail (returns the PNG) |
-| `asset_utilization` | `design_audit` kind=utilization |
+| `asset_utilization` | `design_audit` kind=utilization — toolset `design` |
 | `assign_subclass` | `asset_edit` op=assign_subclass (target → asset, prop → property, class_path → class) |
-| `audio_audit` | `design_audit` kind=audio |
+| `audio_audit` | `design_audit` kind=audio — toolset `design` |
 | `audio_capture_start` | `audio` op=capture_start (PIE only) |
 | `audio_capture_stop` | `audio` op=capture_stop (writes Saved/MCP/audio) |
-| `balance_sweep` | `design_explore` op=sweep |
+| `balance_sweep` | `design_explore` op=sweep — toolset `design` |
 | `blueprint_add_component` | `asset_edit` op=add_component (blueprint → asset, component_class → class) |
 | `blueprint_create` | `asset_create` op=create kind=blueprint (parent_class_path → class) |
 | `blueprint_set_defaults` | `asset_edit` op=set_defaults (blueprint → asset, defaults → properties) |
@@ -43,19 +45,19 @@ v2 replaces v1's 155 tools with 45. Tool names are not compatible: update prompt
 | `capture_status` | `capture` op=status |
 | `capture_stop` | `capture` op=stop |
 | `cockpit_url` | `toolsets` op=describe (cockpit.url, without the access token) |
-| `company_build` | `polyworld` op=build (PIE only) |
-| `company_demolish` | `polyworld_demolish` (PIE only) |
-| `company_road` | `polyworld` op=road (PIE only) |
-| `company_select` | `polyworld` op=select (PIE only) |
-| `company_status` | `polyworld` op=status (PIE only) |
+| `company_build` | `polyworld` op=build (PIE only) — toolset `polyworld` |
+| `company_demolish` | `polyworld_demolish` (PIE only) — toolset `polyworld` |
+| `company_road` | `polyworld` op=road (PIE only) — toolset `polyworld` |
+| `company_select` | `polyworld` op=select (PIE only) — toolset `polyworld` |
+| `company_status` | `polyworld` op=status (PIE only) — toolset `polyworld` |
 | `create_material_instance` | `asset_create` op=create kind=material_instance |
 | `dataasset_create` | `asset_create` op=create kind=data_asset |
 | `datatable_create` | `asset_create` op=create kind=data_table |
 | `datatable_import` | `asset_import` op=datatable (datatable → asset) |
-| `decision_audit` | `design_audit` kind=decision |
+| `decision_audit` | `design_audit` kind=decision — toolset `design` |
 | `delete_actor` | `actor_edit` op=delete world=editor (actor_label → actor) |
 | `design_check` | `scene` op=check |
-| `design_explore` | `design_explore` op=explore |
+| `design_explore` | `design_explore` op=explore — toolset `design` |
 | `editor_events` | `logs` op=events (since_offset → marker) |
 | `editor_ping` | `editor` op=ping |
 | `editor_restart` | `editor_lifecycle` op=restart (safe shutdown; save / discard_dirty) |
@@ -65,10 +67,10 @@ v2 replaces v1's 155 tools with 45. Tool names are not compatible: update prompt
 | `env_preset_apply` | `scene` op=env_preset |
 | `execute_console_command` | `console` (world editor|pie) |
 | `execute_python` | `python` op=run |
-| `feel_audit` | `design_audit` kind=feel |
+| `feel_audit` | `design_audit` kind=feel — toolset `design` |
 | `find_actors` | `actor_query` op=find (class_path → class, reflect → properties) |
 | `focus_actors` | `viewport` op=focus (targets → actors) |
-| `focus_window` | `desktop_input` op=focus |
+| `focus_window` | `desktop_input` op=focus — toolset `desktop` |
 | `gameplay_tag_add` | `project_config` op=gameplay_tag |
 | `get_actor` | `actor_query` op=get (actor_label → actor) |
 | `get_selection` | `viewport` op=selection |
@@ -77,32 +79,32 @@ v2 replaces v1's 155 tools with 45. Tool names are not compatible: update prompt
 | `git_log` | `git` op=log |
 | `git_revert_to` | `git_revert` to=<checkpoint> (checkpoints only; editor-aware) |
 | `git_status` | `git` op=status |
-| `headless_run` | `headless` op=commandlet|exec|tests (async) |
+| `headless_run` | `headless` op=commandlet|exec|tests (async) — toolset `headless` |
 | `health_check` | `editor` op=health |
 | `image_compare` | `analyze` op=image_diff (a → path, b → baseline) |
 | `import_assets` | `asset_import` op=files (file_paths → files, destination_path → folder) |
-| `in_motion_audit` | `design_audit` kind=in_motion |
+| `in_motion_audit` | `design_audit` kind=in_motion — toolset `design` |
 | `input_action` | `project_config` op=input_action |
 | `input_axis` | `project_config` op=input_axis |
 | `instances_count` | `world_query` op=instances_count |
 | `instances_list` | `world_query` op=instances_list |
 | `job_cancel` | `job` op=cancel |
 | `job_status` | `job` op=status (or op=wait) |
-| `key_press` | `desktop_input` op=keys (keys/sequence → keys list) |
+| `key_press` | `desktop_input` op=keys (keys/sequence → keys list) — toolset `desktop` |
 | `layout_preview` | `scene` op=preview |
 | `level_diff` | `snapshot` op=diff |
 | `level_snapshot` | `snapshot` op=take |
 | `list_actors` | `actor_query` op=list |
 | `list_assets` | `asset_query` op=list (path → folder) |
-| `list_windows` | `desktop_capture` op=list_windows |
+| `list_windows` | `desktop_capture` op=list_windows — toolset `desktop` |
 | `live_coding_compile` | `build` strategy=livecoding |
 | `logs_mark` | `logs` op=mark |
 | `logs_since` | `logs` op=since |
 | `logs_tail` | `logs` op=tail |
-| `luminance_report` | `design_audit` kind=luminance |
+| `luminance_report` | `design_audit` kind=luminance — toolset `design` |
 | `map_gameplay` | `project_map` op=level |
-| `mouse_control` | `desktop_input` op=mouse |
-| `novelty_audit` | `design_audit` kind=novelty |
+| `mouse_control` | `desktop_input` op=mouse — toolset `desktop` |
+| `novelty_audit` | `design_audit` kind=novelty — toolset `design` |
 | `open_level` | `level` op=open (level_path → level) |
 | `pawn_state` | `pie_observe` pawn=true |
 | `perf_parse` | `analyze` op=perf (file → path) |
@@ -118,16 +120,16 @@ v2 replaces v1's 155 tools with 45. Tool names are not compatible: update prompt
 | `play_test_sound` | `audio` op=play |
 | `playtest_capture` | `playtest` op=run (a scenario/v1; async) |
 | `playtest_evaluate` | `analyze` op=rubric |
-| `primitive_audit` | `design_audit` kind=primitive |
-| `project_attach` | `project` op=attach |
+| `primitive_audit` | `design_audit` kind=primitive — toolset `design` |
+| `project_attach` | `project` op=attach — toolset `daemon` |
 | `project_ensure_open` | `editor_lifecycle` op=ensure_open |
-| `project_list` | `project` op=list |
+| `project_list` | `project` op=list — toolset `daemon` |
 | `project_map` | `project_map` op=project |
-| `project_release` | `project` op=release |
+| `project_release` | `project` op=release — toolset `daemon` |
 | `read_capture` | `capture` op=read (dir → path) |
 | `reflect_class` | `reflect` op=class (class_path → class) |
 | `reflect_object` | `reflect` op=object (target → actor; gamestate → @gamestate, pawn → @pawn, playercontroller → @controller) |
-| `render_health` | `design_audit` kind=render |
+| `render_health` | `design_audit` kind=render — toolset `design` |
 | `save_all` | `level` op=save_all |
 | `scenario_list` | `analyze` op=scenarios |
 | `scenario_run` | `playtest` op=run (async) |
@@ -138,29 +140,29 @@ v2 replaces v1's 155 tools with 45. Tool names are not compatible: update prompt
 | `scene_plan` | `scene` op=apply dry_run=true |
 | `scene_restore` | `snapshot_restore` (by object path) |
 | `scene_snapshot` | `snapshot` op=take |
-| `screen_capture` | `desktop_capture` op=screen |
+| `screen_capture` | `desktop_capture` op=screen — toolset `desktop` |
 | `select_actors` | `viewport` op=select (labels → actors) |
 | `set_actor_transform` | `actor_edit` op=transform world=editor (location/rotation/scale as [x,y,z]) |
 | `set_gamemode` | `project_config` op=set_default_gamemode (class_path → class) |
 | `set_hud_widget` | — removed (its editor op never existed) |
 | `set_input_mode` | — removed (its editor op never existed) |
 | `set_world_gamemode` | `level` op=set_world_gamemode (class_path → class) |
-| `spawn_actor` | `actor_edit` op=spawn world=editor (class_path → class, x/y/z → location) |
+| `spawn_actor` | `actor_edit` op=spawn world=editor (class_path → class, x/y/z → location, pitch/yaw/roll → rotation, static_mesh_path → static_mesh) |
 | `start_play` | `pie` op=start (waits until running) |
 | `stop_play` | `pie` op=stop |
-| `style_cohesion` | `design_audit` kind=style |
+| `style_cohesion` | `design_audit` kind=style — toolset `design` |
 | `take_screenshot` | `screenshot` op=viewport (camera_location/rotation_pyr → location/rotation) |
-| `type_text` | `desktop_input` op=type |
+| `type_text` | `desktop_input` op=type — toolset `desktop` |
 | `ui_click` | — removed (its editor op never existed) |
-| `verb_response` | `design_audit` kind=verb |
+| `verb_response` | `design_audit` kind=verb — toolset `design` |
 | `viewport_get` | `viewport` op=get |
 | `viewport_set` | `viewport` op=set (console → the console tool) |
 | `widget_bind_event` | — removed (its editor op never existed) |
 | `widget_bind_field` | — removed (its editor op never existed) |
 | `widget_bind_mvvm` | — removed (its editor op never existed) |
 | `widget_capture` | — removed (its editor op never existed) |
-| `widget_compile` | `widget_edit` op=compile (blueprint → asset) |
-| `widget_compose` | `widget_edit` op=compose | op=prune (prune/remove need op=prune) |
+| `widget_compile` | `widget_edit` op=compile (blueprint → asset) — toolset `ui` |
+| `widget_compose` | `widget_edit` op=compose | op=prune (prune/remove need op=prune) — toolset `ui` |
 | `widget_create` | `asset_create` op=create kind=widget_blueprint |
 | `widget_describe` | `widget_query` op=describe (widget_class → class) |
 | `widget_inspect` | — removed (its editor op never existed) |
@@ -173,5 +175,5 @@ v2 replaces v1's 155 tools with 45. Tool names are not compatible: update prompt
 | `widget_tree` | `widget_query` op=tree (blueprint → asset; mode=restore was never implemented) |
 | `widget_view` | — removed (its editor op never existed) |
 | `widget_viewmodel_create` | — removed (its editor op never existed) |
-| `window_capture` | `desktop_capture` op=window (focus → desktop_input op=focus first) |
+| `window_capture` | `desktop_capture` op=window (focus → desktop_input op=focus first) — toolset `desktop` |
 | `world_query` | `world_query` op=line_trace|sphere_overlap|nav_path|project_point (kind → op) |
