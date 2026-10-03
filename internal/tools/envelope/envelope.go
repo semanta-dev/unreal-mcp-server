@@ -97,6 +97,7 @@ var editorCodes = map[string]Code{
 	"BAD_VALUE":            InvalidArgument,
 	"PROPERTY_READONLY":    InvalidArgument,
 	"PLUGIN_MISSING":       Precondition,
+	"PRECONDITION":         Precondition,
 	"NOT_IMPLEMENTED":      Unsupported,
 	"SPAWN_FAILED":         OperationFailed,
 	"IMPORT_FAILED":        OperationFailed,

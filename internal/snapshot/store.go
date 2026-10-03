@@ -36,7 +36,8 @@ type File struct {
 	TakenAt        time.Time `json:"taken_at"`
 	World          string    `json:"world"`
 	WorldPartition bool      `json:"world_partition"`
-	Unloaded       []string  `json:"unloaded,omitempty"` // WP: known but not loaded when taken
+	ClassFilter    string    `json:"class_filter,omitempty"` // only actors whose class/label contain this
+	Unloaded       []string  `json:"unloaded,omitempty"`     // WP: known but not loaded when taken (unfiltered snapshots only)
 	Actors         []Actor   `json:"actors"`
 }
 

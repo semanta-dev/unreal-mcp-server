@@ -167,3 +167,34 @@ func TestSceneApplyRejectsPruneAndBadSpecs(t *testing.T) {
 		t.Fatalf("preview = %v", res)
 	}
 }
+
+func TestFilteredSnapshotDiffsLikeWithLike(t *testing.T) {
+	h := startHarness(t, harnessOpts{project: t.TempDir()})
+	h.call(t, "actor_edit", map[string]any{"op": "spawn", "world": "editor", "class": "/Script/Engine.Pawn", "label": "Hero"})
+	h.call(t, "actor_edit", map[string]any{"op": "spawn", "world": "editor", "class": "/Script/Engine.Actor", "label": "Rock"})
+	h.call(t, "snapshot", map[string]any{"op": "take", "name": "pawns", "class_filter": "Pawn"})
+	h.call(t, "snapshot", map[string]any{"op": "take", "name": "all"})
+	d := structured(t, h.call(t, "snapshot", map[string]any{"op": "diff", "name": "pawns"}))["diff"].(map[string]any)
+	if labels(d["added"]) != "" || labels(d["removed"]) != "" {
+		t.Fatalf("a filtered snapshot vs now must not report the filtered-out actors: %v", d)
+	}
+	if e := errorOf(t, h.call(t, "snapshot", map[string]any{"op": "diff", "name": "pawns", "against": "all"})); e["code"] != "INVALID_ARGUMENT" {
+		t.Fatalf("mixed filters = %v", e["code"])
+	}
+}
+
+func TestPieWaitReturnsWhenPIEStops(t *testing.T) {
+	h := startHarness(t, harnessOpts{})
+	calls := 0
+	h.emu.Handle("pie_observe", func(map[string]any) (any, *bridgetest.OpError) {
+		calls++
+		if calls > 1 {
+			return nil, &bridgetest.OpError{Code: "NOT_IN_PIE", Message: "PIE is not running"}
+		}
+		return map[string]any{"counts": map[string]any{}}, nil
+	})
+	res := structured(t, h.call(t, "pie_wait", map[string]any{"predicate": "counts.Boss >= 1", "timeout_s": 20}))
+	if res["met"] != false || res["pie_running"] != false || res["elapsed_s"].(float64) > 5 {
+		t.Fatalf("wait after PIE stopped = %v", res)
+	}
+}

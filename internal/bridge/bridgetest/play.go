@@ -52,16 +52,20 @@ func (w *World) pieObserve(map[string]any) (any, *OpError) {
 	return map[string]any{"gamestate": map[string]any{}, "counts": counts, "actors": []any{}}, nil
 }
 
-func (w *World) snapshotActors(map[string]any) (any, *OpError) {
+func (w *World) snapshotActors(args map[string]any) (any, *OpError) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	flt, _ := args["class_filter"].(string)
 	var out []map[string]any
 	for _, a := range w.editor {
+		if flt != "" && !strings.Contains(strings.ToLower(a.Class+a.Label), strings.ToLower(flt)) {
+			continue
+		}
 		out = append(out, map[string]any{"path": a.Path, "label": a.Label, "class": a.Class,
 			"loc": a.Location, "rot": []float64{0, 0, 0}, "scale": []float64{1, 1, 1}})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i]["path"].(string) < out[j]["path"].(string) })
-	return map[string]any{"world": "editor", "count": len(out), "actors": out, "world_partition": false}, nil
+	return map[string]any{"world": "editor", "count": len(out), "actors": out, "world_partition": false, "class_filter": flt}, nil
 }
 
 func (w *World) snapshotRestore(args map[string]any) (any, *OpError) {

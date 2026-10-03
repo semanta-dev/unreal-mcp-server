@@ -88,6 +88,8 @@ var PyOps = map[string]PyOp{
 	"snapshot_actors":     {Tier: ReadOnly},
 	"snapshot_restore":    {Tier: Mutating, Note: "moves existing actors back (one undo step) and saves map packages"},
 	"pie_start":           {Tier: Ephemeral},
+	"packages_state":      {Tier: ReadOnly},
+	"quit_editor":         {Tier: Destructive, Note: "graceful editor exit; refuses with unsaved packages"},
 	"pie_stop":            {Tier: Ephemeral},
 	"scene_clear":         {Tier: Destructive},
 	"select_actors":       {Tier: Ephemeral},

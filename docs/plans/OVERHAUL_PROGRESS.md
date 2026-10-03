@@ -572,3 +572,28 @@ their beats to `actor_call`.
 - `go test ./...` all pass; `-race` on tools/e2e/bridge/snapshot passes.
 - pytest: 47 passed. ruff in the CI form: clean.
 - Golden regenerated (77 tools).
+
+**Gate P5b-fixes + P5c, round 1: P5b-fixes A, P5c B+.** Blocking fix:
+1. *A `class_filter` snapshot diffed against an unfiltered "now".* Every filtered-out actor came back as added; under
+   World Partition, loaded actors of other classes came back as unknown. Fixed:
+   - `snapshot.File` records `class_filter`;
+   - `diff` re-takes "current" with the same filter, and refuses to compare two snapshots taken with different
+     filters (INVALID_ARGUMENT);
+   - `unloaded` is recorded only for unfiltered snapshots.
+
+   Covered by T1 and pytest.
+
+Non-blocking findings, also fixed:
+- `pie_wait` returns `pie_running`, ends at once with met:false when PIE stops after having run, and says when PIE
+  never ran.
+- pie start/stop surfaces the last ping error (e.g. EDITOR_UNREACHABLE) plus any crash dump, instead of a generic
+  TIMEOUT.
+- `snapshot_restore` reports actors in unloaded WP cells as `not_restored.unknown`, never removed, and restores
+  parents before attached children.
+- screenshot op=pie finds HighResShot's real file (platform subfolder, suffix).
+- `capture clear session` matches only that session's frames (not `a_b`'s).
+- scene apply gives a scene actor whose spec label collides with a hand-placed actor the label `<label> (scene)` and
+  keys scene actors by an `mcp_label:` tag, so the user's label stays unambiguous.
+- `pie_observe player` restores v1's pawn player index.
+
+Playtest's fixed post-start sleep is addressed in P5d. T4 checklist addition: HighResShot output location in 5.7.

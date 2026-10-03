@@ -124,6 +124,9 @@ class Actor(Object):
             raise Exception("property %s is read-only" % k)
         self.props[k] = v
 
+    def get_attach_parent_actor(self):
+        return getattr(self, "parent", None)
+
     def modify(self):
         self.modified += 1
         return True

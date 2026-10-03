@@ -96,6 +96,9 @@ def test_scene_apply_never_adopts_a_hand_placed_actor(v2, ue):
     assert res["spawned"] == 1 and res["updated"] == 0 and "pruned" not in res
     assert mine.loc.x == 0 and mine.tags == []  # untouched
     assert any("hand-placed" in w for w in res["warnings"])
+    # The scene actor gets a distinct label, so the user's label stays unambiguous.
+    scene_actor = [x for x in ue.editor_actors if x is not mine][0]
+    assert scene_actor.get_actor_label() == "arena.hero (scene)" and "mcp_label:arena.hero" in scene_actor.tags
     # Re-applying updates the scene's own (tagged) actor only.
     res = ok(v2, "scene_apply", {"scene_id": "arena", "placements": SCENE})
     assert res["spawned"] == 0 and res["updated"] == 1
@@ -128,3 +131,32 @@ def test_saved_dir_is_absolute(v2, ue, tmp_path, monkeypatch):
 def test_audio_is_pie_only(v2, ue):
     assert err(v2, "audio_capture_start", {})["code"] == "NOT_IN_PIE"
     assert err(v2, "play_test_sound", {"sound": "/Game/S"})["code"] == "NOT_IN_PIE"
+
+
+def test_filtered_snapshot_has_no_wp_unloaded(v2, ue):
+    ue.add_actor("/Script/Engine.Actor", "Lamp")
+    ue.add_actor("/Script/Engine.StaticMeshActor", "Rock")
+    ue.wp_descs = [a.get_path_name() for a in ue.editor_actors] + ["/Game/Maps/L.L:PersistentLevel.Far_9"]
+    res = ok(v2, "snapshot_actors", {"class_filter": "Static"})
+    assert [a["label"] for a in res["actors"]] == ["Rock"] and res["class_filter"] == "Static"
+    assert "unloaded" not in res  # Lamp is filtered out, not unloaded
+    res = ok(v2, "snapshot_actors", {})
+    assert res["unloaded"] == ["/Game/Maps/L.L:PersistentLevel.Far_9"]
+
+
+def test_restore_unloaded_is_unknown_and_parents_first(v2, ue):
+    parent = ue.add_actor("/Script/Engine.Actor", "Parent")
+    child = ue.add_actor("/Script/Engine.Actor", "Child")
+    child.parent = parent
+    seq = []
+
+    def mover(label):
+        return lambda v, sweep, teleport: seq.append(label)
+
+    parent.set_actor_location, child.set_actor_location = mover("Parent"), mover("Child")
+    far = "/Game/Maps/L.L:PersistentLevel.Far_9"
+    snap = [{"path": child.get_path_name(), "loc": [1, 1, 1]}, {"path": parent.get_path_name(), "loc": [2, 2, 2]},
+            {"path": far, "loc": [0, 0, 0]}]
+    res = ok(v2, "snapshot_restore", {"actors": snap, "unloaded": [far]})
+    assert seq == ["Parent", "Child"]
+    assert res["not_restored"]["removed"] == [] and res["not_restored"]["unknown"] == [far]

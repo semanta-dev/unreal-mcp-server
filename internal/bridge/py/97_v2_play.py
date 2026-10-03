@@ -72,7 +72,7 @@ def _op_pie_observe_v2(args):
         found = {x["label"] for x in out.get("actors") or []}
         out["missing"] = [w for w in want if w not in found]
     if args.get("pawn"):
-        ps = _op_pawn_state({"world": "pie"})
+        ps = _op_pawn_state({"world": "pie", "player": int(args.get("player", 0))})
         out["pawn"] = None if "error" in ps else {"location": ps["loc"], "velocity": ps["vel"], "speed": ps["speed"]}
     return out
 
@@ -115,12 +115,14 @@ def _op_snapshot_actors(args):
         out.append({"path": _norm_path(a.get_path_name()), "label": label, "class": cn,
                     "tags": [str(t) for t in a.tags],
                     "loc": [loc.x, loc.y, loc.z], "rot": [rot.pitch, rot.yaw, rot.roll], "scale": [sc.x, sc.y, sc.z]})
-    res = {"world": name, "count": len(out), "actors": out, "world_partition": False}
+    res = {"world": name, "count": len(out), "actors": out, "world_partition": False,
+           "class_filter": args.get("class_filter") or ""}
     known = _wp_actor_paths(world)
     if known is not None:
-        loaded = {x["path"] for x in out}
         res["world_partition"] = True
-        res["unloaded"] = sorted(known - loaded)
+        if not flt:  # a filtered snapshot cannot tell an unloaded actor from a filtered-out one
+            loaded = {_norm_path(a.get_path_name()) for a in _world_actors(world, name)}
+            res["unloaded"] = sorted(known - loaded)
     return res
 
 
@@ -131,12 +133,25 @@ def _op_snapshot_restore(args):
     by_path = {_norm_path(a.get_path_name()): a for a in _world_actors(world, name)}
     snap = args.get("actors") or []
     snap_paths = {t.get("path") for t in snap}
-    restored, removed = 0, []
+    unloaded = set(args.get("unloaded") or [])
+    restored, removed, unknown = 0, [], []
+
+    def depth(t):
+        a, d = by_path.get(t.get("path")), 0
+        while a is not None and d < 64:
+            try:
+                a = a.get_attach_parent_actor()
+            except Exception:
+                a = None
+            d += a is not None
+        return d
+
+    # World transforms: a parent must be in place before its attached children.
     with _transaction("MCP: snapshot restore " + str(args.get("name", ""))):
-        for t in snap:
+        for t in sorted(snap, key=depth):
             a = by_path.get(t.get("path"))
             if a is None:
-                removed.append(t.get("path"))
+                (unknown if t.get("path") in unloaded else removed).append(t.get("path"))
                 continue
             a.modify()
             loc, rot, scale = t.get("loc"), t.get("rot"), t.get("scale")
@@ -151,7 +166,10 @@ def _op_snapshot_restore(args):
     saved = False
     if args.get("save", True):
         saved = bool(unreal.EditorLoadingAndSavingUtils.save_dirty_packages(True, False))
-    return {"restored": restored, "not_restored": {"added": added, "removed": removed}, "saved": saved}
+    out = {"restored": restored, "not_restored": {"added": added, "removed": removed}, "saved": saved}
+    if unknown:
+        out["not_restored"]["unknown"] = unknown  # in World Partition cells that are not loaded
+    return out
 
 
 # --- scenes (tag-scoped; §2.7 item 11) -------------------------------------------
@@ -174,7 +192,8 @@ def _scene_actors(scene_id):
         except Exception:
             atags = []
         if tag in atags:
-            out[a.get_actor_label()] = a
+            key = next((t[len("mcp_label:"):] for t in atags if t.startswith("mcp_label:")), a.get_actor_label())
+            out[key] = a
     return out
 
 

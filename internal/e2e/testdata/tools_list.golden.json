@@ -2267,6 +2267,10 @@
             "description": "include the player pawn's location, velocity and speed",
             "type": "boolean"
           },
+          "player": {
+            "description": "pawn: local player index (default 0)",
+            "type": "integer"
+          },
           "properties": {
             "description": "read exactly these properties (keeps your key names for predicates)",
             "items": {
@@ -2289,7 +2293,7 @@
         "readOnlyHint": true,
         "title": "Wait for a game condition"
       },
-      "description": "Poll pie_observe until `predicate` holds → {met, elapsed_s, polls, final_state}. met=false on timeout is a normal answer, not an error. Waits through PIE starting up. Read-only: to poll a UFUNCTION's result use actor_call with until.",
+      "description": "Poll pie_observe until `predicate` holds → {met, pie_running, elapsed_s, polls, final_state}. met=false on timeout is a normal answer, not an error. Waits through PIE starting up; returns at once if PIE stops. Read-only: to poll a UFUNCTION's result use actor_call with until.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3467,7 +3471,7 @@
         "openWorldHint": true,
         "title": "Restore a snapshot"
       },
-      "description": "Move every actor that still exists back to its transform in snapshot `name` (matched by object path), as one undo step, then save. TRANSFORMS ONLY: actors spawned since are not deleted and deleted actors are not recreated — both are listed in not_restored {added, removed}. For those use scene_clear or git_revert.",
+      "description": "Move every actor that still exists back to its transform in snapshot `name` (matched by object path; parents before attached children), as one undo step, then save. TRANSFORMS ONLY: actors spawned since are not deleted and deleted actors are not recreated — both are listed in not_restored {added, removed} (and, under World Partition, `unknown` for actors in cells that are not loaded). For those use scene_clear or git_revert.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

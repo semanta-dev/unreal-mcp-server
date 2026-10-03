@@ -7,13 +7,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
+	"github.com/jdziat/unreal-mcp-server/internal/crash"
 	"github.com/jdziat/unreal-mcp-server/internal/eval"
 	"github.com/jdziat/unreal-mcp-server/internal/scenespec"
 	"github.com/jdziat/unreal-mcp-server/internal/snapshot"
@@ -93,7 +96,8 @@ func pieHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		return &spec.Result{Data: out, Summary: "PIE " + c.Op.Name + " requested"}, err
 	}
 	// PIE begins/ends on a later editor tick: poll until the state flips.
-	deadline := time.Now().Add(pollTimeout(ctx, 0, 15*time.Second))
+	started := time.Now()
+	deadline := started.Add(pollTimeout(ctx, 0, 15*time.Second))
 	for {
 		ping, perr := v2Op(ctx, c, "editor_ping", nil)
 		if perr == nil && ping["pie"] == want {
@@ -101,6 +105,16 @@ func pieHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			return &spec.Result{Data: out, Summary: map[bool]string{true: "PIE is running", false: "PIE stopped"}[want]}, nil
 		}
 		if time.Now().After(deadline) {
+			if perr != nil {
+				// The editor stopped answering (e.g. crashed on PIE start): say so, with the crash if any.
+				e := envelope.Classify(perr, true)
+				if c.Deps.ProjectDir != "" {
+					if rep, _ := crash.FromCrashDir(c.Deps.ProjectDir, started); rep != nil {
+						e.WithDetail("crash", rep)
+					}
+				}
+				return nil, e
+			}
 			return nil, envelope.New(envelope.Timeout, "PIE did not %s in time", c.Op.Name).
 				WithHint("check the editor log (logs op=tail) — a compile error or a modal dialog can block PIE")
 		}
@@ -124,6 +138,7 @@ func orStr(s, def string) string {
 type pieObserveIn struct {
 	Actors     []string `json:"actors,omitempty" jsonschema:"actor labels to read detailed state for (unknown labels are listed in missing)"`
 	Pawn       bool     `json:"pawn,omitempty" jsonschema:"include the player pawn's location, velocity and speed"`
+	Player     int      `json:"player,omitempty" jsonschema:"pawn: local player index (default 0)"`
 	Include    []string `json:"include,omitempty" jsonschema:"glob patterns of property names to include (default all, minus engine noise)"`
 	Exclude    []string `json:"exclude,omitempty" jsonschema:"glob patterns of property names to exclude"`
 	Properties []string `json:"properties,omitempty" jsonschema:"read exactly these properties (keeps your key names for predicates)"`
@@ -140,7 +155,7 @@ func pieObserveSpec() *spec.Spec {
 		Schema:   spec.SchemaFor[pieObserveIn](nil),
 		Replaces: []string{"pie_observe", "pawn_state"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
-			out, err := v2Op(ctx, c, "pie_observe", pick(c.Args, "actors", "pawn", "include", "exclude", "properties", "max_props"))
+			out, err := v2Op(ctx, c, "pie_observe", pick(c.Args, "actors", "pawn", "player", "include", "exclude", "properties", "max_props"))
 			if err != nil {
 				return nil, err
 			}
@@ -168,9 +183,9 @@ func pieWaitSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "pie_wait", Title: "Wait for a game condition", Toolset: spec.Core, Timeout: sync28, Max: sync28,
 		Ops: []spec.OpSpec{{Tier: spec.ReadOnly, Idempotent: true, Required: []string{"predicate"}, Reaches: []string{"pie_observe"}}},
-		Description: "Poll pie_observe until `predicate` holds → {met, elapsed_s, polls, final_state}. met=false on " +
-			"timeout is a normal answer, not an error. Waits through PIE starting up. Read-only: to poll a " +
-			"UFUNCTION's result use actor_call with until.",
+		Description: "Poll pie_observe until `predicate` holds → {met, pie_running, elapsed_s, polls, final_state}. " +
+			"met=false on timeout is a normal answer, not an error. Waits through PIE starting up; returns at once if PIE " +
+			"stops. Read-only: to poll a UFUNCTION's result use actor_call with until.",
 		Schema:   spec.SchemaFor[pieWaitIn](nil, "predicate"),
 		Replaces: []string{"pie_wait_until"},
 		Handler:  pieWait,
@@ -195,26 +210,38 @@ func pieWait(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	start := time.Now()
 	deadline := start.Add(timeout)
 	polls := 0
+	seen := false // PIE observed running at least once
 	var last map[string]any
+	answer := func(met, running bool, why string) *spec.Result {
+		return &spec.Result{Data: map[string]any{"met": met, "pie_running": running, "elapsed_s": time.Since(start).Seconds(),
+			"polls": polls, "final_state": last}, Summary: why}
+	}
 	for {
 		out, err := v2Op(ctx, c, "pie_observe", args)
 		polls++
+		running := err == nil
 		if err != nil {
 			var oe *bridge.OpError
-			// PIE still starting (NOT_IN_PIE) or a transient editor error: keep waiting.
+			// PIE still starting (NOT_IN_PIE) or a transient editor error: keep waiting —
+			// unless PIE was running and has now ended (game over / stopped): the answer is final.
 			if !errors.As(err, &oe) || !(oe.Retryable || oe.Code == "NOT_IN_PIE") {
 				return nil, err
 			}
+			if oe.Code == "NOT_IN_PIE" && seen {
+				return answer(false, false, "PIE stopped before the condition was met"), nil
+			}
 		} else {
-			last = out
+			seen, last = true, out
 			if ok, _ := pred.Eval(out); ok {
-				return &spec.Result{Data: map[string]any{"met": true, "elapsed_s": time.Since(start).Seconds(), "polls": polls, "final_state": last},
-					Summary: "condition met after " + strconv.Itoa(polls) + " polls"}, nil
+				return answer(true, true, "condition met after "+strconv.Itoa(polls)+" polls"), nil
 			}
 		}
 		if time.Now().Add(interval).After(deadline) {
-			return &spec.Result{Data: map[string]any{"met": false, "elapsed_s": time.Since(start).Seconds(), "polls": polls, "final_state": last},
-				Summary: "condition not met within " + timeout.Round(time.Millisecond).String()}, nil
+			why := "condition not met within " + timeout.Round(time.Millisecond).String()
+			if !seen {
+				why += " (PIE never ran — start it with pie op=start)"
+			}
+			return answer(false, running, why), nil
 		}
 		select {
 		case <-ctx.Done():
@@ -411,7 +438,11 @@ func snapshotHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		if b, err = loadSnapshot(dir, against); err != nil {
 			return nil, err
 		}
-	} else if b, err = currentSnapshot(ctx, c, "current", ""); err != nil {
+		if b.ClassFilter != a.ClassFilter {
+			return nil, envelope.New(envelope.InvalidArgument, "%s was taken with class_filter %q and %s with %q; they cannot be compared",
+				name, a.ClassFilter, against, b.ClassFilter)
+		}
+	} else if b, err = currentSnapshot(ctx, c, "current", a.ClassFilter); err != nil { // compare like with like
 		return nil, err
 	}
 	d := snapshot.Diff(a, b)
@@ -479,9 +510,10 @@ func snapshotRestoreSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "snapshot_restore", Title: "Restore a snapshot", Toolset: spec.Core, Timeout: sync25, Max: sync28,
 		Ops: []spec.OpSpec{{Tier: spec.Destructive, Idempotent: true, Reaches: []string{"snapshot_restore"}}},
-		Description: "Move every actor that still exists back to its transform in snapshot `name` (matched by object path), " +
-			"as one undo step, then save. TRANSFORMS ONLY: actors spawned since are not deleted and deleted actors are not " +
-			"recreated — both are listed in not_restored {added, removed}. For those use scene_clear or git_revert.",
+		Description: "Move every actor that still exists back to its transform in snapshot `name` (matched by object path; " +
+			"parents before attached children), as one undo step, then save. TRANSFORMS ONLY: actors spawned since are not " +
+			"deleted and deleted actors are not recreated — both are listed in not_restored {added, removed} (and, under " +
+			"World Partition, `unknown` for actors in cells that are not loaded). For those use scene_clear or git_revert.",
 		Schema:   spec.SchemaFor[snapshotRestoreIn](nil),
 		Replaces: []string{"scene_restore"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
@@ -501,7 +533,7 @@ func snapshotRestoreSpec() *spec.Spec {
 			if err != nil {
 				return nil, err
 			}
-			args := map[string]any{"name": name, "actors": f.Actors}
+			args := map[string]any{"name": name, "actors": f.Actors, "unloaded": f.Unloaded}
 			if in.Save != nil {
 				args["save"] = *in.Save
 			}
@@ -585,6 +617,9 @@ func screenshot(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	file, _ := out["file"].(string)
 	if dl, ok := ctx.Deadline(); ok && time.Until(dl) < wait {
 		wait = time.Until(dl) - 500*time.Millisecond
+	}
+	if c.Op.Name == "pie" {
+		file = awaitShot(file, wait)
 	}
 	img, err := readImageFile(file, wait)
 	if err != nil {
@@ -833,8 +868,13 @@ func captureClear(c *spec.Call, in captureIn) (*spec.Result, error) {
 	var targets []string
 	if in.Session != "" {
 		targets = append(targets, filepath.Join(root, in.Session))
+		frame := regexp.MustCompile(`^mcp_` + regexp.QuoteMeta(in.Session) + `_f\d+\.png$`) // not session "a_b"'s files
 		ms, _ := filepath.Glob(filepath.Join(shots, "mcp_"+in.Session+"_*"))
-		targets = append(targets, ms...)
+		for _, m := range ms {
+			if frame.MatchString(filepath.Base(m)) {
+				targets = append(targets, m)
+			}
+		}
 	} else {
 		entries, _ := os.ReadDir(root)
 		for _, e := range entries {
@@ -1129,5 +1169,24 @@ func audioSpec() *spec.Spec {
 			out, err := v2Op(ctx, c, py, pick(c.Args, "session", "sound", "volume"))
 			return &spec.Result{Data: out, Summary: "audio " + c.Op.Name}, err
 		},
+	}
+}
+
+// awaitShot finds the file HighResShot actually wrote for `want`: UE puts a bare name
+// under GameScreenshotSaveDirectory (Saved/Screenshots/<Platform>/) and may add a
+// suffix, so look for <stem>*.png in the directory and its subdirectories.
+func awaitShot(want string, wait time.Duration) string {
+	dir, stem := filepath.Dir(want), strings.TrimSuffix(filepath.Base(want), ".png")
+	deadline := time.Now().Add(wait)
+	for {
+		for _, pat := range []string{filepath.Join(dir, stem+"*.png"), filepath.Join(dir, "*", stem+"*.png")} {
+			if ms, _ := filepath.Glob(pat); len(ms) > 0 {
+				return ms[0]
+			}
+		}
+		if time.Now().After(deadline) {
+			return want
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
 }

@@ -102,7 +102,7 @@ def _apply_material(actor, path, label, warnings):
         warnings.append(label + ": material: " + str(e))
 
 
-def _apply_placement(sub, existing, placement, missing, errors, warnings):
+def _apply_placement(sub, existing, placement, missing, errors, warnings, display=None):
     label = placement["label"]
     actor = existing.get(label)
     created = False
@@ -117,7 +117,7 @@ def _apply_placement(sub, existing, placement, missing, errors, warnings):
         if not actor:
             errors.append(label + ": spawn failed")
             return None, False
-        actor.set_actor_label(label)
+        actor.set_actor_label(display or label)
         created = True
     else:
         actor.set_actor_location(unreal.Vector(loc[0], loc[1], loc[2]), False, False)
@@ -138,6 +138,8 @@ def _apply_placement(sub, existing, placement, missing, errors, warnings):
     if mat_path:
         _apply_material(actor, mat_path, label, warnings)
     tags = list(placement.get("tags") or [])
+    if "mcp_label:" + label not in tags:
+        tags.append("mcp_label:" + label)  # the spec label, independent of the display label
     try:
         actor.set_editor_property("tags", [unreal.Name(t) for t in tags])
     except Exception:
@@ -175,11 +177,13 @@ def _op_scene_apply(args):
     others = {a.get_actor_label() for a in sub.get_all_level_actors() if a} - set(existing)
     spawned, updated = 0, 0
     missing, errors = [], []
-    warnings = ["%s: a hand-placed actor already has this label; it was left untouched and the scene "
-                "actor was spawned beside it" % lbl for lbl in sorted(plan_labels & others)]
+    collide = plan_labels & others
+    warnings = ["%s: a hand-placed actor already has this label; it was left untouched and the scene actor "
+                "is labeled '%s (scene)'" % (lbl, lbl) for lbl in sorted(collide)]
     with _transaction("MCP: scene " + scene_id):
         for p in placements:
-            actor, created = _apply_placement(sub, existing, p, missing, errors, warnings)
+            display = p["label"] + " (scene)" if p["label"] in collide else None
+            actor, created = _apply_placement(sub, existing, p, missing, errors, warnings, display)
             if actor is None:
                 continue
             if created:

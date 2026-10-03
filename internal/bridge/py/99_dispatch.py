@@ -10,6 +10,8 @@ _OPS = {
     "asset_create": _op_asset_create,
     "pie_exec": _op_pie_exec,  # playtest/scenario beats until P5d moves them to actor_call
     "pie_start": _op_pie_start,
+    "packages_state": _op_packages_state,
+    "quit_editor": _op_quit_editor,
     "pie_stop": _op_pie_stop,
     "snapshot_actors": _op_snapshot_actors,
     "snapshot_restore": _op_snapshot_restore,
