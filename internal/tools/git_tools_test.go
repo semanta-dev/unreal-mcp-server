@@ -70,8 +70,8 @@ func git(t *testing.T, dir string, args ...string) {
 	}
 }
 
-// TestGitToolsAgainstTempRepo drives the git tools end-to-end through the MCP
-// client against a real throwaway repository.
+// TestGitToolsAgainstTempRepo drives the git tool end-to-end through the MCP client
+// against a real throwaway repository.
 func TestGitToolsAgainstTempRepo(t *testing.T) {
 	if !build.Available() {
 		t.Skip("git not on PATH")
@@ -81,75 +81,67 @@ func TestGitToolsAgainstTempRepo(t *testing.T) {
 	git(t, repo, "config", "user.email", "t@t")
 	git(t, repo, "config", "user.name", "t")
 	git(t, repo, "config", "commit.gpgsign", "false")
-	// seed an initial commit so HEAD exists
+	git(t, repo, "config", "tag.gpgsign", "false")
 	os.WriteFile(filepath.Join(repo, "seed.txt"), []byte("seed\n"), 0o644)
 	git(t, repo, "add", "seed.txt")
 	git(t, repo, "commit", "-q", "-m", "seed")
-
 	d := Deps{ProjectDir: repo}
-
-	// New untracked file shows in status.
-	os.WriteFile(filepath.Join(repo, "feature.cpp"), []byte("int x;\n"), 0o644)
-	res, err := callToolDeps(t, d, "git_status", map[string]any{})
-	if err != nil {
-		t.Fatal(err)
+	call := func(args map[string]any, out any) {
+		t.Helper()
+		res, err := callToolDeps(t, d, "git", args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decodeStructured(t, res, out)
 	}
+
+	os.WriteFile(filepath.Join(repo, "feature.cpp"), []byte("int x;\n"), 0o644)
 	var st gitStatusOut
-	decodeStructured(t, res, &st)
+	call(map[string]any{"op": "status"}, &st)
 	if len(st.Untracked) != 1 || st.Untracked[0] != "feature.cpp" {
 		t.Fatalf("expected feature.cpp untracked, got %+v", st)
 	}
 
-	// Checkpoint commits it.
-	res, err = callToolDeps(t, d, "git_checkpoint", map[string]any{"message": "feat: add feature"})
-	if err != nil {
-		t.Fatal(err)
+	var cp struct {
+		Commit    string `json:"commit"`
+		Tag       string `json:"tag"`
+		Committed bool   `json:"committed"`
 	}
-	var cp gitCheckpointOut
-	decodeStructured(t, res, &cp)
-	if len(cp.Commit) < 7 {
-		t.Fatalf("bad commit hash: %q", cp.Commit)
+	call(map[string]any{"op": "checkpoint", "message": "feat: add feature"}, &cp)
+	if len(cp.Commit) < 7 || cp.Tag != "umcp/cp/1" || !cp.Committed {
+		t.Fatalf("checkpoint = %+v", cp)
 	}
-
-	// Status is now clean of the file.
-	res, _ = callToolDeps(t, d, "git_status", map[string]any{})
-	decodeStructured(t, res, &st)
-	if len(st.Untracked) != 0 || len(st.Staged) != 0 {
-		t.Fatalf("expected clean status, got %+v", st)
+	// Nothing new: the checkpoint tags HEAD without a commit.
+	call(map[string]any{"op": "checkpoint", "message": "again"}, &cp)
+	if cp.Tag != "umcp/cp/2" || cp.Committed {
+		t.Fatalf("empty checkpoint = %+v", cp)
 	}
 
-	// Log shows 2 commits.
-	res, _ = callToolDeps(t, d, "git_log", map[string]any{"limit": 10})
-	var lg gitLogOut
-	decodeStructured(t, res, &lg)
-	if len(lg.Commits) != 2 || lg.Commits[0].Subject != "feat: add feature" {
-		t.Fatalf("log = %+v", lg.Commits)
+	var lg struct {
+		Commits     []gitCommit `json:"commits"`
+		Checkpoints []string    `json:"checkpoints"`
+	}
+	call(map[string]any{"op": "log", "limit": 10}, &lg)
+	if len(lg.Commits) != 2 || lg.Commits[0].Subject != "feat: add feature" || len(lg.Checkpoints) != 2 || lg.Checkpoints[0] != "umcp/cp/2" {
+		t.Fatalf("log = %+v", lg)
 	}
 
-	// Checkpoint must not stage Saved/Intermediate.
+	// A checkpoint never stages Saved/Intermediate.
 	os.MkdirAll(filepath.Join(repo, "Saved"), 0o755)
 	os.WriteFile(filepath.Join(repo, "Saved", "junk.log"), []byte("noise\n"), 0o644)
 	os.WriteFile(filepath.Join(repo, "keep.txt"), []byte("keep\n"), 0o644)
-	res, err = callToolDeps(t, d, "git_checkpoint", map[string]any{"message": "chore: keep"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Saved/ must remain untracked (git reports untracked dirs as "Saved/").
-	res, _ = callToolDeps(t, d, "git_status", map[string]any{})
-	decodeStructured(t, res, &st)
+	call(map[string]any{"op": "checkpoint", "message": "chore: keep"}, &cp)
+	call(map[string]any{"op": "status"}, &st)
 	foundSaved := false
 	for _, u := range st.Untracked {
-		if strings.HasPrefix(u, "Saved") {
-			foundSaved = true
-		}
+		foundSaved = foundSaved || strings.HasPrefix(u, "Saved")
 	}
 	if !foundSaved {
-		t.Fatalf("Saved/ should be excluded from the checkpoint (still untracked), got %+v", st)
+		t.Fatalf("Saved/ must stay out of checkpoints (untracked), got %+v", st)
 	}
-	// ...and keep.txt WAS committed (not in untracked/staged).
 	for _, u := range append(append([]string{}, st.Untracked...), st.Staged...) {
 		if u == "keep.txt" {
-			t.Fatalf("keep.txt should have been committed, but appears in status: %+v", st)
+			t.Fatalf("keep.txt should have been committed: %+v", st)
 		}
 	}
 }

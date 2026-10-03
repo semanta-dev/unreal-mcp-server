@@ -597,3 +597,121 @@ Non-blocking findings, also fixed:
 - `pie_observe player` restores v1's pawn player index.
 
 Playtest's fixed post-start sleep is addressed in P5d. T4 checklist addition: HighResShot output location in 5.7.
+
+## P5d — build / job / logs / playtest / analyze / git / git_revert / editor_lifecycle / headless
+
+**Landed** in `internal/tools/v2_lifecycle.go`, `internal/tools/v2_ops.go` and `internal/bridge/py/98_v2_lifecycle.py`:
+
+| Tool | Ops | Notes |
+|---|---|---|
+| `build` | — | async; strategy auto / livecoding / ubt |
+| `job` | status, wait, cancel, list | |
+| `logs` | mark, tail, since, events | |
+| `playtest` | run | async |
+| `analyze` | rubric, perf, image_diff, scenarios | |
+| `git` | status, diff, log, checkpoint | |
+| `git_revert` | — | async, checkpoint-only |
+| `editor_lifecycle` | ensure_open, restart, reclaim | ensure_open and restart are async |
+| `headless` | commandlet, exec, tests | async; toolset `headless` |
+
+30 v1 tools are retired. The stdio surface is **64 tools**; the 19 still on v1 are P5e's design / desktop /
+polyworld / cockpit / affordances.
+
+**§2.5 safe shutdown** (`prepareShutdown` + `closeEditorSafely`). One routine is shared by
+`editor_lifecycle restart`, `build`'s full rebuild and `git_revert`:
+1. Query the **full** dirty set (`packages_state`: content and map packages, including never-saved new assets).
+2. Any dirty package means `PRECONDITION {dirty}`, unless `discard_dirty`.
+3. Stop PIE.
+4. **Re-check** the dirty set immediately before quitting.
+5. If nothing is dirty: graceful `quit_editor`. The op itself refuses while anything is dirty. The channel drops by
+   design, so success is the PID exiting; after 30 s the editor is killed and `kill_fallback:true` is reported with
+   the dirty set at that time.
+6. If dirty and `discard_dirty`: kill, since a graceful quit would raise the save-changes modal. `discarded_dirty`
+   is reported.
+
+Relaunch passes the remembered map (`-AutoDeclinePackageRecovery` is on every launch since P4). In daemon mode the
+controlled restart (`RestartLease`: lease preserved, same token) closes and relaunches; it runs after the same
+dirty check, so its kill loses nothing. The v1 restart (`quit` + unconditional force-kill) and the v1 full-rebuild
+close are gone.
+
+**§2.5 editor-aware `git_revert`.**
+- *Targets.* Only `umcp/cp/<n>` checkpoints. Anything else is PRECONDITION; a missing checkpoint is NOT_FOUND.
+- *What changes.* The changed paths come from `git diff --name-status` against the checkpoint (working tree +
+  index; Saved/Intermediate/DDC excluded). Files added since are deleted; everything else is checked out. Untracked
+  files are kept and listed.
+- *Editor check.* `Content/**` and `Plugins/*/Content/**` map to package names. If the editor has any of those
+  loaded, the full dirty set must be clean (or `discard_dirty`), checked **synchronously**, so an unsaved package is
+  an immediate PRECONDITION. The editor is then closed safely, and the revert runs as the build step with no editor
+  up, followed by a relaunch on the same map. If none are loaded, the editor stays up and they are reported as
+  `possibly_stale`.
+- *All-or-nothing.* Every changed path is backed up to `Saved/MCP/revert-backup/<ts>` first; on any failure the
+  backup is restored.
+- *Result and options.* `rebuild_required` is set when Source/ or `*.Build.cs`/`*.Target.cs` changed. `dry_run`
+  reports the plan.
+- *A guard the tests surfaced:* `git reset -q --` with an empty path list would reset the whole index, so it never
+  runs empty.
+
+**`git checkpoint`** commits (hooks are never bypassed) and creates the annotated tag `umcp/cp/<n+1>`. With nothing
+to commit it tags HEAD (`committed:false`).
+
+**Playtest.** One orchestration replaces v1's two copies (`playtest_capture` and `scenario_run`). Fixes along the
+way:
+- PIE start is awaited via `editor_ping` (v1 slept a fixed 1.5 s and could capture the editor world);
+- `slomo` and console beats go to `world:"pie"` (v1 sent them to the editor context, where they did nothing to the
+  running game);
+- exec beats use `actor_call` (with `@gamestate`/`@pawn`) and setup uses `actor_edit set_properties` in PIE;
+- beat failures are collected into `beat_errors` instead of being swallowed;
+- the capture world is explicit.
+
+Since `run` is an async job, its contact sheet is written next to the frames. The new spec-layer convention: **a job
+result with `image_path` gets that PNG attached as image content** by `job status/wait` and by `wait_s`.
+
+**Other fixes:**
+- `eval.ParsePredicate` is strict: a dotted path, one operator, a non-empty value. `a >>> 1` and `a >= ` are
+  rejected.
+- `analyze rubric` takes a JSON-tagged timeline. The eval types have no tags, so the v1 tool's schema could never
+  accept the documented `{index, t_world, state}` shape.
+- The companion `PRECONDITION` code maps to PRECONDITION (it was falling through to OPERATION_FAILED).
+- `Bridge.Reclaim` backs `editor_lifecycle reclaim`.
+
+**Deviations, each justified:**
+- `playtest list_scenarios` → `analyze op=scenarios`: the lint forbids a read-only op beside the Exec `run`, and
+  the plan's own table conflicted with its lint rule.
+- `editor_lifecycle reclaim` is Mutating, not Ephemeral: it takes the channel from whichever client holds it, and
+  it may sit beside the Destructive restart.
+- `quit_editor` is Mutating: it refuses with anything unsaved, so it cannot lose work; `build` can reach it without
+  being Destructive.
+- `build strategy` keeps `auto`, so the git-diff classifier still works.
+- The safe-shutdown routine lives in `tools`, not `supervisor.Shutdown`: it needs the companion ops. The supervisor
+  part (the daemon's controlled restart) is reused unchanged.
+
+**Tests.**
+- Unit (`lifecycle_test.go`, stubbed process control) covers:
+  - unsaved work refused with no editor contact;
+  - graceful quit that stops PIE first and relaunches on the remembered map;
+  - kill fallback reported;
+  - `discard_dirty` killing without a graceful quit (no modal), with the discarded packages listed;
+  - a package dirtied between the checks aborting before the quit;
+  - reclaim without a channel.
+- T1 (`v2_ops_test.go`, real git + emulator) covers:
+  - git_revert dry run, then revert with the editor up and assets not loaded: files back to the checkpoint, the new
+    asset deleted, the backup holding the pre-revert version, `possibly_stale` listing the level;
+  - loaded + unrelated unsaved asset giving a synchronous PRECONDITION with no file touched;
+  - non-checkpoint targets refused, a missing checkpoint NOT_FOUND, an offline revert with no editor;
+  - the job tool;
+  - playtest run → PASS, with the contact sheet arriving as image content through the job;
+  - an invalid scenario rejected;
+  - analyze rubric and scenarios offline.
+- The git tool test now pins `umcp/cp/1`, the empty checkpoint `umcp/cp/2` (committed:false) and log checkpoints.
+- Predicate strictness has its own tests.
+
+**Evidence.**
+- `go vet ./...` clean; gofmt clean.
+- `go test ./...` all pass; `-race` on tools/e2e/bridge/snapshot/eval passes.
+- pytest: 49 passed. ruff in the CI form: clean.
+- Golden regenerated (64 tools).
+
+**T4 additions:**
+- `quit_editor` with a clean editor exits without any modal;
+- restart and git_revert with `discard_dirty` and the open map dirty finish unattended with no modal after relaunch;
+- `get_dirty_content_packages` includes never-saved new assets in 5.7.

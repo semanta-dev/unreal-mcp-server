@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -392,7 +393,26 @@ func awaitJob(ctx context.Context, c *Call, j *jobs.Job) *mcp.CallToolResult {
 			}
 		})
 	}
-	return envelope.Result(JobView(snap), fmt.Sprintf("job %s %s", snap.ID, snap.Status))
+	return envelope.Result(JobView(snap), fmt.Sprintf("job %s %s", snap.ID, snap.Status), jobImage(snap)...)
+}
+
+// jobImage attaches the PNG a finished job's result names in "image_path" (e.g. a
+// playtest contact sheet) as image content, so it reaches the agent through job
+// status/wait like a sync tool's image would.
+func jobImage(sn jobs.Snapshot) []mcp.Content {
+	m, ok := sn.Result.(map[string]any)
+	if !ok {
+		return nil
+	}
+	p, _ := m["image_path"].(string)
+	if p == "" {
+		return nil
+	}
+	img, err := os.ReadFile(p)
+	if err != nil || len(img) == 0 {
+		return nil
+	}
+	return []mcp.Content{&mcp.ImageContent{Data: img, MIMEType: "image/png"}}
 }
 
 // JobView is the structured form of a job snapshot in tool results.

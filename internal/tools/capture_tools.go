@@ -1,14 +1,10 @@
 package tools
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jdziat/unreal-mcp-server/internal/tools/envelope"
 	"github.com/jdziat/unreal-mcp-server/internal/visual"
@@ -89,26 +85,6 @@ func montage(dir string, frames []captureFrame, cols int, drawLabels bool, markC
 		"montage":  map[string]any{"rows": res.Rows, "cols": res.Cols, "cell_w": res.CellW, "cell_h": res.CellH},
 		"timeline": tl,
 	}, nil
-}
-
-// buildMontageResult is montage as a v1-shaped result (image + JSON text), for the
-// playtest/scenario tools until P5d moves them onto spec results.
-func buildMontageResult(dir string, frames []captureFrame, cols int, drawLabels bool, markCells []int, extra map[string]any) (*mcp.CallToolResult, any, error) {
-	png, sidecar, err := montage(dir, frames, cols, drawLabels, markCells)
-	if errors.Is(err, errNoFrames) {
-		return textResult("no capture frames were readable on disk (frames may still be flushing; increase interval_s or retry)"), nil, nil
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-	for k, v := range extra {
-		sidecar[k] = v
-	}
-	sidecarJSON, _ := json.Marshal(sidecar)
-	return &mcp.CallToolResult{Content: []mcp.Content{
-		&mcp.ImageContent{Data: png, MIMEType: "image/png"},
-		&mcp.TextContent{Text: string(sidecarJSON)},
-	}}, nil, nil
 }
 
 func toVec3(s []float64) [3]float64 {

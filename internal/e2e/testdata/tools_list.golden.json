@@ -234,6 +234,151 @@
     },
     {
       "annotations": {
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Analyze results offline"
+      },
+      "description": "Score evidence without the editor.\n- op=rubric: re-score a playtest timeline against `rubric` → PASS|WARN|FAIL with frame evidence.\n- op=perf: a CsvProfiler CSV → p50/p95/p99/max frame time + hitches; a .memreport → memory buckets.\n- op=image_diff: `path` vs `baseline` → dHash/aHash distance, luma delta, pass.\n- op=scenarios: list the saved playtest scenarios (.mcp/scenarios) with name and validity.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline": {
+            "description": "image_diff: the image to compare against",
+            "type": "string"
+          },
+          "dir": {
+            "description": "scenarios: directory of scenario/v1 files (default \u003cproject\u003e/.mcp/scenarios)",
+            "type": "string"
+          },
+          "hitch_ms": {
+            "description": "perf: frames slower than this are hitches (default 33.3)",
+            "type": "number"
+          },
+          "logs": {
+            "additionalProperties": false,
+            "description": "rubric: {errors, warnings, ensures} for log checks",
+            "properties": {
+              "ensures": {
+                "type": "integer"
+              },
+              "errors": {
+                "type": "integer"
+              },
+              "warnings": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "errors",
+              "warnings",
+              "ensures"
+            ],
+            "type": [
+              "null",
+              "object"
+            ]
+          },
+          "max_dhash": {
+            "description": "image_diff: pass threshold on dHash distance (default 8; 0 = exact)",
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "max_luma_delta": {
+            "description": "image_diff: pass threshold on mean-luma delta (default 0.15)",
+            "type": [
+              "null",
+              "number"
+            ]
+          },
+          "op": {
+            "description": "rubric | perf | image_diff | scenarios",
+            "enum": [
+              "rubric",
+              "perf",
+              "image_diff",
+              "scenarios"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "description": "perf: a CsvProfiler .csv or a .memreport; image_diff: an image",
+            "type": "string"
+          },
+          "rubric": {
+            "description": "rubric: checks [{id, kind, path, params?, severity?}]; kind is reached|entered|increased|decreased|changed|stayed|range|min|max|nonzero_count|log_zero|log_max",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "params": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "severity": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "path"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "timeline": {
+            "description": "rubric: recorded frames [{index, t_world, state}] (a playtest result's timeline)",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "index": {
+                  "type": "integer"
+                },
+                "state": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "t_world": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "index",
+                "t_world",
+                "state"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "type": "object"
+      },
+      "name": "analyze",
+      "title": "Analyze results offline"
+    },
+    {
+      "annotations": {
         "destructiveHint": true,
         "openWorldHint": true,
         "title": "Create an asset"
@@ -743,20 +888,31 @@
     {
       "annotations": {
         "destructiveHint": false,
-        "openWorldHint": true
+        "openWorldHint": true,
+        "title": "Compile C++"
       },
-      "description": "Compile the project's C++ (async job). strategy=auto classifies from the git diff: header/reflection/new-file changes -\u003e full Build.bat rebuild (closes+reopens the editor); body-only changes -\u003e Live Coding. Poll job_status for streamed progress and structured diagnostics.",
+      "description": "Compile the project's C++ (async job; follow with job op=wait). strategy=auto picks from the git diff: header/reflection/new-file changes → ubt (saves, closes the editor safely, runs Build.bat, relaunches on the same map); body-only changes → livecoding (escalates to ubt when Live Coding cannot patch). Result: success, strategy, reason, structured diagnostics.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "strategy": {
-            "description": "auto|livecoding|full (default auto: classify from the git diff)",
+            "description": "auto (default: classify the git diff) | livecoding (hot-patch the running editor) | ubt (full Build.bat; closes and reopens the editor)",
+            "enum": [
+              "auto",
+              "livecoding",
+              "ubt"
+            ],
             "type": "string"
+          },
+          "wait_s": {
+            "description": "wait up to this many seconds (max 25) before returning the job",
+            "type": "number"
           }
         },
         "type": "object"
       },
-      "name": "build_compile"
+      "name": "build",
+      "title": "Compile C++"
     },
     {
       "annotations": {
@@ -1388,49 +1544,51 @@
     },
     {
       "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Tail the editor's structured event stream (issues, PIE transitions) by byte offset — observable even while a long op holds the command channel. Returns events + a new offset to poll from.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "limit": {
-            "description": "max events returned (most recent kept); default 200",
-            "type": "integer"
-          },
-          "since_offset": {
-            "description": "byte marker from a previous call; 0 = from the start",
-            "type": "integer"
-          },
-          "type": {
-            "description": "only return events of this type (e.g. issue)",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "editor_events"
-    },
-    {
-      "annotations": {
         "destructiveHint": true,
-        "openWorldHint": true
+        "openWorldHint": true,
+        "title": "Editor process"
       },
-      "description": "Save, quit, and relaunch the editor (async job). Useful after a full rebuild or to recover a wedged editor.",
+      "description": "Start, restart or reconnect the Unreal Editor.\n- op=ensure_open (job): launch the project's editor if none answers; waits until it does.\n- op=restart (job): SAFE shutdown — fails with PRECONDITION listing unsaved packages (save=true saves them first; discard_dirty=true throws them away), stops PIE, re-checks, quits gracefully (kill after 30 s, reported), relaunches on the same map. In daemon mode the session's lease is preserved.\n- op=reclaim: another tool took over the editor's command channel (EDITOR_BUSY / channel stolen); take it back.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "discard_dirty": {
+            "description": "restart: THROW AWAY unsaved packages instead of failing with PRECONDITION",
+            "type": "boolean"
+          },
+          "map": {
+            "description": "ensure_open: level to open on launch",
+            "type": "string"
+          },
+          "op": {
+            "description": "ensure_open | restart | reclaim",
+            "enum": [
+              "ensure_open",
+              "restart",
+              "reclaim"
+            ],
+            "type": "string"
+          },
           "save": {
+            "description": "restart: save every dirty package first",
             "type": "boolean"
           },
           "timeout_s": {
+            "description": "ensure_open: seconds to wait for the editor to answer (default 300)",
+            "type": "number"
+          },
+          "wait_s": {
+            "description": "ensure_open/restart: wait up to this many seconds (max 25) before returning the job",
             "type": "number"
           }
         },
+        "required": [
+          "op"
+        ],
         "type": "object"
       },
-      "name": "editor_restart"
+      "name": "editor_lifecycle",
+      "title": "Editor process"
     },
     {
       "annotations": {
@@ -1530,124 +1688,97 @@
     {
       "annotations": {
         "destructiveHint": false,
-        "openWorldHint": true
+        "openWorldHint": false,
+        "title": "Project git"
       },
-      "description": "Commit a checkpoint. Stages the given paths (or all tracked+new except Saved/Intermediate/DerivedDataCache) and commits. Never bypasses hooks.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "message": {
-            "description": "commit message",
-            "type": "string"
-          },
-          "paths": {
-            "description": "paths to stage; default = all tracked+new except Saved/Intermediate/DerivedDataCache",
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "type": "object"
-      },
-      "name": "git_checkpoint"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Show the git diff of the project working tree, optionally limited to paths.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "paths": {
-            "description": "limit the diff to these paths",
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          }
-        },
-        "type": "object"
-      },
-      "name": "git_diff"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Show recent commits (hash, subject, date).",
+      "description": "The project's git repository (no editor needed).\n- op=status / diff / log.\n- op=checkpoint: stage (default everything except Saved/Intermediate/DerivedDataCache), commit `message` (hooks run; never bypassed) and tag it umcp/cp/\u003cn\u003e → {commit, tag}. With nothing to commit, HEAD is tagged. git_revert only goes back to these checkpoints.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "limit": {
-            "description": "max commits; default 20",
+            "description": "log: commits (default 20)",
             "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "name": "git_log"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true
-      },
-      "description": "Hard-reset the project working tree to a ref (destructive: discards uncommitted changes). Use to roll back a bad edit in an unattended run.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "ref": {
-            "description": "commit/ref to hard-reset the working tree to (destructive: discards uncommitted changes)",
+          },
+          "message": {
+            "description": "checkpoint: commit message",
             "type": "string"
+          },
+          "op": {
+            "description": "status | diff | log | checkpoint",
+            "enum": [
+              "status",
+              "diff",
+              "log",
+              "checkpoint"
+            ],
+            "type": "string"
+          },
+          "paths": {
+            "description": "diff: limit to these paths; checkpoint: stage only these (default: everything except Saved/Intermediate/DerivedDataCache)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           }
         },
         "required": [
-          "ref"
+          "op"
         ],
         "type": "object"
       },
-      "name": "git_revert_to"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Show the git working-tree status of the project (branch, staged, unstaged, untracked).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "type": "object"
-      },
-      "name": "git_status"
+      "name": "git",
+      "title": "Project git"
     },
     {
       "annotations": {
         "destructiveHint": true,
-        "openWorldHint": true
+        "openWorldHint": true,
+        "title": "Revert to a checkpoint"
       },
-      "description": "Run a commandlet, an -ExecCmds batch, or automation tests in a SEPARATE headless UnrealEditor-Cmd process — off the interactive editor's command channel. Blocks up to timeout; returns exit code + log tail + test summary.",
+      "description": "Put the project's files back exactly as they were at a git op=checkpoint (umcp/cp/\u003cn\u003e only; anything else is PRECONDITION). Files changed since are restored, files added since are deleted, untracked files are kept (listed). Editor-aware: if the editor has any of those assets loaded, it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty=true) and relaunched on the same map after; otherwise it stays up and those assets are reported possibly_stale. All-or-nothing: the previous files are backed up under Saved/MCP/revert-backup and restored on failure. Result: reverted_files, deleted_files, editor_restarted, discarded_dirty, possibly_stale, rebuild_required (C++ changed: run build).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "commandlet": {
-            "description": "a commandlet to -run, e.g. DataValidation, ResavePackages",
+          "discard_dirty": {
+            "description": "when reverted assets are open in the editor: THROW AWAY unsaved packages instead of failing with PRECONDITION",
+            "type": "boolean"
+          },
+          "dry_run": {
+            "description": "report what would change (files, editor restart) without doing it",
+            "type": "boolean"
+          },
+          "to": {
+            "description": "a checkpoint: umcp/cp/\u003cn\u003e or just \u003cn\u003e (from git op=checkpoint / op=log)",
             "type": "string"
           },
-          "exec_cmds": {
-            "description": "console commands to batch via -ExecCmds (Quit is appended for you if you include it)",
+          "wait_s": {
+            "description": "wait up to this many seconds (max 25) before returning the job",
+            "type": "number"
+          }
+        },
+        "required": [
+          "to"
+        ],
+        "type": "object"
+      },
+      "name": "git_revert",
+      "title": "Revert to a checkpoint"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "title": "Headless editor runs"
+      },
+      "description": "Run work in a SEPARATE UnrealEditor-Cmd process (async job), off the interactive editor's command channel: a commandlet, an -ExecCmds batch, or automation tests → exit code, log tail, test pass/fail counts. A tests run that matched no test is ok:false.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "args": {
+            "description": "commandlet: extra arguments",
             "items": {
               "type": "string"
             },
@@ -1656,62 +1787,53 @@
               "array"
             ]
           },
-          "run_tests": {
-            "description": "automation test filter, e.g. Project.Functional (expands to Automation RunTests \u003cfilter\u003e;Quit)",
+          "commandlet": {
+            "description": "commandlet: the commandlet to -run, e.g. DataValidation, ResavePackages",
+            "type": "string"
+          },
+          "exec_cmds": {
+            "description": "exec: console commands to batch (Quit is appended)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "filter": {
+            "description": "tests: automation test filter, e.g. Project.Functional",
+            "type": "string"
+          },
+          "op": {
+            "description": "commandlet | exec | tests",
+            "enum": [
+              "commandlet",
+              "exec",
+              "tests"
+            ],
             "type": "string"
           },
           "timeout_s": {
-            "description": "max seconds before aborting; default 180, max 600",
+            "description": "abort after this many seconds (default 180, max 600)",
+            "type": "number"
+          },
+          "wait_s": {
+            "description": "wait up to this many seconds (max 25) before returning the job",
             "type": "number"
           },
           "with_gpu": {
-            "description": "render with a GPU (default is -nullrhi for pure-logic jobs)",
+            "description": "render with a GPU (default -nullrhi)",
             "type": "boolean"
           }
         },
-        "type": "object"
-      },
-      "name": "headless_run"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Perceptually compare two images (a capture frame vs a golden baseline): dHash/aHash distance + luma delta, with a pass verdict. For visual-regression / golden gates.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "a": {
-            "description": "path to a PNG image (e.g. a capture frame)",
-            "type": "string"
-          },
-          "b": {
-            "description": "path to the other PNG / baseline",
-            "type": "string"
-          },
-          "max_dhash": {
-            "description": "pass threshold on dHash distance; default 8. Set 0 for an exact match.",
-            "type": [
-              "null",
-              "integer"
-            ]
-          },
-          "max_luma_delta": {
-            "description": "pass threshold on luma delta; default 0.15. Set 0 for an exact match.",
-            "type": [
-              "null",
-              "number"
-            ]
-          }
-        },
         "required": [
-          "a",
-          "b"
+          "op"
         ],
         "type": "object"
       },
-      "name": "image_compare"
+      "name": "headless",
+      "title": "Headless editor runs"
     },
     {
       "annotations": {
@@ -1763,42 +1885,40 @@
     {
       "annotations": {
         "destructiveHint": false,
-        "openWorldHint": true
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "Background jobs"
       },
-      "description": "Request cancellation of an async job.",
+      "description": "Follow long-running work (build, playtest run, editor_lifecycle, git_revert, headless): those return {job_id, state} unless called with wait_s.\n- op=status: state (running|succeeded|failed|cancelled), last progress, result or error.\n- op=wait: block up to wait_s (default 25) for it to finish, streaming progress.\n- op=cancel: request cancellation; the job reports cancelled when it stops.\n- op=list: every job of this project. Jobs belong to the project, so a later session can poll them.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "job_id": {
+            "description": "status/wait/cancel: the job",
             "type": "string"
+          },
+          "op": {
+            "description": "status | wait | cancel | list",
+            "enum": [
+              "status",
+              "wait",
+              "cancel",
+              "list"
+            ],
+            "type": "string"
+          },
+          "wait_s": {
+            "description": "wait: seconds to wait for it to finish (default and max 25); progress is streamed meanwhile",
+            "type": "number"
           }
         },
         "required": [
-          "job_id"
+          "op"
         ],
         "type": "object"
       },
-      "name": "job_cancel"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Poll an async job (build_compile, editor_restart, project_ensure_open) for status, streamed progress, and result.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "job_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "job_id"
-        ],
-        "type": "object"
-      },
-      "name": "job_status"
+      "name": "job",
+      "title": "Background jobs"
     },
     {
       "annotations": {
@@ -1884,63 +2004,16 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Editor logs"
       },
-      "description": "Trigger a Live Coding compile so C++ changes hot-reload into the running editor. Fire-and-forget; check the editor's Live Coding window for results.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "type": "object"
-      },
-      "name": "live_coding_compile"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Return a marker (byte offset) into the project log for a later logs_since.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "type": "object"
-      },
-      "name": "logs_mark"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Return project log lines since a marker, with error/warning/ensure counts (attributable output for a run).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "marker": {
-            "description": "a marker from logs_mark",
-            "type": "string"
-          },
-          "min_severity": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "marker"
-        ],
-        "type": "object"
-      },
-      "name": "logs_since"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Return recent project log lines filtered by severity/category.",
+      "description": "Read the project's editor log files directly — works while the editor is busy or gone.\n- op=mark → marker; do something; op=since marker → that window's lines + error/warning/ensure counts.\n- op=tail: the last `lines` at min_severity.\n- op=events: structured events (issues, PIE start/stop) from `marker` offset; returns the next offset.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "categories": {
-            "description": "restrict to these log categories, e.g. LogLiveCoding",
+            "description": "tail: only these log categories, e.g. LogLiveCoding",
             "items": {
               "type": "string"
             },
@@ -1949,18 +2022,51 @@
               "array"
             ]
           },
-          "lines": {
-            "description": "default 200",
+          "limit": {
+            "description": "events: most recent N (default 200)",
             "type": "integer"
           },
+          "lines": {
+            "description": "tail: how many lines (default 200)",
+            "type": "integer"
+          },
+          "marker": {
+            "description": "since: a marker from op=mark; events: an offset from a previous events call",
+            "type": "string"
+          },
           "min_severity": {
-            "description": "Verbose|Log|Display|Warning|Error; default Display",
+            "description": "tail/since: Verbose | Log | Display | Warning | Error (default Display for tail, Warning for since)",
+            "enum": [
+              "Verbose",
+              "Log",
+              "Display",
+              "Warning",
+              "Error"
+            ],
+            "type": "string"
+          },
+          "op": {
+            "description": "mark | tail | since | events",
+            "enum": [
+              "mark",
+              "tail",
+              "since",
+              "events"
+            ],
+            "type": "string"
+          },
+          "type": {
+            "description": "events: only this event type (e.g. issue)",
             "type": "string"
           }
         },
+        "required": [
+          "op"
+        ],
         "type": "object"
       },
-      "name": "logs_tail"
+      "name": "logs",
+      "title": "Editor logs"
     },
     {
       "annotations": {
@@ -2138,31 +2244,6 @@
     },
     {
       "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Parse a CsvProfiler CSV into frame-time percentiles (p50/p95/p99/max, hitch count) or a memreport dump into memory buckets — perf as DATA for a rubric, not viewport text.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "file": {
-            "description": "path to a CsvProfiler .csv (Saved/Profiling) or a .memreport dump",
-            "type": "string"
-          },
-          "hitch_ms": {
-            "description": "frames slower than this count as hitches; default 33.3",
-            "type": "number"
-          }
-        },
-        "required": [
-          "file"
-        ],
-        "type": "object"
-      },
-      "name": "perf_parse"
-    },
-    {
-      "annotations": {
         "destructiveHint": false,
         "openWorldHint": true,
         "title": "Play In Editor"
@@ -2335,81 +2416,27 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "openWorldHint": true
+        "openWorldHint": true,
+        "title": "Automated playtest"
       },
-      "description": "Run an in-depth automated play test: open a level, enter play, capture a synchronized filmstrip of frames+state, drive deterministic beats, then return ONE contact-sheet montage + a per-frame timeline + a rubric PASS/WARN/FAIL verdict + a log summary. The token-efficient way for an agent to validate a game works.",
+      "description": "Validate that the game WORKS.\n- op=run (async job; scenario/v1 from `path` or `json`): open the level, play (mode pie|simulate|editor), record frames + state, run timed beats (exec = call a UFUNCTION — arbitrary code, hence Exec; console; wait_until), stop, and score the rubric → {verdict PASS|WARN|FAIL, rubric, logs, crash?, timeline} with the contact sheet (failed-check frames outlined in red) as an image when read via wait_s / job.\nThe saved suite: analyze op=scenarios.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "beats": {
-            "description": "deterministic script run over the capture window",
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "at_s": {
-                  "description": "seconds after capture start to run this beat",
-                  "type": "number"
-                },
-                "exec": {
-                  "additionalProperties": false,
-                  "description": "invoke a UFUNCTION at this beat",
-                  "properties": {
-                    "args": {
-                      "additionalProperties": true,
-                      "type": "object"
-                    },
-                    "target": {
-                      "description": "actor label or 'gamestate'",
-                      "type": "string"
-                    },
-                    "ufunction": {
-                      "description": "a BlueprintCallable UFUNCTION to invoke",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "target",
-                    "ufunction"
-                  ],
-                  "type": [
-                    "null",
-                    "object"
-                  ]
-                },
-                "timeout_s": {
-                  "description": "wait timeout; default 10",
-                  "type": "number"
-                },
-                "wait_until": {
-                  "description": "pie_observe predicate to wait for before continuing",
-                  "type": "string"
-                }
-              },
-              "type": "object"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
           "cols": {
-            "description": "montage columns; default 8",
+            "description": "run: montage columns (default 8)",
             "type": "integer"
           },
-          "duration_s": {
-            "description": "total REAL-TIME capture window seconds; default 20",
-            "type": "number"
-          },
           "frame_h": {
-            "description": "per-frame height; default 144",
+            "description": "run: per-frame height (default 144)",
             "type": "integer"
           },
           "frame_w": {
-            "description": "per-frame width; default 256",
+            "description": "run: per-frame width (default 256)",
             "type": "integer"
           },
           "include": {
-            "description": "observe property include globs",
+            "description": "run: observed property include globs",
             "items": {
               "type": "string"
             },
@@ -2418,24 +2445,27 @@
               "array"
             ]
           },
-          "interval_s": {
-            "description": "seconds between frames; default 0.5",
-            "type": "number"
-          },
-          "level": {
-            "description": "level to open first, e.g. /Game/Maps/L_Arena",
+          "json": {
+            "description": "run: the scenario as inline JSON (instead of path)",
             "type": "string"
           },
           "max_frames": {
-            "description": "cap on frames; default 64",
+            "description": "run: frame cap (default 96)",
             "type": "integer"
           },
-          "mode": {
-            "description": "pie (possessed) | simulate | editor; default pie",
+          "op": {
+            "description": "run",
+            "enum": [
+              "run"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "description": "run: a scenario/v1 .json file",
             "type": "string"
           },
           "properties": {
-            "description": "observe exact property names",
+            "description": "run: exact observed properties",
             "items": {
               "type": "string"
             },
@@ -2444,166 +2474,18 @@
               "array"
             ]
           },
-          "rubric": {
-            "description": "pass/fail checks evaluated over the recorded timeline",
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "kind": {
-                  "description": "reached|entered|increased|decreased|changed|stayed|range|min|max|nonzero_count|log_zero|log_max",
-                  "type": "string"
-                },
-                "params": {
-                  "additionalProperties": true,
-                  "description": "reducer args, e.g. {value:...} or {min:..,max:..} or {by:..}",
-                  "type": "object"
-                },
-                "path": {
-                  "description": "dotted path into observed state, e.g. gamestate.wave_number, counts.EnemyCharacter, perf.fps (min), perf.hitch_ms (max); or errors|warnings|ensures for log checks",
-                  "type": "string"
-                },
-                "severity": {
-                  "description": "fail|warn|info; default fail",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "id",
-                "kind",
-                "path"
-              ],
-              "type": "object"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "time_dilation": {
-            "description": "speed up the sim during capture via 'slomo N' (e.g. 8) so slow bottlenecks form in fewer real seconds; default 1 (real time). Use a shorter duration_s to match.",
+          "wait_s": {
+            "description": "run: wait up to this many seconds (max 25) before returning the job",
             "type": "number"
-          },
-          "track_actors": {
-            "description": "actor labels to record detailed per-frame state for",
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          }
-        },
-        "type": "object"
-      },
-      "name": "playtest_capture"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Re-score a recorded playtest timeline against a rubric WITHOUT re-running the game (pure). Returns the checklist + verdict, evidence pointing at frame indices.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "logs": {
-            "additionalProperties": false,
-            "properties": {
-              "ensures": {
-                "type": "integer"
-              },
-              "errors": {
-                "type": "integer"
-              },
-              "warnings": {
-                "type": "integer"
-              }
-            },
-            "required": [
-              "errors",
-              "warnings",
-              "ensures"
-            ],
-            "type": "object"
-          },
-          "rubric": {
-            "description": "checks to evaluate",
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "kind": {
-                  "description": "reached|entered|increased|decreased|changed|stayed|range|min|max|nonzero_count|log_zero|log_max",
-                  "type": "string"
-                },
-                "params": {
-                  "additionalProperties": true,
-                  "description": "reducer args, e.g. {value:...} or {min:..,max:..} or {by:..}",
-                  "type": "object"
-                },
-                "path": {
-                  "description": "dotted path into observed state, e.g. gamestate.wave_number, counts.EnemyCharacter, perf.fps (min), perf.hitch_ms (max); or errors|warnings|ensures for log checks",
-                  "type": "string"
-                },
-                "severity": {
-                  "description": "fail|warn|info; default fail",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "id",
-                "kind",
-                "path"
-              ],
-              "type": "object"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "timeline": {
-            "description": "recorded frames (index, t_world, observed state)",
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "index": {
-                  "type": "integer"
-                },
-                "state": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "t_world": {
-                  "type": "number"
-                }
-              },
-              "required": [
-                "index",
-                "t_world",
-                "state"
-              ],
-              "type": "object"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
           }
         },
         "required": [
-          "timeline",
-          "rubric"
+          "op"
         ],
         "type": "object"
       },
-      "name": "playtest_evaluate"
+      "name": "playtest",
+      "title": "Automated playtest"
     },
     {
       "annotations": {
@@ -2737,30 +2619,6 @@
       },
       "name": "project_config",
       "title": "Project config (.ini)"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Ensure the editor is open with the project (launches it if no editor is discovered). Async job: poll job_status; waits up to timeout_s for the editor to answer.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "map": {
-            "type": "string"
-          },
-          "timeout_s": {
-            "description": "seconds to wait for the editor to answer; default 300",
-            "type": "number"
-          },
-          "uproject": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "project_ensure_open"
     },
     {
       "annotations": {
@@ -2999,50 +2857,6 @@
         "type": "object"
       },
       "name": "render_health"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "List saved scenario/v1 files (name + valid?) — the regression suite.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "dir": {
-            "description": "directory of scenario .json files; default \u003cproject\u003e/.mcp/scenarios",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "scenario_list"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true
-      },
-      "description": "Run a saved scenario/v1 (arrange -\u003e act beats -\u003e assert rubric) and return the montage + timeline + PASS/WARN/FAIL verdict. The replayable functional/regression test.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "cols": {
-            "description": "montage columns; default 8",
-            "type": "integer"
-          },
-          "json": {
-            "description": "inline scenario/v1 JSON (alternative to path)",
-            "type": "string"
-          },
-          "path": {
-            "description": "path to a scenario/v1 .json file",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "scenario_run"
     },
     {
       "annotations": {

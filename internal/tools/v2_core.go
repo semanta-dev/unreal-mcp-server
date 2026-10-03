@@ -95,7 +95,12 @@ func pick(args map[string]any, keys ...string) map[string]any {
 }
 
 // v2Specs is every v2 tool (grows cluster by cluster until the v1 adapter is gone).
-func v2Specs() []*spec.Spec { return append(append(coreSpecs(), assetSpecs()...), playSpecs()...) }
+func v2Specs() []*spec.Spec {
+	specs := append(coreSpecs(), assetSpecs()...)
+	specs = append(specs, playSpecs()...)
+	specs = append(specs, opsSpecs()...)
+	return append(specs, lifecycleSpecs()...)
+}
 
 func coreSpecs() []*spec.Spec {
 	return []*spec.Spec{editorSpec(), pythonSpec(), consoleSpec(), levelSpec(),

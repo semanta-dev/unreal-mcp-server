@@ -10,6 +10,7 @@ package eval
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -27,6 +28,8 @@ type Predicate struct {
 // before ">".
 var Ops = []string{">=", "<=", "==", "!=", ">", "<"}
 
+var predPath = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)*$`)
+
 // ParsePredicate parses "<path> <op> <value>" into a Predicate.
 func ParsePredicate(expr string) (*Predicate, error) {
 	expr = strings.TrimSpace(expr)
@@ -34,6 +37,11 @@ func ParsePredicate(expr string) (*Predicate, error) {
 		if i := strings.Index(expr, op); i > 0 {
 			lhs := strings.TrimSpace(expr[:i])
 			rhs := strings.TrimSpace(expr[i+len(op):])
+			// Strict: a dotted path, one operator, a non-empty value ("a >>> 1" or
+			// "a >= " is a typo, not "a > '>> 1'").
+			if !predPath.MatchString(lhs) || rhs == "" || strings.ContainsAny(rhs[:1], "<>=!") {
+				return nil, fmt.Errorf("predicate must be '<path> <op> <value>' with op in %v; got %q", Ops, expr)
+			}
 			p := &Predicate{path: strings.Split(lhs, "."), op: op}
 			rhs = strings.Trim(rhs, `'"`)
 			if f, err := strconv.ParseFloat(rhs, 64); err == nil {

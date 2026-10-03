@@ -109,3 +109,16 @@ func TestPredicateEnumString(t *testing.T) {
 		t.Fatal("expected enum-name string predicate to match")
 	}
 }
+
+func TestParsePredicateIsStrict(t *testing.T) {
+	for _, bad := range []string{"a >>> 1", "a >= ", "a == =2", ">= 1", "a b >= 1", "counts.Pawn"} {
+		if _, err := ParsePredicate(bad); err == nil {
+			t.Errorf("%q parsed", bad)
+		}
+	}
+	for _, ok := range []string{"gamestate.wave_number >= 2", "counts.EnemyCharacter>=1", "pawn.speed > 100", "state == 'Running'"} {
+		if _, err := ParsePredicate(ok); err != nil {
+			t.Errorf("%q: %v", ok, err)
+		}
+	}
+}

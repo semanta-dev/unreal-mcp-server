@@ -246,7 +246,7 @@ func TestDaemonVanishMidJobDrainsThenAdopts(t *testing.T) {
 		t.Fatalf("adoption must not spawn a second editor (spawned %d)", e.sp.spawned())
 	}
 	// The new session sees the project's job.
-	if st := callTool(t, cs2, "job_status", map[string]any{"job_id": j.ID}); st["_error"] != nil {
+	if st := callTool(t, cs2, "job", map[string]any{"op": "status", "job_id": j.ID}); st["_error"] != nil {
 		t.Fatalf("adopting session cannot see the project job: %v", st)
 	}
 	close(release)

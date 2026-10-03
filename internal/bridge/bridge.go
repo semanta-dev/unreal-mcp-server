@@ -231,6 +231,16 @@ func (b *Bridge) Call(ctx context.Context, op string, args any) (json.RawMessage
 	return env.Result, nil
 }
 
+// Reclaim retakes an editor command channel that another client stole (uexec theft
+// detection, plan §2.8). It reports false when the runner has no such notion.
+func (b *Bridge) Reclaim() bool {
+	r, ok := b.run.(interface{ Reclaim() })
+	if ok {
+		r.Reclaim()
+	}
+	return ok
+}
+
 // CallLog is Call plus the editor output captured while the op ran (minus the
 // result marker): what v1's text tools surfaced. Warning/Error lines become a v2
 // tool's editor_log; console returns every line.

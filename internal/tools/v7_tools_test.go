@@ -11,7 +11,7 @@ import (
 // tighter editor integration. Registration must not need a live editor.
 var v7ToolNames = []string{
 	"capture", "screenshot", "scene", "scene_clear",
-	"playtest_capture", "playtest_evaluate",
+	"playtest", "analyze",
 }
 
 func TestV7ToolsRegister(t *testing.T) {
@@ -21,30 +21,6 @@ func TestV7ToolsRegister(t *testing.T) {
 		if !names[want] {
 			t.Errorf("missing v7 tool: %q", want)
 		}
-	}
-}
-
-func TestOrderBeats(t *testing.T) {
-	beats := []playtestBeat{
-		{AtS: 2, WaitUntil: "a"},
-		{AtS: 0, Exec: &playtestExecBeat{Target: "gamestate", UFunction: "X"}},
-		{AtS: 1, WaitUntil: "b"},
-		{AtS: 0, WaitUntil: "c"}, // ties keep declaration order (stable)
-	}
-	got := orderBeats(beats)
-	wantAt := []float64{0, 0, 1, 2}
-	for i, w := range wantAt {
-		if got[i].AtS != w {
-			t.Errorf("beat %d: at_s = %v, want %v", i, got[i].AtS, w)
-		}
-	}
-	// stability: the two at_s==0 beats stay in their original relative order.
-	if got[0].Exec == nil || got[1].WaitUntil != "c" {
-		t.Errorf("stable order broken: %+v", got[:2])
-	}
-	// the input slice must not be mutated.
-	if beats[0].AtS != 2 {
-		t.Error("orderBeats mutated its input")
 	}
 }
 

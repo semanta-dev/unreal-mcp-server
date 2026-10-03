@@ -31,25 +31,14 @@ type registrar struct{ specs []*spec.Spec }
 // Specs returns every tool spec (v1 surface, adapted) for the given deps.
 func Specs(d Deps) []*spec.Spec {
 	s := &registrar{}
-	registerParityTools(s, d.Bridge)
-	if d.Jobs != nil {
-		registerBuildTools(s, d)
-		registerLifecycleTools(s, d)
-	}
-	registerLogTools(s, d)
-	registerGitTools(s, d)
 	// v7 additions: reflection, multi-frame capture, high-level design, tighter
 	// editor integration, and the playtest orchestrator.
 	registerDesignTools(s)
 	registerCompanyTools(s, d.Bridge)
 	registerDemolishTool(s, d.Bridge)
 	registerRoadTool(s, d.Bridge)
-	registerPlaytestTools(s, d)
-	registerVerificationTools(s, d)
-	registerPWTools(s, d)
-	registerRobustnessTools(s, d)
-	registerHeadlessTools(s, d)
 	registerDesktopTools(s, d)
+	registerHeadlessTools(s, d) // affordances (until toolsets describe, P5e)
 	registerCockpitTools(s, d)
 	registerProjectTools(s, d)
 	s.specs = append(s.specs, v2Specs()...)
@@ -72,20 +61,6 @@ func registerCockpitTools(s *registrar, d Deps) {
 			}
 			return nil, out, nil
 		})
-}
-
-// registerParityTools adds the 16 frozen parity tools.
-func registerParityTools(s *registrar, b *bridge.Bridge) {
-	// --- Session & raw exec ---
-
-	// --- Level & actors ---
-
-	// --- Assets ---
-	// --- Visual ---
-	// --- Play / build ---
-	add(s, "live_coding_compile",
-		"Trigger a Live Coding compile so C++ changes hot-reload into the running editor. Fire-and-forget; check the editor's Live Coding window for results.",
-		textHandler[noArgs](b, "live_coding_compile", func(noArgs) map[string]any { return map[string]any{} }))
 }
 
 // add registers one typed tool.

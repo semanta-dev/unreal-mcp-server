@@ -51,24 +51,17 @@ func listToolNames(t *testing.T, d Deps) map[string]bool {
 	return names
 }
 
-// TestBuildToolsRegisterWithJobs verifies the build/lifecycle tools appear only
-// when a jobs registry is provided.
-func TestBuildToolsRegisterWithJobs(t *testing.T) {
+// TestLongRunningToolsAlwaysRegister: build/job/editor_lifecycle register whether or
+// not a jobs registry is wired; without one they fail with PRECONDITION at call time
+// (a stable tools/list, plan R1), never by vanishing.
+func TestLongRunningToolsAlwaysRegister(t *testing.T) {
 	b := bridge.New(noEditorRunner{}, bridge.Options{})
-	withJobs := listToolNames(t, Deps{Bridge: b, Jobs: jobs.NewRegistry()})
-	for _, name := range []string{"build_compile", "job_status", "job_cancel", "project_ensure_open", "editor_restart"} {
-		if !withJobs[name] {
-			t.Errorf("expected %q with a jobs registry", name)
-		}
-	}
-	withoutJobs := listToolNames(t, Deps{Bridge: b})
-	if withoutJobs["build_compile"] {
-		t.Error("build_compile should not register without a jobs registry")
-	}
-	// e2e tools that don't need jobs still register.
-	for _, name := range []string{"git_status", "pie_observe", "logs_mark", "python"} {
-		if !withoutJobs[name] {
-			t.Errorf("expected %q to register without jobs", name)
+	for _, d := range []Deps{{Bridge: b, Jobs: jobs.NewRegistry()}, {Bridge: b}} {
+		names := listToolNames(t, d)
+		for _, name := range []string{"build", "job", "editor_lifecycle", "git", "logs", "python"} {
+			if !names[name] {
+				t.Errorf("expected %q (jobs wired: %v)", name, d.Jobs != nil)
+			}
 		}
 	}
 }
