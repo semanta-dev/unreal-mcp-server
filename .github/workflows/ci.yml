@@ -2,8 +2,17 @@ name: ci
 
 on:
   push:
+    branches: ['**'] # all branches, not tags (a tag push runs this via release.yml)
   pull_request:
   workflow_dispatch:
+  workflow_call: # the release workflow runs this exact suite before it builds anything
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   GOTOOLCHAIN: local
@@ -13,8 +22,8 @@ jobs:
     name: lint + race test (linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: gofmt gate
@@ -32,21 +41,31 @@ jobs:
           if grep -RnE 'fmt\.Print(ln|f)?\(|os\.Stdout' --include='*.go' internal | grep -v '_test.go'; then
             echo "stdout write found in serving path (must go to stderr)"; exit 1
           fi
+      - name: generated docs are current
+        run: |
+          go generate ./internal/tools
+          git diff --exit-code -- docs/tools.md docs/migration-v2.md
       - name: race test
         run: go test -race ./...
       - name: coverage gates (merged; repo 75, tools 70, app 80, config 90)
         run: bash scripts/coverage.sh
+      - name: tool-selection eval tasks are solvable (offline dry run)
+        run: go run ./cmd/tooleval -mode dry
 
-  build-windows:
-    name: build + integration (windows)
+  test-windows:
+    name: test + build + integration (windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # tags drive the version stamp
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      - name: go test (covers the Windows-only desktop and process-enumeration code)
+        run: go test ./...
+      - name: loopback multicast integration test
+        run: go test -tags integration -run TestLoopbackMulticastRoundTrip ./internal/uexec/
       - name: build static exe
         env:
           CGO_ENABLED: '0'
@@ -58,9 +77,7 @@ jobs:
           go build -trimpath -ldflags "-s -w -X $PKG.Version=$VER -X $PKG.Commit=$COMMIT" -o dist/unreal-mcp.exe ./cmd/unreal-mcp
       - name: version smoke
         run: .\dist\unreal-mcp.exe -version
-      - name: loopback multicast integration test
-        run: go test -tags integration -run TestLoopbackMulticastRoundTrip ./internal/uexec/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unreal-mcp-exe
           path: dist/unreal-mcp.exe
@@ -69,8 +86,8 @@ jobs:
     name: companion module (python 3.11)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
       - name: py_compile
@@ -85,3 +102,18 @@ jobs:
           ruff check internal/bridge/py/tests
       - name: pytest (companion contract + v1/v2 handover)
         run: python -m pytest internal/bridge/py/tests -q
+
+  package:
+    name: release packaging (all targets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: package (the same script the release runs)
+        run: bash scripts/package.sh
+      - name: checksums verify
+        run: cd dist/release && sha256sum -c SHA256SUMS

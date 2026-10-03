@@ -1,0 +1,110 @@
+name: release
+
+# Push a v* tag (with a matching CHANGELOG.md section) to publish a signed release:
+# the full CI suite runs first, then every target is built from the tag, checksummed,
+# signed with Sigstore cosign (keyless, GitHub OIDC), given a build-provenance
+# attestation, and published as a GitHub release. See docs/operations.md "Releases".
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch: # dry run: build, sign and verify for real, but publish nothing
+    inputs:
+      version:
+        description: 'version for the archives and the CHANGELOG section (default: the latest in CHANGELOG.md)'
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: build, sign, publish
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # create the GitHub release
+      id-token: write      # Sigstore keyless signing + provenance (OIDC)
+      attestations: write  # build-provenance attestation
+    env:
+      PUBLISH: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: resolve the version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$PUBLISH" = true ]; then
+            TAG="$GITHUB_REF_NAME"
+            test "$(git describe --tags --exact-match)" = "$TAG" || { echo "HEAD is not exactly $TAG"; exit 1; }
+          else
+            TAG="${INPUT_VERSION:-$(grep -m1 -oE '^## v[0-9][^ ]*' CHANGELOG.md | cut -c4-)}"
+            echo "dry run: version $TAG, nothing will be published"
+          fi
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: release notes from CHANGELOG.md (fails without a section for the version)
+        run: bash scripts/release-notes.sh "$TAG" > "$RUNNER_TEMP/notes.md"
+
+      - name: package all targets
+        run: bash scripts/package.sh "$TAG"
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: sign (keyless; one Sigstore bundle per file)
+        working-directory: dist/release
+        run: |
+          for f in *.zip *.tar.gz SHA256SUMS; do
+            cosign sign-blob --yes --bundle "$f.sigstore.json" "$f"
+          done
+
+      - name: verify every signature against this workflow's identity
+        working-directory: dist/release
+        env:
+          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+        run: |
+          for f in *.zip *.tar.gz SHA256SUMS; do
+            cosign verify-blob --bundle "$f.sigstore.json" \
+              --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com "$f"
+          done
+
+      - name: build-provenance attestation
+        if: env.PUBLISH == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/release/*.zip
+            dist/release/*.tar.gz
+
+      - name: keep the signed artifacts (dry run)
+        if: env.PUBLISH != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-dry-run
+          path: dist/release/
+
+      - name: publish the GitHub release
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pre=""
+          case "$TAG" in *-*) pre="--prerelease";; esac
+          gh release create "$TAG" dist/release/* --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" $pre

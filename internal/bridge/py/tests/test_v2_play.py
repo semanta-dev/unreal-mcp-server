@@ -268,7 +268,8 @@ def test_null_args_are_no_args(v2, ue):
     assert env["ok"], env
 
 
-def test_widget_render_with_an_older_plugin_is_plugin_missing(v2, ue):
+def test_widget_render_with_an_older_plugin_is_plugin_missing(v2, ue, tmp_path):
+    ue.Paths.convert_relative_path_to_full = lambda p: str(tmp_path / "Saved")  # writable on every OS
     # Found live (P7): a project plugin without CaptureWidget raised a Python error.
     from fakeunreal import _Subsystem
     ue.UserWidget = ue.add_class("UserWidget", "/Script/UMG.UserWidget")
