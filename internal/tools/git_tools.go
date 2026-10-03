@@ -53,7 +53,7 @@ type gitLogOut struct {
 	Commits []gitCommit `json:"commits"`
 }
 
-func registerGitTools(s *mcp.Server, d Deps) {
+func registerGitTools(s *registrar, d Deps) {
 	add(s, "git_status", "Show the git working-tree status of the project (branch, staged, unstaged, untracked).",
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, gitStatusOut, error) {
 			dir := resolveDeps(ctx, d).ProjectDir

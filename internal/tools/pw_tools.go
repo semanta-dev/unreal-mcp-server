@@ -52,7 +52,7 @@ type imageCompareIn struct {
 // registerPWTools adds the poly-world / builder-sim verification workstream:
 // instance-aware observation, a deterministic content-digest oracle, the
 // pie_verify functional harness, and perceptual image compare — all game-agnostic.
-func registerPWTools(s *mcp.Server, d Deps) {
+func registerPWTools(s *registrar, d Deps) {
 	b := d.Bridge
 
 	add(s, "instances_count",

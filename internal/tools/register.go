@@ -21,7 +21,16 @@ type Deps = session.Deps
 
 // RegisterAll adds all tools to the server: the 16 frozen parity tools plus the
 // e2e additions (build, PIE, logs, git, lifecycle) when their deps are present.
-func RegisterAll(s *mcp.Server, d Deps) {
+func RegisterAll(srv *mcp.Server, d Deps) {
+	spec.Register(srv, Specs(d), spec.Options{Fallback: d})
+}
+
+// registrar collects specs during registration.
+type registrar struct{ specs []*spec.Spec }
+
+// Specs returns every tool spec (v1 surface, adapted) for the given deps.
+func Specs(d Deps) []*spec.Spec {
+	s := &registrar{}
 	registerParityTools(s, d.Bridge)
 	if d.Jobs != nil {
 		registerBuildTools(s, d)
@@ -54,11 +63,12 @@ func RegisterAll(s *mcp.Server, d Deps) {
 	registerDesktopTools(s, d)
 	registerHUDTools(s, d)
 	registerCockpitTools(s, d)
+	return s.specs
 }
 
 // registerCockpitTools adds cockpit_url, which returns the browser control+observability
 // URL the launcher opens once an editor with the MCPCore plugin is reachable.
-func registerCockpitTools(s *mcp.Server, d Deps) {
+func registerCockpitTools(s *registrar, d Deps) {
 	if d.CockpitURL == nil {
 		return
 	}
@@ -75,7 +85,7 @@ func registerCockpitTools(s *mcp.Server, d Deps) {
 }
 
 // registerParityTools adds the 16 frozen parity tools.
-func registerParityTools(s *mcp.Server, b *bridge.Bridge) {
+func registerParityTools(s *registrar, b *bridge.Bridge) {
 	// --- Session & raw exec ---
 	add(s, "editor_status",
 		"Check whether the Unreal Editor is reachable and report engine version, project, current level, and PIE state.",
@@ -202,8 +212,8 @@ func registerParityTools(s *mcp.Server, b *bridge.Bridge) {
 // add registers one typed tool.
 // add registers a v1 tool through the spec layer (envelope, annotations, per-call
 // recovery) while keeping its v1 name, schema and result shape.
-func add[In, Out any](s *mcp.Server, name, desc string, h mcp.ToolHandlerFor[In, Out]) {
-	spec.Register(s, []*spec.Spec{spec.Typed(name, desc, v1Tier(name), h)}, spec.Options{})
+func add[In, Out any](s *registrar, name, desc string, h mcp.ToolHandlerFor[In, Out]) {
+	s.specs = append(s.specs, spec.Typed(name, desc, v1Tier(name), h))
 }
 
 // v1Tier classifies a v1 tool by its same-named companion op's worst-case tier

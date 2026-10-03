@@ -1,8 +1,6 @@
 package tools
 
 import (
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 )
 
@@ -39,7 +37,7 @@ type pawnStateIn struct {
 // and returns the hard facts (tri/vert count, material slots, LOD count, bounds). It
 // fixes RC2 — the agent could not SEE a purchased asset before using it. Bridge op
 // (runs in the editor), so it dispatches through the companion module.
-func registerPerceptionTools(s *mcp.Server, b *bridge.Bridge) {
+func registerPerceptionTools(s *registrar, b *bridge.Bridge) {
 	add(s, "asset_thumbnail",
 		"Render a Content Browser StaticMesh into a PNG thumbnail (canonical 3/4 angle) and return hard facts (tri/vert count, material slot names, LOD count, bounds). The keystone perception primitive so the agent can SEE an asset before placing it. Requires a live editor.",
 		structHandler[assetThumbnailIn](b, "asset_thumbnail", func(in assetThumbnailIn) map[string]any {
@@ -111,7 +109,7 @@ type companySelectIn struct {
 
 // registerCompanyTools exposes the Company-MVP slice tools (read status + make the
 // Capitalism-2 selection: who you buy from / sell to).
-func registerCompanyTools(s *mcp.Server, b *bridge.Bridge) {
+func registerCompanyTools(s *registrar, b *bridge.Bridge) {
 	add(s, "company_status",
 		"Read the PolyWorld Company-MVP economy from the live PIE: company Capital + each production building's supplier/market and last-cycle profit.",
 		structHandler[struct {
@@ -160,7 +158,7 @@ func registerCompanyTools(s *mcp.Server, b *bridge.Bridge) {
 }
 
 // registerWidgetRenderTool exposes widget_render (offscreen UMG capture via FWidgetRenderer).
-func registerWidgetRenderTool(s *mcp.Server, b *bridge.Bridge) {
+func registerWidgetRenderTool(s *registrar, b *bridge.Bridge) {
 	add(s, "widget_render",
 		"Render a UserWidget class (e.g. /Script/PolyWorld.CityBuildWidget) OFFSCREEN to a PNG at out_path (width x height) via FWidgetRenderer — no PIE. The UMG HUD visual-iteration loop.",
 		structHandler[struct {
@@ -186,7 +184,7 @@ func registerWidgetRenderTool(s *mcp.Server, b *bridge.Bridge) {
 }
 
 // registerDemolishTool exposes company_demolish (bulldoze nearest building + refund).
-func registerDemolishTool(s *mcp.Server, b *bridge.Bridge) {
+func registerDemolishTool(s *registrar, b *bridge.Bridge) {
 	add(s, "company_demolish",
 		"Bulldoze the building nearest a world [x,y,z] location — refunds half its cost and destroys it (frees its grid cells). Returns {demolished,name,refund,capital}.",
 		structHandler[struct {
@@ -208,7 +206,7 @@ func registerDemolishTool(s *mcp.Server, b *bridge.Bridge) {
 }
 
 // registerRoadTool exposes company_road (drag-build a clamped road line).
-func registerRoadTool(s *mcp.Server, b *bridge.Bridge) {
+func registerRoadTool(s *registrar, b *bridge.Bridge) {
 	add(s, "company_road",
 		"Drag-build a road line from grid cell start=[x,y] to end=[x,y] (X-first L), clamped to the affordable/unblocked prefix. Returns {placed,capital,road_cells}.",
 		structHandler[struct {

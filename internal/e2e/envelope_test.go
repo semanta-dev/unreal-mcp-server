@@ -55,3 +55,29 @@ func TestEnvelopeTimeoutIsUnknownOutcomeForMutatingCall(t *testing.T) {
 		t.Fatalf("want TIMEOUT/unknown/non-retryable, got %v", e)
 	}
 }
+
+// TestV1TimeoutSStaysWithHandler: a v1 tool that implements timeout_s itself keeps
+// its domain result — the spec layer must not race it with a ctx deadline
+// (pie_wait_until reports met:false, not TIMEOUT).
+func TestV1TimeoutSStaysWithHandler(t *testing.T) {
+	h := startHarness(t, harnessOpts{})
+	h.emu.Handle("pie_observe", func(map[string]any) (any, *bridgetest.OpError) {
+		return map[string]any{"gamestate": map[string]any{"wave_number": 1}}, nil
+	})
+	res := h.call(t, "pie_wait_until", map[string]any{"predicate": "gamestate.wave_number >= 2", "timeout_s": 1})
+	if res.IsError {
+		t.Fatalf("expected the domain negative met:false, got error: %s", text(res))
+	}
+	if got := structured(t, res)["met"]; got != false {
+		t.Fatalf("met = %v, want false", got)
+	}
+}
+
+// TestNullArgumentsAreAnEmptyObject: "arguments": null must not panic in default
+// application.
+func TestNullArgumentsAreAnEmptyObject(t *testing.T) {
+	h := startHarness(t, harnessOpts{})
+	if res := h.call(t, "editor_status", nil); res.IsError {
+		t.Fatalf("editor_status with nil arguments failed: %s", text(res))
+	}
+}

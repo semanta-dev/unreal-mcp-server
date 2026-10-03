@@ -37,7 +37,7 @@ type pieScreenshotIn struct {
 	Height int `json:"height,omitempty"`
 }
 
-func registerPieTools(s *mcp.Server, b *bridge.Bridge) {
+func registerPieTools(s *registrar, b *bridge.Bridge) {
 	add(s, "pie_observe",
 		"Read live PIE game-world state: gamestate fields (allowlisted), a class histogram (counts), and detailed state for actors_of_interest. Only valid during PIE.",
 		structHandler[pieObserveIn](b, "pie_observe", func(in pieObserveIn) map[string]any {
@@ -158,7 +158,7 @@ type logsSinceIn struct {
 	MinSeverity string `json:"min_severity,omitempty"`
 }
 
-func registerLogTools(s *mcp.Server, d Deps) {
+func registerLogTools(s *registrar, d Deps) {
 	add(s, "logs_mark", "Return a marker (byte offset) into the project log for a later logs_since.",
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, map[string]any, error) {
 			if resolveDeps(ctx, d).ProjectDir == "" {

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"github.com/jdziat/unreal-mcp-server/internal/tools/spec"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -14,7 +15,9 @@ func callDesignTool(t *testing.T, name string, args map[string]any) (*mcp.CallTo
 	t.Helper()
 
 	srv := mcp.NewServer(&mcp.Implementation{Name: "unreal", Version: "test"}, nil)
-	registerDesignTools(srv)
+	reg := &registrar{}
+	registerDesignTools(reg)
+	spec.Register(srv, reg.specs, spec.Options{})
 
 	ctx := context.Background()
 	clientT, serverT := mcp.NewInMemoryTransports()

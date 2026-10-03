@@ -243,7 +243,7 @@ func Register(srv *mcp.Server, specs []*Spec, o Options) {
 func (s *Spec) handler(logger *slog.Logger, fallback session.Deps) mcp.ToolHandler {
 	resolved := s.resolvedSchema()
 	return func(ctx context.Context, req *mcp.CallToolRequest) (res *mcp.CallToolResult, err error) {
-		mutating := s.Tier() > Ephemeral
+		mutating := s.Tier() > ReadOnly
 		defer func() {
 			if r := recover(); r != nil {
 				logger.Error("tool panic", "tool", s.Name, "panic", r, "stack", string(debug.Stack()))
@@ -257,6 +257,9 @@ func (s *Spec) handler(logger *slog.Logger, fallback session.Deps) mcp.ToolHandl
 			if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 				return envelope.ErrorResult(envelope.New(envelope.InvalidArgument, "arguments are not a JSON object: %v", err)), nil
 			}
+			if args == nil { // "arguments": null
+				args = map[string]any{}
+			}
 		}
 		if err := resolved.ApplyDefaults(&args); err != nil {
 			return envelope.ErrorResult(envelope.New(envelope.InvalidArgument, "applying defaults: %v", err)), nil
@@ -268,18 +271,19 @@ func (s *Spec) handler(logger *slog.Logger, fallback session.Deps) mcp.ToolHandl
 		if perr != nil {
 			return envelope.ErrorResult(perr), nil
 		}
-		mutating = op.Tier > Ephemeral
+		// Any non-ReadOnly op may have taken effect when it times out or is cancelled.
+		mutating = op.Tier > ReadOnly
 		if e := checkParams(s, op, args); e != nil {
 			return envelope.ErrorResult(e), nil
 		}
 		raw, _ := json.Marshal(args)
 
+		// The spec layer bounds a call only when the spec declares timing. A caller's
+		// timeout_s overrides it, capped at the op's Max; specs without declared timing
+		// (the v1 adapter) leave timeout_s entirely to their handlers.
 		_, timeout, max := s.effective(op)
-		if ts, ok := args["timeout_s"].(float64); ok && ts > 0 {
-			timeout = time.Duration(ts * float64(time.Second))
-			if max > 0 && timeout > max {
-				timeout = max
-			}
+		if ts, ok := args["timeout_s"].(float64); ok && ts > 0 && max > 0 {
+			timeout = min(time.Duration(ts*float64(time.Second)), max)
 		}
 		if timeout > 0 {
 			var cancel context.CancelFunc

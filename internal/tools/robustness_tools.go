@@ -33,7 +33,7 @@ type sceneRestoreIn struct {
 // registerRobustnessTools adds P5: non-blocking event observation (survives a
 // busy command channel), a cheap liveness probe, snapshot/restore so an agent can
 // undo a destructive experiment, and a post-rebuild health gate.
-func registerRobustnessTools(s *mcp.Server, d Deps) {
+func registerRobustnessTools(s *registrar, d Deps) {
 	b := d.Bridge
 
 	add(s, "editor_events",

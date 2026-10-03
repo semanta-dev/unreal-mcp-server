@@ -29,7 +29,7 @@ type affordancesIn struct {
 // registerHeadlessTools adds P6: run work in a SEPARATE editor-cmd process (so a
 // commandlet/automation batch doesn't tie up the interactive editor's single
 // command channel) and the affordance manifest an agent plans against.
-func registerHeadlessTools(s *mcp.Server, d Deps) {
+func registerHeadlessTools(s *registrar, d Deps) {
 	add(s, "headless_run",
 		"Run a commandlet, an -ExecCmds batch, or automation tests in a SEPARATE headless UnrealEditor-Cmd process — off the interactive editor's command channel. Blocks up to timeout; returns exit code + log tail + test summary.",
 		func(ctx context.Context, _ *mcp.CallToolRequest, in headlessRunIn) (*mcp.CallToolResult, map[string]any, error) {

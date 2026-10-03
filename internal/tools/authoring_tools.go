@@ -1,8 +1,6 @@
 package tools
 
 import (
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 )
 
@@ -23,7 +21,7 @@ type createMatIn struct {
 	Params map[string]any `json:"params,omitempty" jsonschema:"{scalar:{}, vector:{}, texture:{}} parameter overrides"`
 }
 
-func registerAuthoringTools(s *mcp.Server, b *bridge.Bridge) {
+func registerAuthoringTools(s *registrar, b *bridge.Bridge) {
 	add(s, "apply_level_recipe",
 		"Run an idempotent level-recipe .py in the editor (optionally clean-slating first), then save. Returns actor counts before/after and any MISSING/errors.",
 		structHandler[applyRecipeIn](b, "apply_level_recipe", func(in applyRecipeIn) map[string]any {

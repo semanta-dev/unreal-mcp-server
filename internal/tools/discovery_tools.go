@@ -49,7 +49,7 @@ type findActorsIn struct {
 // project map (offline) plus editor-side asset-registry / reflection / gameplay
 // introspection so an agent can learn a project's classes, assets, and framework
 // wiring without pre-baked knowledge.
-func registerDiscoveryTools(s *mcp.Server, d Deps) {
+func registerDiscoveryTools(s *registrar, d Deps) {
 	b := d.Bridge
 
 	add(s, "project_map",

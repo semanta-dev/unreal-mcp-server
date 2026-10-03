@@ -19,7 +19,7 @@ import (
 // Python remote execution and only ever sees the 3D scene, never the editor's
 // own UI. Backed by internal/desktop (raw Win32; Windows-only). These tools need
 // no editor bridge, so they register unconditionally.
-func registerDesktopTools(s *mcp.Server, _ Deps) {
+func registerDesktopTools(s *registrar, _ Deps) {
 	add(s, "list_windows",
 		"List the OS's visible top-level windows (title, pid, handle, on-screen bounds, foreground/minimized). Use it to find the Unreal Editor window (or a dialog/crash popup) to capture or control. Optional case-insensitive title filter.",
 		listWindows())

@@ -105,7 +105,7 @@ type designExploreOut struct {
 	Elites []design.Genotype `json:"elites"`
 }
 
-func registerDesignTools(s *mcp.Server) {
+func registerDesignTools(s *registrar) {
 	add(s, "primitive_audit", "Run the primitive art Layer-A deterministic audit (readonly) against a captured scene.", primitiveAudit)
 	add(s, "decision_audit", "Run the decision cadence Layer-A deterministic audit (readonly) against observed decision points.", decisionAudit)
 	add(s, "novelty_audit", "Run the novelty cadence Layer-A deterministic audit (readonly) against a session trace.", noveltyAudit)

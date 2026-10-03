@@ -14,7 +14,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -189,17 +188,28 @@ func Result(data any, summary string, extra ...mcp.Content) *mcp.CallToolResult 
 	return &mcp.CallToolResult{Content: content, StructuredContent: data}
 }
 
-// IsEnveloped reports whether an error result already carries a structured error.
+// IsEnveloped reports whether an error result already carries a structured error
+// whose code is in the closed set. Non-error results are trivially enveloped.
 func IsEnveloped(res *mcp.CallToolResult) bool {
 	if res == nil || !res.IsError {
 		return true
 	}
-	switch sc := res.StructuredContent.(type) {
-	case map[string]any:
-		_, ok := sc["error"]
-		return ok
-	case json.RawMessage:
-		return strings.Contains(string(sc), `"error"`)
+	b, err := json.Marshal(res.StructuredContent)
+	if err != nil {
+		return false
+	}
+	var m struct {
+		Error *struct {
+			Code Code `json:"code"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(b, &m) != nil || m.Error == nil {
+		return false
+	}
+	for _, c := range Codes {
+		if m.Error.Code == c {
+			return true
+		}
 	}
 	return false
 }

@@ -48,7 +48,7 @@ type scenarioListIn struct {
 // parser (perf_parse), and the saved/replayable scenario suite (scenario_run,
 // scenario_list) — the regression gate for "iterate at scale". Frame visual luma
 // is enriched into the timeline so a rubric can gate black/broken frames.
-func registerVerificationTools(s *mcp.Server, d Deps) {
+func registerVerificationTools(s *registrar, d Deps) {
 	b := d.Bridge
 
 	add(s, "world_query",

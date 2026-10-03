@@ -70,7 +70,7 @@ type playtestEvaluateIn struct {
 // registerPlaytestTools adds the playtest capstone: playtest_capture (the
 // end-to-end orchestrator that returns one montage + timeline + rubric verdict +
 // log summary) and playtest_evaluate (pure re-scoring of a timeline, no editor).
-func registerPlaytestTools(s *mcp.Server, d Deps) {
+func registerPlaytestTools(s *registrar, d Deps) {
 	add(s, "playtest_capture",
 		"Run an in-depth automated play test: open a level, enter play, capture a synchronized filmstrip of frames+state, drive deterministic beats, then return ONE contact-sheet montage + a per-frame timeline + a rubric PASS/WARN/FAIL verdict + a log summary. The token-efficient way for an agent to validate a game works.",
 		playtestCapture(d.Bridge, d))

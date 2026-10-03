@@ -175,3 +175,13 @@ comments are renamed in P3a; archtest now locates `go` via PATH.
 `toolsets describe` replaces it (P3 must not change the v1 surface). Archtest allows `tools/envelope → uexec` (needed
 to map protocol errors; plan listed `session, bridge`). The daemon's three `project_*` tools still register via
 `mcp.AddTool` until P3b moves them behind `session.ProjectManager`.
+
+**Gate P3a, round 1: A- (MCP/test).** Blocker: the spec layer applied `timeout_s` as a ctx deadline to v1 tools that
+implement `timeout_s` themselves (`pie_wait_until` would return `TIMEOUT` instead of the domain negative
+`met:false`). Fixed: the spec layer bounds a call only when the spec declares timing; a caller's `timeout_s` is
+honoured only up to a declared Max (ignored when none), so v1 adapter specs leave it to their handlers — regression
+test `TestV1TimeoutSStaysWithHandler` (+ unit `TestUndeclaredTimingIgnoresTimeoutS`). Also fixed: `"arguments": null`
+→ empty object (was a recovered panic); any non-ReadOnly op (incl. Ephemeral) reports `outcome:"unknown"` and
+non-retryable on timeout/cancel; `IsEnveloped` now requires a structured `error.code` in the closed set. Noted: an
+install-phase timeout is reported `outcome:"unknown"` even though the op was never sent (safe direction). Also
+landed: v1 registration now collects specs (`tools.Specs(d)`), the base for per-session toolsets (P3b).

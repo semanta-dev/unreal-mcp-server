@@ -51,7 +51,7 @@ type scenePlanIn struct {
 // registerSceneTools adds the high-level, declarative design tools (goal B):
 // compile+realize a whole scene idempotently in one editor op, apply lighting
 // presets, lint a level's design invariants, and preview layouts offline.
-func registerSceneTools(s *mcp.Server, b *bridge.Bridge) {
+func registerSceneTools(s *registrar, b *bridge.Bridge) {
 	add(s, "scene_apply",
 		"Realize a declarative unreal.scene/v1 spec (blockout, prefabs, layouts, lighting) idempotently in ONE editor transaction. Re-applying only updates; prune (tag-scoped) removes this scene's stale actors. dry_run returns the add/update/prune diff without mutating.",
 		sceneApply(b))

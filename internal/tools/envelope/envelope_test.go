@@ -133,3 +133,19 @@ func TestSafetyNet(t *testing.T) {
 		t.Fatal("a truly unknown tool must stay a protocol error")
 	}
 }
+
+func TestIsEnvelopedIsStrict(t *testing.T) {
+	cases := map[string]any{
+		"string error":   map[string]any{"error": "text"},
+		"value contains": json.RawMessage(`{"result":"an error occurred"}`),
+		"unknown code":   map[string]any{"error": map[string]any{"code": "WHATEVER"}},
+	}
+	for name, sc := range cases {
+		if IsEnveloped(&mcp.CallToolResult{IsError: true, StructuredContent: sc}) {
+			t.Errorf("%s: wrongly treated as enveloped", name)
+		}
+	}
+	if !IsEnveloped(ErrorResult(New(Conflict, "x"))) {
+		t.Error("a real envelope must be recognised")
+	}
+}

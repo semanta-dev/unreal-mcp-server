@@ -73,7 +73,7 @@ type gameplayTagIn struct {
 // registerAuthoring2Tools adds the P3 structured-authoring surface: Blueprint
 // create/compose/defaults, data assets, and the pure-Go .ini editors (GameMode,
 // legacy input, gameplay tags). Graph/node + widget-tree authoring is plugin-only.
-func registerAuthoring2Tools(s *mcp.Server, d Deps) {
+func registerAuthoring2Tools(s *registrar, d Deps) {
 	b := d.Bridge
 
 	add(s, "blueprint_create",

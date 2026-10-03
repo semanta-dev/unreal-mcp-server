@@ -62,7 +62,7 @@ type sceneContactSheetIn struct {
 // runs in-editor and buffers frames+state to disk; Go collects them in one
 // capture_stop and assembles a single contact-sheet montage + a synchronized
 // timeline sidecar, so an agent reasons over a filmstrip in one image.
-func registerCaptureTools(s *mcp.Server, d Deps) {
+func registerCaptureTools(s *registrar, d Deps) {
 	b := d.Bridge
 	add(s, "capture_start",
 		"Start an in-editor recorder that captures a screenshot + observed game state every interval_s to disk (no per-frame round-trip). Use scene_capture for editor/simulate, pie_highres for possessed PIE. Stop with capture_stop.",

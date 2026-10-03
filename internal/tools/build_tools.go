@@ -29,7 +29,7 @@ type jobIDIn struct {
 	JobID string `json:"job_id"`
 }
 
-func registerBuildTools(s *mcp.Server, d Deps) {
+func registerBuildTools(s *registrar, d Deps) {
 	add(s, "build_compile",
 		"Compile the project's C++ (async job). strategy=auto classifies from the git diff: header/reflection/new-file changes -> full Build.bat rebuild (closes+reopens the editor); body-only changes -> Live Coding. Poll job_status for streamed progress and structured diagnostics.",
 		func(ctx context.Context, _ *mcp.CallToolRequest, in buildCompileIn) (*mcp.CallToolResult, jobStartOut, error) {
@@ -217,7 +217,7 @@ func runFullRebuild(ctx context.Context, d Deps, progress func(string)) (build.R
 	return res, nil
 }
 
-func registerLifecycleTools(s *mcp.Server, d Deps) {
+func registerLifecycleTools(s *registrar, d Deps) {
 	add(s, "project_ensure_open",
 		"Ensure the editor is open with the project (launches it if no editor is discovered). Async job: poll job_status; waits up to timeout_s for the editor to answer.",
 		func(ctx context.Context, _ *mcp.CallToolRequest, in ensureOpenIn) (*mcp.CallToolResult, jobStartOut, error) {

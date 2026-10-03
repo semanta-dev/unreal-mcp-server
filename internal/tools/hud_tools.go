@@ -1,7 +1,5 @@
 package tools
 
-import "github.com/modelcontextprotocol/go-sdk/mcp"
-
 // HUD/UMG authoring + observation tools (HUD_TOOLING_PLAN.md, gated A+ by a senior
 // game dev + CTO + UMG/Slate specialist). The primary verb is widget_compose (a
 // declarative nested widget tree); fine-grained edits are node sub-operations of it,
@@ -49,7 +47,7 @@ type widgetDescribeIn struct {
 // only makes sense with the plugin's authoring/capture modules present; individual
 // tools error with a clear PLUGIN/module code at call time when unavailable (the
 // affordance manifest carries NeedsAuthoringModule/NeedsCaptureModule gates).
-func registerHUDTools(s *mcp.Server, d Deps) {
+func registerHUDTools(s *registrar, d Deps) {
 	b := d.Bridge
 
 	add(s, "widget_create",

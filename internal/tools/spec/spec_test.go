@@ -3,6 +3,7 @@ package spec
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -184,5 +185,43 @@ func BenchmarkServerConstruction(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		srv := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1"}, nil)
 		Register(srv, specs, Options{})
+	}
+}
+
+func TestNullArgsAndEphemeralOutcome(t *testing.T) {
+	schema, _ := jsonschema.For[struct {
+		N int `json:"n,omitempty" jsonschema:"default 3"`
+	}](nil)
+	s := &Spec{Name: "eph", Schema: schema, Timeout: 100 * time.Millisecond, Max: 100 * time.Millisecond,
+		Ops:     []OpSpec{{Tier: Ephemeral}},
+		Handler: func(ctx context.Context, c *Call) (*Result, error) { <-ctx.Done(); return nil, ctx.Err() }}
+	srv := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1"}, nil)
+	Register(srv, []*Spec{s}, Options{})
+	ctx := context.Background()
+	ct, st := mcp.NewInMemoryTransports()
+	ss, _ := srv.Connect(ctx, st, nil)
+	defer ss.Close()
+	cs, _ := mcp.NewClient(&mcp.Implementation{Name: "c", Version: "1"}, nil).Connect(ctx, ct, nil)
+	defer cs.Close()
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "eph", Arguments: json.RawMessage("null")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(res.StructuredContent)
+	if !strings.Contains(string(b), `"code":"TIMEOUT"`) || !strings.Contains(string(b), `"outcome":"unknown"`) {
+		t.Fatalf("null args must work and an ephemeral timeout is outcome unknown: %s", b)
+	}
+}
+
+func TestUndeclaredTimingIgnoresTimeoutS(t *testing.T) {
+	s := &Spec{Name: "v1like", Ops: []OpSpec{{Tier: ReadOnly}},
+		Handler: func(ctx context.Context, c *Call) (*Result, error) {
+			if _, ok := ctx.Deadline(); ok {
+				return nil, fmt.Errorf("spec layer imposed a deadline on a spec without declared timing")
+			}
+			return &Result{Summary: "ok"}, nil
+		}}
+	if res := callSpec(t, s, map[string]any{"timeout_s": 1}); res.IsError {
+		t.Fatalf("%+v", res.Content[0])
 	}
 }

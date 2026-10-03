@@ -1,8 +1,6 @@
 package tools
 
 import (
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 )
 
@@ -30,7 +28,7 @@ type selectActorsIn struct {
 // registerViewportTools adds tighter editor-integration tools: viewport camera
 // control, selection, focus/framing, and a rich editor_state superset of
 // editor_status (the frozen editor_status is left byte-compatible).
-func registerViewportTools(s *mcp.Server, b *bridge.Bridge) {
+func registerViewportTools(s *registrar, b *bridge.Bridge) {
 	add(s, "viewport_set",
 		"Control the editor viewport: move the camera to a pose, pilot/eject an actor, toggle game view, or run viewport console commands. Returns the resulting camera pose.",
 		structHandler[viewportSetIn](b, "viewport_set", func(in viewportSetIn) map[string]any {
