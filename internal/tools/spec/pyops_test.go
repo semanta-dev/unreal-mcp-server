@@ -34,9 +34,15 @@ func TestPyOpsBijection(t *testing.T) {
 
 func TestEffectiveTierUsesDefaults(t *testing.T) {
 	recipe := PyOps["apply_level_recipe"]
-	// clean_slate defaults true in the op, so an empty arg set already escalates.
+	// clean_slate defaults false (v2), so only an explicit true escalates — and Exec
+	// still dominates Destructive for the tier itself.
 	if got := recipe.EffectiveTier(map[string]any{}); got != Exec {
-		t.Fatalf("recipe base = %v (exec dominates destructive)", got)
+		t.Fatalf("recipe base = %v, want exec", got)
+	}
+	for _, e := range recipe.Escalations {
+		if e.Arg == "clean_slate" && (e.Default != false || e.Tier != Destructive) {
+			t.Fatalf("clean_slate escalation = %+v, want default false → destructive", e)
+		}
 	}
 	scene := PyOps["scene_apply"]
 	if got := scene.EffectiveTier(map[string]any{}); got != Mutating {

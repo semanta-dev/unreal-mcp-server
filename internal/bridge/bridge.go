@@ -176,6 +176,16 @@ func (b *Bridge) dispatch(ctx context.Context, op string, args any) (dispatchEnv
 			return env, res, err
 		}
 		env = dispatchEnvelope{OK: nr.OK, Result: nr.Result, Error: nr.Error, Code: nr.Code, Retryable: nr.Retryable, Traceback: nr.Traceback}
+		if !nr.OK && len(nr.Result) > 0 {
+			// The framed channel has no details field; the companion sends a failure's
+			// details as result.details (see _emit).
+			var carrier struct {
+				Details map[string]any `json:"details"`
+			}
+			if json.Unmarshal(nr.Result, &carrier) == nil {
+				env.Details = carrier.Details
+			}
+		}
 		return env, res, nil
 	}
 
@@ -221,17 +231,15 @@ func (b *Bridge) Call(ctx context.Context, op string, args any) (json.RawMessage
 	return env.Result, nil
 }
 
-// CallLog is Call plus the Warning/Error lines the editor logged while the op ran
-// (formatted "[Warning] ...", excluding the result marker) — what v1's text tools
-// surfaced, so a v2 tool can report e.g. a package that failed to save.
-func (b *Bridge) CallLog(ctx context.Context, op string, args any) (json.RawMessage, []string, error) {
+// CallLog is Call plus the editor output captured while the op ran (minus the
+// result marker): what v1's text tools surfaced. Warning/Error lines become a v2
+// tool's editor_log; console returns every line.
+func (b *Bridge) CallLog(ctx context.Context, op string, args any) (json.RawMessage, []uexec.OutputEntry, error) {
 	env, res, err := b.dispatch(ctx, op, args)
-	var log []string
+	var log []uexec.OutputEntry
 	for _, e := range res.Output {
-		if (e.Type == "Warning" || e.Type == "Error") && !strings.Contains(e.Output, jsonMarker) {
-			if t := strings.TrimRight(e.Output, "\n"); t != "" {
-				log = append(log, "["+e.Type+"] "+t)
-			}
+		if !strings.Contains(e.Output, jsonMarker) && strings.TrimSpace(e.Output) != "" {
+			log = append(log, e)
 		}
 	}
 	if err != nil {
@@ -241,6 +249,17 @@ func (b *Bridge) CallLog(ctx context.Context, op string, args any) (json.RawMess
 		return nil, log, &OpError{Op: op, Message: env.Error, Code: env.Code, Retryable: env.Retryable, Traceback: env.Traceback, Details: env.Details}
 	}
 	return env.Result, log, nil
+}
+
+// Problems formats the Warning/Error entries as "[Warning] text" lines.
+func Problems(entries []uexec.OutputEntry) []string {
+	var out []string
+	for _, e := range entries {
+		if e.Type == "Warning" || e.Type == "Error" {
+			out = append(out, "["+e.Type+"] "+strings.TrimRight(e.Output, "\r\n"))
+		}
+	}
+	return out
 }
 
 // CallText invokes a text-style op and returns the op's "message" PLUS any

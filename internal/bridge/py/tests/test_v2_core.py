@@ -1,6 +1,4 @@
 """v2 core resolvers (plan §2.2 R3, §2.7 items 1-4), exercised against fake actors."""
-import types
-
 import pytest
 from conftest import run_dispatch
 
@@ -70,26 +68,6 @@ def test_pseudo_targets_are_pie_only(mod):
     with pytest.raises(mod._V2Error) as e:
         mod._resolve_actor(EDITOR, "editor", "@gamestate")
     assert e.value.code == "NOT_FOUND"
-
-
-def test_class_resolution(mod):
-    loaded = {"/Script/Engine.PointLight": "PL"}
-    blueprints = []  # asset registry results
-    u = mod.unreal
-    u.load_class = lambda outer, path: loaded.get(path)
-    u.SystemLibrary = types.SimpleNamespace(get_project_name=lambda: "Game")
-    u.AssetRegistryHelpers = types.SimpleNamespace(
-        get_asset_registry=lambda: types.SimpleNamespace(get_assets=lambda flt: list(blueprints)))
-    u.ARFilter = lambda **kw: None
-    u.TopLevelAssetPath = lambda a, b: None
-    assert mod._resolve_class_v2("PointLight") == "PL"
-    loaded["/Script/Game.PointLight"] = "PL2"  # now ambiguous
-    with pytest.raises(mod._V2Error) as e:
-        mod._resolve_class_v2("PointLight")
-    assert e.value.code == "CONFLICT" and len(e.value.details["candidates"]) == 2
-    with pytest.raises(mod._V2Error) as e:
-        mod._resolve_class_v2("NoSuchClass")
-    assert e.value.code == "CLASS_UNRESOLVED"
 
 
 def test_actor_edits_require_explicit_world(v2, mod):

@@ -86,6 +86,10 @@ def _emit(payload):
     # default=_jsonable guarantees an op's result can never poison the marker
     # (a single non-serializable field would otherwise fail the whole dispatch).
     if _MCP_NATIVE_SINK is not None:
+        if not payload.get("ok", True) and payload.get("details"):
+            # MCPCore's rpc_result keeps ok/error/code/retryable/traceback/result only;
+            # a failure's details (e.g. CONFLICT candidates) ride in result.details.
+            payload = dict(payload, result={"details": payload["details"]})
         b = _mcp_cockpit_bridge()
         if b is not None:
             try:

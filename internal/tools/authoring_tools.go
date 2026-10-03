@@ -37,25 +37,4 @@ func registerAuthoringTools(s *registrar, b *bridge.Bridge) {
 			return m
 		}))
 
-	add(s, "asset_info",
-		"Get metadata for an asset (class, bounds, LODs, materials, Nanite) — recipes need mesh bounds for tiling.",
-		structHandler[assetPathIn](b, "asset_info", func(in assetPathIn) map[string]any {
-			return map[string]any{"asset_path": in.AssetPath}
-		}))
-
-	add(s, "asset_reimport",
-		"Reimport an asset from its source file (source art changed mid-session).",
-		structHandler[assetPathIn](b, "asset_reimport", func(in assetPathIn) map[string]any {
-			return map[string]any{"asset_path": in.AssetPath}
-		}))
-
-	add(s, "create_material_instance",
-		"Create a material instance from a parent, applying scalar/vector/texture parameter overrides.",
-		structHandler[createMatIn](b, "create_material_instance", func(in createMatIn) map[string]any {
-			m := map[string]any{"parent": in.Parent, "dest": in.Dest}
-			if in.Params != nil {
-				m["params"] = in.Params
-			}
-			return m
-		}))
 }

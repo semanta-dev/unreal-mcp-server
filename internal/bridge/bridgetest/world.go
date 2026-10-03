@@ -19,16 +19,18 @@ type Actor struct {
 // World is a minimal stateful model of the editor level and (when started) its PIE
 // copy, so multi-step flows (spawn → query → edit → delete) observe real state.
 type World struct {
-	mu     sync.Mutex
-	editor map[string]*Actor // path -> actor
-	pie    map[string]*Actor // nil when PIE is not running
-	level  string
-	seq    int
+	mu       sync.Mutex
+	editor   map[string]*Actor // path -> actor
+	pie      map[string]*Actor // nil when PIE is not running
+	level    string
+	seq      int
+	assets   map[string]string // asset path -> kind
+	selected []string          // selected editor actor paths
 }
 
 // NewWorld returns an empty level.
 func NewWorld() *World {
-	return &World{editor: map[string]*Actor{}, level: "/Game/Maps/L_Test"}
+	return &World{editor: map[string]*Actor{}, level: "/Game/Maps/L_Test", assets: map[string]string{}}
 }
 
 // Install registers the ops the world answers.
@@ -41,6 +43,8 @@ func (w *World) Install(e *Emulator) {
 	e.Handle("actor_delete", w.actorDelete)
 	e.Handle("actor_transform", w.actorTransform)
 	e.Handle("actor_set_properties", w.actorSetProperties)
+	e.Handle("actor_call", w.actorCall)
+	w.installAssets(e)
 }
 
 // StartPIE copies the editor actors into a PIE world (paths gain UEDPIE_0_).
@@ -106,6 +110,17 @@ func (w *World) worldFor(args map[string]any, def string) (map[string]*Actor, st
 func normPath(p string) string { return strings.Replace(p, "UEDPIE_0_", "", 1) }
 
 func resolve(actors map[string]*Actor, ref string) (*Actor, *OpError) {
+	if ref == "@pawn" || ref == "@gamestate" {
+		// In PIE the pawn is the actor whose class names a Pawn/GameState; the editor
+		// world has neither.
+		want := map[string]string{"@pawn": "Pawn", "@gamestate": "GameState"}[ref]
+		for _, a := range actors {
+			if strings.Contains(a.Path, "UEDPIE_") && strings.Contains(a.Class, want) {
+				return a, nil
+			}
+		}
+		return nil, &OpError{Code: "NOT_FOUND", Message: ref + " exists only in PIE"}
+	}
 	if strings.ContainsAny(ref, "/:") {
 		for _, a := range actors {
 			if normPath(a.Path) == normPath(ref) {

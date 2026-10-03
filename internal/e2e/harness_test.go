@@ -34,6 +34,8 @@ type harnessOpts struct {
 	noEditor bool                     // discovery targets a dead port: no editor answers
 	fake     func(*uexectest.Options) // fault-injection tweaks on the wire fake
 	cfg      func(*uexec.Config)
+	project  string         // Deps.ProjectDir (offline tools)
+	toolsets []spec.Toolset // enabled at session start in addition to core
 }
 
 func testUexecConfig() uexec.Config {
@@ -93,8 +95,8 @@ func startHarness(t *testing.T, o harnessOpts) *harness {
 
 	b := bridge.New(sess, bridge.Options{})
 	h.bridge = b
-	deps := tools.Deps{Bridge: b, Jobs: jobs.NewRegistry()}
-	srv := app.NewServer(app.Options{Deps: deps}, nil).MCP
+	deps := tools.Deps{Bridge: b, Jobs: jobs.NewRegistry(), ProjectDir: o.project}
+	srv := app.NewServer(app.Options{Deps: deps, Toolsets: o.toolsets}, nil).MCP
 	h.specs = map[string]*spec.Spec{}
 	for _, sp := range tools.Specs(deps) {
 		h.specs[sp.Name] = sp

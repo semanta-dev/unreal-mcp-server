@@ -127,6 +127,28 @@ func TestConsoleSurfacesEditorLog(t *testing.T) {
 	}
 }
 
+// TestConsoleReturnsInfoOutput: a CVar query's answer is an Info/Display line; v1
+// returned every captured line, so console's `output` must too.
+func TestConsoleReturnsInfoOutput(t *testing.T) {
+	r := &scriptedRunner{
+		dispatch: func(op string, args map[string]any) any { return map[string]any{"ran": args["command"]} },
+		dispatchExtra: []uexec.OutputEntry{{Type: "Info", Output: "r.ScreenPercentage = \"100\"\n"},
+			{Type: "Warning", Output: "deprecated cvar"}},
+	}
+	res := callTool(t, r, "console", map[string]any{"command": "r.ScreenPercentage"})
+	sc := structuredMap(t, res)
+	out, _ := sc["output"].([]any)
+	if len(out) != 2 || out[0] != `r.ScreenPercentage = "100"` {
+		t.Fatalf("console output = %v", sc["output"])
+	}
+	if log, _ := sc["editor_log"].([]any); len(log) != 1 {
+		t.Fatalf("editor_log keeps only warnings/errors: %v", sc["editor_log"])
+	}
+	if txt := res.Content[0].(*mcp.TextContent).Text; !strings.Contains(txt, `r.ScreenPercentage = "100"`) {
+		t.Fatalf("summary should carry the output for text-only clients: %q", txt)
+	}
+}
+
 // TestActorQueryReturnsAnObject: results are objects (plan R4), never a bare array.
 func TestActorQueryReturnsAnObject(t *testing.T) {
 	r := &scriptedRunner{

@@ -234,164 +234,241 @@
     },
     {
       "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "List an asset's hard dependencies and referencers (what it needs / what needs it).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "asset": {
-            "description": "an asset object or package path, e.g. /Game/BP/BP_Turret",
-            "type": "string"
-          }
-        },
-        "required": [
-          "asset"
-        ],
-        "type": "object"
-      },
-      "name": "asset_deps"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Get metadata for an asset (class, bounds, LODs, materials, Nanite) — recipes need mesh bounds for tiling.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "asset_path": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "asset_path"
-        ],
-        "type": "object"
-      },
-      "name": "asset_info"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Find content-browser assets by class and/or path via the AssetRegistry (no dumb path walk). e.g. every Blueprint deriving a C++ class.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "blueprints": {
-            "description": "find Blueprint assets DERIVING the class_paths (a BP's own class is always /Script/Engine.Blueprint, so a plain query never finds them). Use for 'every BP deriving ATurret'.",
-            "type": "boolean"
-          },
-          "class_paths": {
-            "description": "class paths to match, e.g. /Script/Engine.StaticMesh; with blueprints=true these are the PARENT classes, e.g. /Script/AesirWaveDefense.Turret",
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "limit": {
-            "description": "max results; default 200",
-            "type": "integer"
-          },
-          "package_paths": {
-            "description": "content roots to search, e.g. /Game/Blueprints",
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "recursive": {
-            "description": "recurse package paths; default true",
-            "type": [
-              "null",
-              "boolean"
-            ]
-          },
-          "recursive_classes": {
-            "description": "match subclasses of class_paths; default true",
-            "type": [
-              "null",
-              "boolean"
-            ]
-          }
-        },
-        "type": "object"
-      },
-      "name": "asset_query"
-    },
-    {
-      "annotations": {
         "destructiveHint": true,
-        "openWorldHint": true
-      },
-      "description": "Reimport an asset from its source file (source art changed mid-session).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "asset_path": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "asset_path"
-        ],
-        "type": "object"
-      },
-      "name": "asset_reimport"
-    },
-    {
-      "annotations": {
         "openWorldHint": true,
-        "readOnlyHint": true
+        "title": "Create an asset"
       },
-      "description": "Read an asset's registry tags — Blueprint lineage (ParentClass/NativeParentClass/GeneratedClass) WITHOUT loading it.",
+      "description": "Create a Blueprint, DataAsset, DataTable, material instance or Widget Blueprint at `dest` (saved).\n- op=create: fails with CONFLICT when dest already exists.\n- op=replace: DELETES the existing asset at dest first (destructive; references to it break).\nPer kind: blueprint needs class (the parent); data_asset needs class; data_table needs row_struct; material_instance needs parent (+ optional params); widget_blueprint takes optional class and root_panel — then author its tree with widget_edit.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "asset": {
-            "description": "an asset object or package path, e.g. /Game/BP/BP_Turret",
+          "class": {
+            "description": "blueprint: parent class; data_asset: the DataAsset class; widget_blueprint: parent UserWidget class (default UserWidget). /Script path, /Game Blueprint, Module.Class or short name",
+            "type": "string"
+          },
+          "dest": {
+            "description": "new asset path, e.g. /Game/BP/BP_LaserTurret",
+            "type": "string"
+          },
+          "kind": {
+            "description": "blueprint | data_asset | data_table | material_instance | widget_blueprint",
+            "enum": [
+              "blueprint",
+              "data_asset",
+              "data_table",
+              "material_instance",
+              "widget_blueprint"
+            ],
+            "type": "string"
+          },
+          "op": {
+            "description": "create (fails with CONFLICT if dest exists) | replace (DELETES an existing dest first)",
+            "enum": [
+              "create",
+              "replace"
+            ],
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "description": "material_instance: {scalar:{name:value}, vector:{name:[r,g,b,a]}, texture:{name:asset}}",
+            "type": "object"
+          },
+          "parent": {
+            "description": "material_instance: parent material asset",
+            "type": "string"
+          },
+          "root_panel": {
+            "description": "widget_blueprint: root panel (default CanvasPanel; Overlay for a stacked full-screen menu)",
+            "type": "string"
+          },
+          "row_struct": {
+            "description": "data_table: row struct (/Script/Module.Row or a UserDefinedStruct asset)",
             "type": "string"
           }
         },
         "required": [
-          "asset"
+          "op",
+          "kind",
+          "dest"
         ],
         "type": "object"
       },
-      "name": "asset_tags"
+      "name": "asset_create",
+      "title": "Create an asset"
     },
     {
       "annotations": {
         "destructiveHint": false,
-        "openWorldHint": true
+        "openWorldHint": true,
+        "title": "Edit a Blueprint"
       },
-      "description": "Render a Content Browser StaticMesh into a PNG thumbnail (canonical 3/4 angle) and return hard facts (tri/vert count, material slot names, LOD count, bounds). The keystone perception primitive so the agent can SEE an asset before placing it. Requires a live editor.",
+      "description": "Edit a Blueprint's class defaults; each op compiles and saves.\n- op=set_defaults: `properties` on the CDO (per-property failures come back in errors[]).\n- op=add_component: add a `class` component (optional `name`).\n- op=assign_subclass: set TSubclassOf `property` to `class` (e.g. GameMode DefaultPawnClass).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "asset_path": {
+          "asset": {
+            "description": "the Blueprint asset path",
             "type": "string"
           },
+          "class": {
+            "description": "add_component: component class; assign_subclass: the class to assign",
+            "type": "string"
+          },
+          "name": {
+            "description": "add_component: the new component's name",
+            "type": "string"
+          },
+          "op": {
+            "description": "set_defaults | add_component | assign_subclass",
+            "enum": [
+              "set_defaults",
+              "add_component",
+              "assign_subclass"
+            ],
+            "type": "string"
+          },
+          "properties": {
+            "additionalProperties": true,
+            "description": "set_defaults: CDO property -\u003e value, e.g. {Range: 4000} (asset paths load as objects)",
+            "type": "object"
+          },
+          "property": {
+            "description": "assign_subclass: a TSubclassOf property, e.g. ProjectileClass",
+            "type": "string"
+          }
+        },
+        "required": [
+          "op",
+          "asset"
+        ],
+        "type": "object"
+      },
+      "name": "asset_edit",
+      "title": "Edit a Blueprint"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "title": "Import assets"
+      },
+      "description": "Bring outside data into assets. Every op OVERWRITES existing content.\n- op=files: import `files` into `folder`; an asset with the same name is replaced.\n- op=reimport: reload `asset` from its source file.\n- op=datatable: replace ALL rows of DataTable `asset` from `json` (preferred) or `csv`.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "asset": {
+            "description": "reimport: the asset; datatable: the DataTable",
+            "type": "string"
+          },
+          "csv": {
+            "description": "datatable: rows as a CSV string",
+            "type": "string"
+          },
+          "files": {
+            "description": "files: FBX/texture/audio files on disk to import",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "folder": {
+            "description": "files: destination content folder (default /Game/Imported)",
+            "type": "string"
+          },
+          "json": {
+            "description": "datatable: rows as a JSON string (preferred)",
+            "type": "string"
+          },
+          "op": {
+            "description": "files | reimport | datatable",
+            "enum": [
+              "files",
+              "reimport",
+              "datatable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "type": "object"
+      },
+      "name": "asset_import",
+      "title": "Import assets"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Find and inspect assets"
+      },
+      "description": "Find and inspect Content Browser assets.\n- op=list: asset paths under `folder`.\n- op=info: one asset's class, bounds, LODs, Nanite.\n- op=search: by `classes` (/Script paths) and `folder`; blueprints=true finds Blueprints deriving them.\n- op=deps: what the asset needs and what needs it.\n- op=tags: registry tags (ParentClass, NativeParentClass) without loading.\n- op=thumbnail: see a StaticMesh — PNG image + tris/verts/LODs/material slots/bounds (writes Saved/MCP/AssetThumbs).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "asset": {
+            "description": "info/deps/tags/thumbnail: asset path, e.g. /Game/Meshes/SM_Rock",
+            "type": "string"
+          },
+          "blueprints": {
+            "description": "search: find Blueprints deriving the classes (a Blueprint's own class is always Blueprint)",
+            "type": "boolean"
+          },
+          "classes": {
+            "description": "search: /Script/Module.Class paths; with blueprints=true, the PARENT classes",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "folder": {
+            "description": "list/search: content folder (default /Game)",
+            "type": "string"
+          },
+          "limit": {
+            "description": "list/search: max results (default 200; total is always the full count)",
+            "type": "integer"
+          },
+          "op": {
+            "description": "list | info | search | deps | tags | thumbnail",
+            "enum": [
+              "list",
+              "info",
+              "search",
+              "deps",
+              "tags",
+              "thumbnail"
+            ],
+            "type": "string"
+          },
+          "recursive": {
+            "description": "list/search: include subfolders (default true)",
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
           "size": {
+            "description": "thumbnail: image size in pixels (default 512)",
             "type": "integer"
           }
         },
         "required": [
-          "asset_path"
+          "op"
         ],
         "type": "object"
       },
-      "name": "asset_thumbnail"
+      "name": "asset_query",
+      "title": "Find and inspect assets"
     },
     {
       "annotations": {
@@ -441,37 +518,6 @@
         "type": "object"
       },
       "name": "asset_utilization"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Assign a class into a Blueprint CDO's TSubclassOf property (e.g. GameMode.DefaultPawnClass, Weapon.ProjectileClass).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "class_path": {
-            "description": "the class to assign",
-            "type": "string"
-          },
-          "prop": {
-            "description": "a TSubclassOf property name, e.g. ProjectileClass",
-            "type": "string"
-          },
-          "target": {
-            "description": "the Blueprint whose CDO to edit",
-            "type": "string"
-          }
-        },
-        "required": [
-          "target",
-          "prop",
-          "class_path"
-        ],
-        "type": "object"
-      },
-      "name": "assign_subclass"
     },
     {
       "annotations": {
@@ -693,87 +739,6 @@
         "type": "object"
       },
       "name": "balance_sweep"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Add a component to a Blueprint via the SubobjectDataSubsystem, then compile.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "blueprint": {
-            "type": "string"
-          },
-          "component_class": {
-            "description": "e.g. /Script/Engine.StaticMeshComponent",
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "blueprint",
-          "component_class"
-        ],
-        "type": "object"
-      },
-      "name": "blueprint_add_component"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Create a Blueprint asset from a C++/Blueprint parent class (the sanctioned split: logic in C++, Blueprints carry data + composition).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "dest": {
-            "description": "destination asset path, e.g. /Game/BP/BP_LaserTurret",
-            "type": "string"
-          },
-          "parent_class_path": {
-            "description": "C++ or Blueprint parent, e.g. /Script/AesirWaveDefense.Turret",
-            "type": "string"
-          }
-        },
-        "required": [
-          "parent_class_path",
-          "dest"
-        ],
-        "type": "object"
-      },
-      "name": "blueprint_create"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Set default property values on a Blueprint's CDO, then compile + save.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "blueprint": {
-            "description": "the Blueprint asset path",
-            "type": "string"
-          },
-          "defaults": {
-            "additionalProperties": true,
-            "description": "CDO property overrides, e.g. {Range:4000, Damage:40}",
-            "type": "object"
-          }
-        },
-        "required": [
-          "blueprint",
-          "defaults"
-        ],
-        "type": "object"
-      },
-      "name": "blueprint_set_defaults"
     },
     {
       "annotations": {
@@ -1154,7 +1119,7 @@
         "openWorldHint": true,
         "title": "Console command"
       },
-      "description": "Run an Unreal console command. world=editor (default) runs it in the editor context (viewport/show/stat commands); world=pie routes it through the player controller so cheat/exec commands like 'slomo' apply to the running game.",
+      "description": "Run an Unreal console command. world=editor (default) runs it in the editor context (viewport/show/stat commands); world=pie routes it through the player controller so cheat/exec commands like 'slomo' apply to the running game. Returns every line the command printed as `output` (e.g. a CVar's current value) and its warnings/errors as `editor_log`.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1178,115 +1143,6 @@
       },
       "name": "console",
       "title": "Console command"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Create a material instance from a parent, applying scalar/vector/texture parameter overrides.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "dest": {
-            "description": "destination asset path for the instance",
-            "type": "string"
-          },
-          "params": {
-            "additionalProperties": true,
-            "description": "{scalar:{}, vector:{}, texture:{}} parameter overrides",
-            "type": "object"
-          },
-          "parent": {
-            "description": "parent material path",
-            "type": "string"
-          }
-        },
-        "required": [
-          "parent",
-          "dest"
-        ],
-        "type": "object"
-      },
-      "name": "create_material_instance"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Create a DataAsset instance of a class.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "class": {
-            "description": "the DataAsset (sub)class",
-            "type": "string"
-          },
-          "dest": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "dest",
-          "class"
-        ],
-        "type": "object"
-      },
-      "name": "dataasset_create"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Create a DataTable asset backed by a row struct.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "dest": {
-            "type": "string"
-          },
-          "row_struct": {
-            "description": "/Script/Module.MyRow or a UserDefinedStruct asset path",
-            "type": "string"
-          }
-        },
-        "required": [
-          "dest",
-          "row_struct"
-        ],
-        "type": "object"
-      },
-      "name": "datatable_create"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true
-      },
-      "description": "Populate a DataTable from a JSON (preferred) or CSV string; returns imported:true + row count, or an IMPORT_FAILED code (per-row errors go to the editor log).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "csv": {
-            "description": "rows as a CSV string",
-            "type": "string"
-          },
-          "datatable": {
-            "type": "string"
-          },
-          "json": {
-            "description": "rows as a JSON string (the reliable population path)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "datatable"
-        ],
-        "type": "object"
-      },
-      "name": "datatable_import"
     },
     {
       "annotations": {
@@ -1642,27 +1498,6 @@
     },
     {
       "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "List a UENUM(BlueprintType) or UserDefinedEnum's enumerators (names + values) — e.g. to write a wait predicate over an enum field.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "enum_path": {
-            "description": "a UENUM(BlueprintType) name (e.g. EWaveState) or a UserDefinedEnum asset path",
-            "type": "string"
-          }
-        },
-        "required": [
-          "enum_path"
-        ],
-        "type": "object"
-      },
-      "name": "enum_values"
-    },
-    {
-      "annotations": {
         "destructiveHint": false,
         "openWorldHint": true
       },
@@ -1767,38 +1602,6 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Frame actors (or the current selection) in the editor viewport by aiming the camera at their combined bounds.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "distance_scale": {
-            "description": "multiplier on the framing distance; default 2.0",
-            "type": "number"
-          },
-          "pitch": {
-            "description": "camera pitch in degrees (negative looks down); default -30",
-            "type": "number"
-          },
-          "targets": {
-            "description": "actor labels to frame; empty = the current editor selection",
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          }
-        },
-        "type": "object"
-      },
-      "name": "focus_actors"
-    },
-    {
-      "annotations": {
         "destructiveHint": true,
         "openWorldHint": true
       },
@@ -1823,42 +1626,6 @@
         "type": "object"
       },
       "name": "focus_window"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Append a gameplay tag to DefaultGameplayTags.ini (offline, idempotent).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "comment": {
-            "type": "string"
-          },
-          "tag": {
-            "description": "e.g. Ability.Dash",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tag"
-        ],
-        "type": "object"
-      },
-      "name": "gameplay_tag_add"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Get the currently selected editor actors (labels + classes).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "type": "object"
-      },
-      "name": "get_selection"
     },
     {
       "annotations": {
@@ -2048,37 +1815,6 @@
     },
     {
       "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true
-      },
-      "description": "Import external files (FBX meshes, textures, audio) from disk into the content browser at destination_path.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "destination_path": {
-            "description": "content destination, default /Game/Imported",
-            "type": "string"
-          },
-          "file_paths": {
-            "description": "external files (FBX/textures/audio) to import from disk",
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          }
-        },
-        "required": [
-          "file_paths"
-        ],
-        "type": "object"
-      },
-      "name": "import_assets"
-    },
-    {
-      "annotations": {
         "destructiveHint": false,
         "openWorldHint": true
       },
@@ -2123,74 +1859,6 @@
         "type": "object"
       },
       "name": "in_motion_audit"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Add/update a legacy input ACTION mapping in DefaultInput.ini (the path aesir uses; offline, idempotent).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "alt": {
-            "type": "boolean"
-          },
-          "cmd": {
-            "type": "boolean"
-          },
-          "ctrl": {
-            "type": "boolean"
-          },
-          "key": {
-            "description": "UE key name, e.g. SpaceBar, LeftShift, LeftMouseButton",
-            "type": "string"
-          },
-          "name": {
-            "description": "action name, e.g. Dash",
-            "type": "string"
-          },
-          "shift": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "name",
-          "key"
-        ],
-        "type": "object"
-      },
-      "name": "input_action"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Add/update a legacy input AXIS mapping in DefaultInput.ini (offline, idempotent).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "key": {
-            "description": "UE key name, e.g. W",
-            "type": "string"
-          },
-          "name": {
-            "description": "axis name, e.g. MoveForward",
-            "type": "string"
-          },
-          "scale": {
-            "description": "axis scale, e.g. 1.0 or -1.0",
-            "type": "number"
-          }
-        },
-        "required": [
-          "name",
-          "key"
-        ],
-        "type": "object"
-      },
-      "name": "input_axis"
     },
     {
       "annotations": {
@@ -2477,38 +2145,6 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "List content browser assets under a path (e.g. '/Game', '/Game/Maps').",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "limit": {
-            "description": "max results; default 200",
-            "type": [
-              "null",
-              "integer"
-            ]
-          },
-          "path": {
-            "description": "content path, default /Game",
-            "type": "string"
-          },
-          "recursive": {
-            "description": "recurse subfolders; default true",
-            "type": [
-              "null",
-              "boolean"
-            ]
-          }
-        },
-        "type": "object"
-      },
-      "name": "list_assets"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
       "description": "List the OS's visible top-level windows (title, pid, handle, on-screen bounds, foreground/minimized). Use it to find the Unreal Editor window (or a dialog/crash popup) to capture or control. Optional case-insensitive title filter.",
       "inputSchema": {
         "additionalProperties": false,
@@ -2627,24 +2263,6 @@
         "type": "object"
       },
       "name": "luminance_report"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Discover the gameplay framework: the level's WorldSettings GameMode override, the project default GameMode, and (in PIE) the live mode/state/controller/pawn classes.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "level": {
-            "description": "reserved; current editor/PIE world is used",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "map_gameplay"
     },
     {
       "annotations": {
@@ -2945,44 +2563,6 @@
         "type": "object"
       },
       "name": "pie_screenshot"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Arrange a gameplay source value in the running game so a widget_bind_field pull can be verified: set a dotted actor/component property (HealthComponent.Health) or a GAS attribute base. The test-arrange verb for component + GAS binding sources.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "attribute": {
-            "description": "ability_system: the GAS attribute name",
-            "type": "string"
-          },
-          "path": {
-            "description": "property: dotted path, e.g. HealthComponent.Health",
-            "type": "string"
-          },
-          "source_kind": {
-            "description": "property | ability_system",
-            "type": "string"
-          },
-          "target": {
-            "description": "actor label in the live game world",
-            "type": "string"
-          },
-          "value": {
-            "description": "the value to set"
-          }
-        },
-        "required": [
-          "target",
-          "source_kind",
-          "value"
-        ],
-        "type": "object"
-      },
-      "name": "pie_set_source"
     },
     {
       "annotations": {
@@ -3385,6 +2965,75 @@
     {
       "annotations": {
         "destructiveHint": false,
+        "openWorldHint": false,
+        "title": "Project config (.ini)"
+      },
+      "description": "Edit the project's Config/*.ini files directly — no editor needed; idempotent. The editor reads most of these at startup, so restart it (editor_lifecycle) to see changes there.\n- op=set_default_gamemode: `class`.\n- op=input_action: `name`, `key`, modifiers.\n- op=input_axis: `name`, `key`, `scale`.\n- op=gameplay_tag: `tag`, `comment`.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "alt": {
+            "description": "input_action: modifier",
+            "type": "boolean"
+          },
+          "class": {
+            "description": "set_default_gamemode: GameMode class path, e.g. /Game/BP/BP_GM.BP_GM_C or /Script/Module.MyGameMode",
+            "type": "string"
+          },
+          "cmd": {
+            "description": "input_action: modifier",
+            "type": "boolean"
+          },
+          "comment": {
+            "description": "gameplay_tag: dev comment",
+            "type": "string"
+          },
+          "ctrl": {
+            "description": "input_action: modifier",
+            "type": "boolean"
+          },
+          "key": {
+            "description": "input_action/input_axis: UE key name, e.g. SpaceBar, W, LeftMouseButton",
+            "type": "string"
+          },
+          "name": {
+            "description": "input_action/input_axis: mapping name, e.g. Dash or MoveForward",
+            "type": "string"
+          },
+          "op": {
+            "description": "set_default_gamemode | input_action | input_axis | gameplay_tag",
+            "enum": [
+              "set_default_gamemode",
+              "input_action",
+              "input_axis",
+              "gameplay_tag"
+            ],
+            "type": "string"
+          },
+          "scale": {
+            "description": "input_axis: axis scale (default 1; -1 for the reverse key)",
+            "type": "number"
+          },
+          "shift": {
+            "description": "input_action: modifier",
+            "type": "boolean"
+          },
+          "tag": {
+            "description": "gameplay_tag: e.g. Ability.Dash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "type": "object"
+      },
+      "name": "project_config",
+      "title": "Project config (.ini)"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
         "openWorldHint": true
       },
       "description": "Ensure the editor is open with the project (launches it if no editor is discovered). Async job: poll job_status; waits up to timeout_s for the editor to answer.",
@@ -3409,20 +3058,29 @@
     {
       "annotations": {
         "openWorldHint": true,
-        "readOnlyHint": true
+        "readOnlyHint": true,
+        "title": "Map the project"
       },
-      "description": "Map the project's C++ surface OFFLINE (no editor): modules + dependencies + every UCLASS/USTRUCT/UENUM and its /Script path, parsed from the .uproject/Build.cs/headers. The fastest way to resolve a /Script path or find a class's header.",
+      "description": "Orient in an unfamiliar project.\n- op=project: works WITHOUT the editor — modules, dependencies and every UCLASS/USTRUCT/UENUM with its /Script path and header, parsed from .uproject/Build.cs/headers. Fails with PRECONDITION when no project is configured.\n- op=level: needs the editor — the level's WorldSettings GameMode, the project default GameMode, and in PIE the live mode/state/controller/pawn classes.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "level": {
-            "description": "reserved; current editor/PIE world is used",
+          "op": {
+            "description": "project (offline C++ map) | level (live gameplay framework; needs the editor)",
+            "enum": [
+              "project",
+              "level"
+            ],
             "type": "string"
           }
         },
+        "required": [
+          "op"
+        ],
         "type": "object"
       },
-      "name": "project_map"
+      "name": "project_map",
+      "title": "Map the project"
     },
     {
       "annotations": {
@@ -3507,17 +3165,27 @@
     {
       "annotations": {
         "openWorldHint": true,
-        "readOnlyHint": true
+        "readOnlyHint": true,
+        "title": "Reflect objects, classes, enums"
       },
-      "description": "Reflect a CLASS contract: its CDO default property values, callables, and parent — the class an agent is trying to learn (vs reflect_object which reads a live instance).",
+      "description": "Discover what an object exposes, without knowing the game.\n- op=object: `actor` in `world` (editor default) → {class, path, properties, functions}.\n- op=class: a class contract — its CDO defaults and functions.\n- op=enum: enumerator names and values (e.g. to write a predicate over an enum field).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "class_path": {
-            "description": "/Script/Module.Class or a /Game Blueprint path",
+          "actor": {
+            "description": "object: label, object path, @gamestate or @pawn",
+            "type": "string"
+          },
+          "class": {
+            "description": "class: /Script path, /Game Blueprint, Module.Class or short name",
+            "type": "string"
+          },
+          "enum": {
+            "description": "enum: a UENUM(BlueprintType) name (e.g. EWaveState) or a UserDefinedEnum asset path",
             "type": "string"
           },
           "exclude": {
+            "description": "object/class: glob patterns to exclude",
             "items": {
               "type": "string"
             },
@@ -3527,6 +3195,7 @@
             ]
           },
           "include": {
+            "description": "object/class: glob patterns of property names to include (default all)",
             "items": {
               "type": "string"
             },
@@ -3536,64 +3205,24 @@
             ]
           },
           "max_props": {
-            "type": "integer"
-          },
-          "properties": {
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          }
-        },
-        "required": [
-          "class_path"
-        ],
-        "type": "object"
-      },
-      "name": "reflect_class"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Discover and read an editor/game object's exposed properties WITHOUT a hardcoded allowlist (works for any game). Target 'gamestate', an actor label, 'pawn'/'playercontroller', or a class path. Returns {class, path, properties, functions}.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "exclude": {
-            "description": "glob patterns of property names to exclude (on top of a built-in noise list)",
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "include": {
-            "description": "glob patterns of property names to include; default ['*']",
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "max_props": {
-            "description": "cap on discovered properties; default 64",
+            "description": "object/class: cap on discovered properties (default 64)",
             "type": "integer"
           },
           "max_str": {
-            "description": "truncate string/repr values to this length; default 512",
+            "description": "object: truncate string values to this length (default 512)",
             "type": "integer"
           },
+          "op": {
+            "description": "object | class | enum",
+            "enum": [
+              "object",
+              "class",
+              "enum"
+            ],
+            "type": "string"
+          },
           "properties": {
-            "description": "read exactly these named properties (preserves your key names for predicate paths); overrides include/exclude",
+            "description": "object/class: read exactly these properties (overrides include/exclude)",
             "items": {
               "type": "string"
             },
@@ -3602,14 +3231,23 @@
               "array"
             ]
           },
-          "target": {
-            "description": "'gamestate' (default), an actor label, 'playercontroller'/'pawn', or a class path like /Script/Engine.PointLight",
+          "world": {
+            "description": "object: editor (default) | pie | auto",
+            "enum": [
+              "editor",
+              "pie",
+              "auto"
+            ],
             "type": "string"
           }
         },
+        "required": [
+          "op"
+        ],
         "type": "object"
       },
-      "name": "reflect_object"
+      "name": "reflect",
+      "title": "Reflect objects, classes, enums"
     },
     {
       "annotations": {
@@ -4001,110 +3639,6 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Set the editor selection by actor labels (mode replace|add|remove|none), optionally framing the result.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "frame": {
-            "description": "frame the selection in the viewport after selecting",
-            "type": "boolean"
-          },
-          "labels": {
-            "description": "actor labels to select",
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "mode": {
-            "description": "replace|add|remove|none; default replace",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "select_actors"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Set the project's default GameMode in DefaultEngine.ini (offline, idempotent).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "class_path": {
-            "description": "GameMode class path, e.g. /Game/BP/BP_GM.BP_GM_C or /Script/Module.MyGameMode",
-            "type": "string"
-          }
-        },
-        "required": [
-          "class_path"
-        ],
-        "type": "object"
-      },
-      "name": "set_gamemode"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Register a HUD WidgetBlueprint to auto-appear when the game starts (PIE/editor-gated, cvar-guarded, cooked-safe) — so an authored HUD shows in-game without a project HUD convention. The shipped path is assign_subclass into the project's own HUD property.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "hud_widget": {
-            "description": "the HUD WidgetBlueprint class to auto-spawn",
-            "type": "string"
-          },
-          "owner": {
-            "type": "string"
-          },
-          "z": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "hud_widget"
-        ],
-        "type": "object"
-      },
-      "name": "set_hud_widget"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Set the player input mode (GameOnly / GameAndUI / UIOnly) and cursor visibility — required to make a menu interactive (UIOnly + cursor) and to hand control back to gameplay (GameOnly).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "mode": {
-            "description": "GameOnly | GameAndUI | UIOnly",
-            "type": "string"
-          },
-          "show_cursor": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "mode"
-        ],
-        "type": "object"
-      },
-      "name": "set_input_mode"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
       "description": "Start a play-in-editor session in the current level. simulate=true runs the world without possessing a player.",
       "inputSchema": {
         "additionalProperties": false,
@@ -4224,38 +3758,6 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Click a live UMG widget by name or viewport coordinate via the Slate pointer path (works on a backgrounded editor; needs a realized painted window — returns SLATE_WINDOW_UNAVAILABLE under headless -nullrhi). Returns the target widget's own state delta; verify downstream effects with a follow-up widget_read.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "coord": {
-            "description": "[x,y] viewport coordinate to click instead of a named widget",
-            "items": {
-              "type": "number"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "handle": {
-            "description": "a live widget handle (with widget_name)",
-            "type": "string"
-          },
-          "widget_name": {
-            "description": "the named widget to click",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "ui_click"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
       "description": "Run the verb response Layer-A deterministic audit (readonly) against an input burst and envelope.",
       "inputSchema": {
         "additionalProperties": false,
@@ -4344,47 +3846,17 @@
     },
     {
       "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
         "openWorldHint": true,
-        "readOnlyHint": true
+        "title": "Editor viewport"
       },
-      "description": "Get the editor viewport camera pose (and game-view state where available). Feeds camera framing for capture.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "type": "object"
-      },
-      "name": "viewport_get"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true
-      },
-      "description": "Control the editor viewport: move the camera to a pose, pilot/eject an actor, toggle game view, or run viewport console commands. Returns the resulting camera pose.",
+      "description": "The editor viewport camera and selection (UI state; nothing is saved).\n- op=get: camera {location, rotation} + game_view.\n- op=set: location/rotation, pilot (actor) or eject, game_view.\n- op=focus: aim the camera at `actors` (default: the selection).\n- op=select: select `actors` (mode replace|add|remove|none), frame=true to focus them.\n- op=selection: the selected actors (label, path, class).\nConsole commands moved to the console tool.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "camera_location": {
-            "description": "[x,y,z] to move the editor viewport camera to",
-            "items": {
-              "type": "number"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "camera_rotation_pyr": {
-            "description": "[pitch,yaw,roll]",
-            "items": {
-              "type": "number"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "console": {
-            "description": "console commands to run against the viewport (e.g. 'r.ScreenPercentage 100')",
+          "actors": {
+            "description": "focus/select: actor labels or object paths (focus default: the current selection)",
             "items": {
               "type": "string"
             },
@@ -4393,252 +3865,120 @@
               "array"
             ]
           },
+          "distance_scale": {
+            "description": "focus: multiplier on the framing distance (default 2)",
+            "type": "number"
+          },
           "eject": {
-            "description": "stop piloting",
+            "description": "set: stop piloting",
+            "type": "boolean"
+          },
+          "frame": {
+            "description": "select: frame the selection afterwards",
             "type": "boolean"
           },
           "game_view": {
-            "description": "toggle Game View (hides editor-only actors); like pressing G",
+            "description": "set: Game View on/off (hides editor-only actors, like pressing G)",
             "type": [
               "null",
               "boolean"
             ]
           },
-          "pilot_actor": {
-            "description": "actor label to pilot the viewport camera with",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "viewport_set"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Bind a UMCPButton's OnClicked to a named command (Resume/Quit/OpenPanel) — a persisted node property consumed at runtime, no graph authoring. Discover commands via widget_describe. Fails WIDGET_NOT_MCPBUTTON on a plain Button.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "blueprint": {
-            "type": "string"
-          },
-          "command": {
-            "description": "a RunNamedCommand name discovered via widget_describe (Resume/Quit/OpenPanel)",
-            "type": "string"
-          },
-          "event": {
-            "description": "default OnClicked",
-            "type": "string"
-          },
-          "widget": {
-            "description": "a UMCPButton node name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "blueprint",
-          "widget",
-          "command"
-        ],
-        "type": "object"
-      },
-      "name": "widget_bind_event"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Configure a live gameplay data binding on a UMCPHUDWidget: a target widget field (ProgressBar.Percent, TextBlock.Text) pulls from a gameplay source (owning_pawn/pc/player_state/world_actor/ability_system) each tick, with an optional conversion (ratio for health, format_text for ammo, int_to_text, bool_to_visibility). Validates the path at author time (BIND_PATH_UNRESOLVED).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "attribute": {
-            "description": "GAS attribute name (source=ability_system)",
-            "type": "string"
-          },
-          "blueprint": {
-            "type": "string"
-          },
-          "conversion": {
-            "description": "none|ratio|int_to_text|float_to_text|float_to_percent|bool_to_visibility|format_text",
-            "type": "string"
-          },
-          "format": {
-            "description": "format_text conversion string with {value}/{max}, e.g. '{value} / {max}'",
-            "type": "string"
-          },
-          "max_attribute": {
-            "description": "GAS max attribute for ratio",
-            "type": "string"
-          },
-          "max_path": {
-            "description": "denominator path for conversion=ratio, e.g. MaxHealth",
-            "type": "string"
-          },
-          "path": {
-            "description": "dotted source path, e.g. Health or HealthComponent.Health",
-            "type": "string"
-          },
-          "source": {
-            "description": "owning_pawn | owning_pc | player_state | world_actor:\u003clabel\u003e | ability_system",
-            "type": "string"
-          },
-          "target_field": {
-            "description": "its field, e.g. Percent or Text",
-            "type": "string"
-          },
-          "target_widget": {
-            "description": "the widget to drive, e.g. HealthBar",
-            "type": "string"
-          }
-        },
-        "required": [
-          "blueprint",
-          "target_widget",
-          "target_field",
-          "source"
-        ],
-        "type": "object"
-      },
-      "name": "widget_bind_field"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Add MVVM view bindings (widget property \u003c- viewmodel field, with an optional conversion) to a WidgetBlueprint. Fails BIND_TYPE_MISMATCH with the compile log on an unbindable type pair. Spike-gated.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "bindings": {
-            "description": "[{widget, property, source_field, conversion?, mode?}]",
+          "location": {
+            "description": "set: camera [x, y, z]",
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "type": "number"
             },
             "type": [
               "null",
               "array"
             ]
           },
-          "blueprint": {
+          "mode": {
+            "description": "select: replace (default) | add | remove | none",
+            "enum": [
+              "replace",
+              "add",
+              "remove",
+              "none"
+            ],
             "type": "string"
           },
-          "viewmodel_class": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "blueprint",
-          "viewmodel_class",
-          "bindings"
-        ],
-        "type": "object"
-      },
-      "name": "widget_bind_mvvm"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Render a WidgetBlueprint OFFSCREEN at one or more resolutions (no PIE, no foreground) and return per-resolution geometry and/or pixels — the multi-resolution layout oracle (assert anchored elements stay pinned + inside the SafeZone across 720p/1080p/4K) and the golden-image source for image_compare. Geometry inside an embedded composite is opaque (capture the child WBP standalone).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "blueprint": {
-            "description": "the WidgetBlueprint to render offscreen",
+          "op": {
+            "description": "get | set | focus | select | selection",
+            "enum": [
+              "get",
+              "set",
+              "focus",
+              "select",
+              "selection"
+            ],
             "type": "string"
           },
-          "geometry": {
-            "description": "return per-widget on-screen rects (works headless via a layout-only pass)",
-            "type": "boolean"
+          "pilot": {
+            "description": "set: pilot this actor (label or object path) with the camera",
+            "type": "string"
           },
-          "pixels": {
-            "description": "export a PNG per resolution (needs an active RHI; RHI_UNAVAILABLE under -nullrhi)",
-            "type": "boolean"
+          "pitch": {
+            "description": "focus: camera pitch in degrees (default -30, negative looks down)",
+            "type": "number"
           },
-          "resolutions": {
-            "description": "list of [width,height] to render at (e.g. [[1280,720],[1920,1080],[3840,2160]]); default [[1920,1080]]",
+          "rotation": {
+            "description": "set: camera [pitch, yaw, roll] in degrees",
             "items": {
-              "items": {
-                "type": "integer"
-              },
-              "type": [
-                "null",
-                "array"
-              ]
+              "type": "number"
             },
             "type": [
               "null",
               "array"
             ]
-          },
-          "warmup_frames": {
-            "description": "frames to render before reading (warms fonts/materials); default 3",
-            "type": "integer"
           }
         },
         "required": [
-          "blueprint"
+          "op"
         ],
         "type": "object"
       },
-      "name": "widget_capture"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Compile a WidgetBlueprint and return the structured compiler log (errors/warnings) + digest. Terminates a deferred widget_compose transaction. Fails BINDWIDGET_UNSATISFIED with the log if a required bound widget is missing.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "blueprint": {
-            "description": "the WidgetBlueprint asset path",
-            "type": "string"
-          }
-        },
-        "required": [
-          "blueprint"
-        ],
-        "type": "object"
-      },
-      "name": "widget_compile"
+      "name": "viewport",
+      "title": "Editor viewport"
     },
     {
       "annotations": {
         "destructiveHint": true,
-        "openWorldHint": true
+        "openWorldHint": true,
+        "title": "Author UMG widgets"
       },
-      "description": "THE primary UMG authoring verb: apply a declarative nested widget tree to a WidgetBlueprint — add/update/reorder/reparent nodes, set slots/props/brush/font, embed composite sub-widgets — then compile once (atomic). Convergent + idempotent: re-composing the same tree yields the same digest. Returns the read-back tree + digest + compile_log (+ a restore_token for destructive changes).",
+      "description": "Author a WidgetBlueprint's tree declaratively (create the asset with asset_create kind=widget_blueprint).\n- op=compose: apply `tree` — add/update/reorder nodes, slots, props — then compile; never deletes. Re-composing the same tree is a no-op (same digest).\n- op=prune: like compose, but DELETES every node absent from `tree` and the names in `remove`.\n- op=compile: compile + save; returns the digest (and ends a deferred patch).\nCheck the result with widget_query op=tree / op=render.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "blueprint": {
-            "description": "the WidgetBlueprint asset path to compose into",
+          "asset": {
+            "description": "the WidgetBlueprint asset path",
             "type": "string"
           },
           "defer": {
-            "description": "patch mode: keep the transaction open (mutations apply but do NOT compile) until an explicit widget_compile",
+            "description": "compose mode=patch: apply without compiling until op=compile",
             "type": "boolean"
           },
           "mode": {
-            "description": "full (default): reconcile the whole tree (convergent — any starting tree yields the spec). patch: update only the given nodes, leaving others",
+            "description": "compose: full (default; converge the whole tree on the spec, never deleting) | patch (only the given nodes)",
+            "enum": [
+              "full",
+              "patch"
+            ],
             "type": "string"
           },
-          "prune": {
-            "description": "remove any existing node absent from the spec (destructive; snapshotted). Default false = additive",
-            "type": "boolean"
+          "op": {
+            "description": "compose | prune | compile",
+            "enum": [
+              "compose",
+              "prune",
+              "compile"
+            ],
+            "type": "string"
           },
           "remove": {
-            "description": "node names to remove (snapshotted first; returns a restore_token)",
+            "description": "prune: also remove these named nodes",
             "items": {
               "type": "string"
             },
@@ -4649,399 +3989,63 @@
           },
           "tree": {
             "additionalProperties": true,
-            "description": "declarative nested widget node: {name, class, slot?, props?, brush?, font?, is_variable?, children?[]}. class is a friendly name (TextBlock/ProgressBar/Image/Button/CanvasPanel/VerticalBox/Overlay/…) or a /Script or /Game path; a /Game WBP or UserWidget subclass is embedded as ONE opaque composite node (its subtree is not expanded). Every node MUST be named. slot is slot-class-aware (CanvasPanelSlot: anchor_preset|anchors+offsets+alignment+z; BoxSlot: size+padding+align; GridSlot: row/col/span)",
+            "description": "compose/prune: declarative node {name, class, slot?, props?, brush?, font?, is_variable?, children?[]}; every node named; class is a friendly name (TextBlock, ProgressBar, Image, Button, CanvasPanel, VerticalBox, Overlay, ...) or a /Script or /Game path",
             "type": "object"
           }
         },
         "required": [
-          "blueprint",
-          "tree"
+          "op",
+          "asset"
         ],
         "type": "object"
       },
-      "name": "widget_compose"
+      "name": "widget_edit",
+      "title": "Author UMG widgets"
     },
     {
       "annotations": {
         "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Create a WidgetBlueprint (UMG HUD/menu) asset. Defaults to a plain UserWidget with a CanvasPanel root. Returns the root name + any required BindWidget slots. Then author the tree with widget_compose.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "dest": {
-            "description": "destination WidgetBlueprint asset path, e.g. /Game/UI/WBP_HUD",
-            "type": "string"
-          },
-          "parent_class": {
-            "description": "parent UserWidget class; default /Script/UMG.UserWidget. Use the plugin UMCPHUDWidget ONLY for a gameplay-bound HUD (widget_bind_field/track_actor) — it adds a plugin parent-class dependency you MUST bake out before shipping",
-            "type": "string"
-          },
-          "root_panel": {
-            "description": "root panel widget class; default CanvasPanel (use Overlay for a stacked full-screen menu)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "dest"
-        ],
-        "type": "object"
-      },
-      "name": "widget_create"
-    },
-    {
-      "annotations": {
+        "idempotentHint": true,
         "openWorldHint": true,
-        "readOnlyHint": true
+        "title": "Inspect UMG widgets"
       },
-      "description": "Describe the authorable UMG palette, or one widget class: its editable props, its slot class (what layout body its children take), and — for UMCPHUDWidget — its BindWidget requirements + named-command handlers. Plan authoring against this instead of guessing class/prop names.",
+      "description": "Inspect UMG widgets without PIE.\n- op=tree: a WidgetBlueprint's tree as JSON + digest (compare digests to verify an edit).\n- op=describe: the authorable palette (no class) or a class's editable props and slot type.\n- op=render: SEE a UserWidget class — offscreen PNG (needs the plugin's MCPAuthoring module; writes Saved/MCP/WidgetRenders).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "widget_class": {
-            "description": "a widget class to describe — its editable props, slot class, and (for UMCPHUDWidget) its BindWidget requirements + named-command handlers. Omit for the full authorable palette (panels + leaves)",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "widget_describe"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Read a LIVE widget's runtime state in the current viewport: per node name/class/visible/text/percent/checked/enabled + on-screen geometry (current viewport only — for multi-resolution geometry use widget_capture). discover:true enumerates on-screen widgets the project itself created (not just bridge-shown ones).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "discover": {
-            "description": "enumerate on-screen widgets the project created (not just bridge-shown ones)",
-            "type": "boolean"
-          },
-          "handle": {
-            "description": "a live widget handle; omit with discover:true to enumerate on-screen widgets",
+          "asset": {
+            "description": "tree: the WidgetBlueprint asset path",
             "type": "string"
           },
-          "include_geometry": {
-            "description": "include current-viewport on-screen rects (painted widgets only)",
-            "type": "boolean"
-          },
-          "include_values": {
-            "description": "include per-node text/percent/checked/enabled",
-            "type": "boolean"
-          }
-        },
-        "type": "object"
-      },
-      "name": "widget_inspect"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Build the one UI material a render-target minimap needs: an MD_UI material sampling a SceneCapture render target, a dynamic instance, applied to a minimap Image brush. The last mile that makes a world-render minimap fully buildable.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "dest": {
-            "description": "destination UI material asset path",
+          "class": {
+            "description": "describe: a widget class (omit for the whole palette); render: the UserWidget class, e.g. /Script/MyGame.HudWidget or /Game/UI/WBP_HUD.WBP_HUD_C",
             "type": "string"
           },
-          "image_widget": {
-            "description": "a minimap Image node to apply the material to",
-            "type": "string"
-          },
-          "param_name": {
-            "description": "texture parameter name; default RT",
-            "type": "string"
-          },
-          "render_target": {
-            "description": "the SceneCapture TextureRenderTarget2D asset path to sample",
-            "type": "string"
-          }
-        },
-        "required": [
-          "dest",
-          "render_target"
-        ],
-        "type": "object"
-      },
-      "name": "widget_make_rt_material"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Fast single value read from a live widget (a named sub-widget's field, e.g. ProgressBar.Percent) — the predicate source for pie_verify. Works by name; no is_variable needed.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "field": {
-            "description": "the field/property to read (e.g. Percent, Text); default a sensible per-class value",
-            "type": "string"
-          },
-          "handle": {
-            "description": "a live widget handle",
-            "type": "string"
-          },
-          "widget_name": {
-            "description": "the named sub-widget to read",
-            "type": "string"
-          }
-        },
-        "required": [
-          "handle",
-          "widget_name"
-        ],
-        "type": "object"
-      },
-      "name": "widget_read"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Render a UserWidget class (e.g. /Script/PolyWorld.CityBuildWidget) OFFSCREEN to a PNG at out_path (width x height) via FWidgetRenderer — no PIE. The UMG HUD visual-iteration loop.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
           "height": {
+            "description": "render: pixels (default 720)",
             "type": "integer"
           },
-          "out_path": {
-            "type": "string"
-          },
-          "widget_class": {
+          "op": {
+            "description": "tree | describe | render",
+            "enum": [
+              "tree",
+              "describe",
+              "render"
+            ],
             "type": "string"
           },
           "width": {
+            "description": "render: pixels (default 1280)",
             "type": "integer"
           }
         },
         "required": [
-          "widget_class",
-          "out_path"
+          "op"
         ],
         "type": "object"
       },
-      "name": "widget_render"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Push values into a live (shown) widget in one round-trip: set named fields (health Percent, ammo Text, visibility) via the UMCPHUDWidget setters — which force a Slate refresh so the on-screen widget actually updates — and/or invoke named UFUNCTIONs. Partial-failure: per-entry issues. (A UUserWidget is not an actor, so pie_set_property/pie_exec can't reach it — this is the driver.)",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "calls": {
-            "description": "[{ufunction, args}] — invoke named UFUNCTIONs (e.g. RunNamedCommand)",
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "fields": {
-            "description": "[{widget_name, field, value}] — pushed via the typed setter matching value's type, with a forced Slate refresh",
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "handle": {
-            "description": "a live widget handle from widget_view show",
-            "type": "string"
-          }
-        },
-        "required": [
-          "handle"
-        ],
-        "type": "object"
-      },
-      "name": "widget_set_fields"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Set keyboard/gamepad focus on a named sub-widget of a live widget — pairs with a pie_input Up/Down/Accept nav nudge to verify controller/keyboard-navigable menus (not just mouse clicks).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "handle": {
-            "type": "string"
-          },
-          "widget_name": {
-            "description": "the sub-widget to focus",
-            "type": "string"
-          }
-        },
-        "required": [
-          "handle",
-          "widget_name"
-        ],
-        "type": "object"
-      },
-      "name": "widget_set_focus"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Configure a marker widget to track a world actor: each tick it projects the actor's world location to DPI-correct widget space and positions the marker (forced point-anchor + centered pivot). The objective-marker binding — a configured property, no graph authoring.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "blueprint": {
-            "type": "string"
-          },
-          "marker_widget": {
-            "description": "the marker widget to reposition each tick",
-            "type": "string"
-          },
-          "target": {
-            "description": "world-actor label to track, or owning_pawn",
-            "type": "string"
-          },
-          "world_offset": {
-            "description": "[x,y,z] world-space offset from the actor origin",
-            "items": {
-              "type": "number"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          }
-        },
-        "required": [
-          "marker_widget",
-          "blueprint",
-          "target"
-        ],
-        "type": "object"
-      },
-      "name": "widget_track_actor"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Inspect or restore a WidgetBlueprint's widget tree. mode=get returns the canonical tree JSON + structural digest (the layer-1 oracle, no rendering). mode=restore re-applies a snapshot from a restore_token.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "blueprint": {
-            "description": "the WidgetBlueprint asset path",
-            "type": "string"
-          },
-          "mode": {
-            "description": "get (default): read the current in-memory tree + structural digest. restore: re-apply a snapshot",
-            "type": "string"
-          },
-          "restore_token": {
-            "description": "restore mode: the token returned by a prior destructive widget_compose",
-            "type": "string"
-          }
-        },
-        "required": [
-          "blueprint"
-        ],
-        "type": "object"
-      },
-      "name": "widget_tree"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Show or hide a WidgetBlueprint in the running (PIE) viewport. show returns a handle to drive/observe it; hide releases it. The viewport keeps a shown widget alive (no manual rooting); keep_alive holds it across a hide/re-show.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "blueprint": {
-            "description": "show: the WidgetBlueprint to instantiate + add to the viewport",
-            "type": "string"
-          },
-          "handle": {
-            "description": "hide: the handle returned by a prior show",
-            "type": "string"
-          },
-          "keep_alive": {
-            "description": "show: hold a strong ref (C++ UPROPERTY) so the handle survives a hide/re-show",
-            "type": "boolean"
-          },
-          "mode": {
-            "description": "show or hide",
-            "type": "string"
-          },
-          "owner": {
-            "description": "show: owning player-controller actor label (default the first local PC)",
-            "type": "string"
-          },
-          "z": {
-            "description": "show: viewport Z-order",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "mode"
-        ],
-        "type": "object"
-      },
-      "name": "widget_view"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Author a UMVVMViewModelBase Blueprint with typed FieldNotify properties (the MVVM data source). Spike-gated: falls back to the UMCPHUDWidget push/pull path if MVVM authoring is intractable in this UE version.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "dest": {
-            "description": "destination viewmodel Blueprint path",
-            "type": "string"
-          },
-          "fields": {
-            "description": "[{name,type}] FieldNotify properties",
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          }
-        },
-        "required": [
-          "dest",
-          "fields"
-        ],
-        "type": "object"
-      },
-      "name": "widget_viewmodel_create"
+      "name": "widget_query",
+      "title": "Inspect UMG widgets"
     },
     {
       "annotations": {

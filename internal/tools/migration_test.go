@@ -64,7 +64,7 @@ func TestMigrationAccounting(t *testing.T) {
 	for _, name := range v1 {
 		_, replaced := replacedBy[name]
 		switch {
-		case replaced && registered[name]:
+		case replaced && registered[name] && replacedBy[name] != name: // a v2 tool may keep its v1 name
 			t.Errorf("v1 %q is replaced by %q but still registered", name, replacedBy[name])
 		case !replaced && !registered[name] && !droppedV1[name]:
 			lost = append(lost, name)

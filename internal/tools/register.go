@@ -42,26 +42,20 @@ func Specs(d Deps) []*spec.Spec {
 	registerAuthoringTools(s, d.Bridge)
 	// v7 additions: reflection, multi-frame capture, high-level design, tighter
 	// editor integration, and the playtest orchestrator.
-	registerReflectTools(s, d.Bridge)
 	registerCaptureTools(s, d)
 	registerDesignTools(s)
 	registerPerceptionTools(s, d.Bridge)
 	registerCompanyTools(s, d.Bridge)
-	registerWidgetRenderTool(s, d.Bridge)
 	registerDemolishTool(s, d.Bridge)
 	registerRoadTool(s, d.Bridge)
 	registerSceneTools(s, d.Bridge)
-	registerViewportTools(s, d.Bridge)
 	registerPlaytestTools(s, d)
-	registerDiscoveryTools(s, d)
-	registerAuthoring2Tools(s, d)
 	registerVerificationTools(s, d)
 	registerPWTools(s, d)
 	registerRobustnessTools(s, d)
 	registerHeadlessTools(s, d)
 	registerControlTools(s, d)
 	registerDesktopTools(s, d)
-	registerHUDTools(s, d)
 	registerCockpitTools(s, d)
 	registerProjectTools(s, d)
 	s.specs = append(s.specs, v2Specs()...)
@@ -93,32 +87,6 @@ func registerParityTools(s *registrar, b *bridge.Bridge) {
 	// --- Level & actors ---
 
 	// --- Assets ---
-	add(s, "list_assets",
-		"List content browser assets under a path (e.g. '/Game', '/Game/Maps').",
-		structHandler[listAssetsIn](b, "list_assets", func(in listAssetsIn) map[string]any {
-			m := map[string]any{}
-			if in.Path != "" {
-				m["path"] = in.Path
-			}
-			if in.Recursive != nil {
-				m["recursive"] = *in.Recursive
-			}
-			if in.Limit != nil {
-				m["limit"] = *in.Limit
-			}
-			return m
-		}))
-
-	add(s, "import_assets",
-		"Import external files (FBX meshes, textures, audio) from disk into the content browser at destination_path.",
-		structHandler[importAssetsIn](b, "import_assets", func(in importAssetsIn) map[string]any {
-			m := map[string]any{"file_paths": in.FilePaths}
-			if in.DestinationPath != "" {
-				m["destination_path"] = in.DestinationPath
-			}
-			return m
-		}))
-
 	// --- Visual ---
 	add(s, "take_screenshot",
 		"Render the scene and return it as a PNG image. Uses a synchronous scene capture so it works even when the editor is backgrounded (editor world only, not during PIE).",

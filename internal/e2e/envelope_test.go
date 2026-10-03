@@ -25,8 +25,8 @@ func TestEnvelopeInvalidArgument(t *testing.T) {
 
 func TestEnvelopeUnknownOpFromEditor(t *testing.T) {
 	h := startHarness(t, harnessOpts{})
-	// get_selection is a real v1 tool whose op the emulator does not implement.
-	if e := errorOf(t, h.call(t, "get_selection", nil)); e["code"] != "UNKNOWN_OP" {
+	// viewport op=get is real, but the emulator does not implement viewport_get.
+	if e := errorOf(t, h.call(t, "viewport", map[string]any{"op": "get"})); e["code"] != "UNKNOWN_OP" {
 		t.Fatalf("code = %v", e["code"])
 	}
 }

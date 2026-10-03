@@ -349,7 +349,7 @@ for every one via `Replaces`). Python (`95_v2_core.py`): `_V2Error` coded errors
 `game` alias, unknown ⇒ `INVALID_ARGUMENT`) — item 1; `_resolve_actor` label/path/`@gamestate`/`@pawn` with PIE
 path translation (`UEDPIE_<n>_`) and `CONFLICT` + candidates — items 2 and (part of) 9; `_resolve_class_v2` over
 loaded modules + AssetRegistry `*_C` with `CONFLICT` — item 3; transform/set_properties generalized over both
-worlds, editor set inside a transaction with `modify()` — item 4. `editor_status` now carries camera, selection,
+worlds — item 4 (the undo transaction landed in the gate fixes below). `editor_status` now carries camera, selection,
 actor_count, recorders (absorbing v1 `editor_state`).
 
 **Parity gap caught by the tests and closed:** v1's text tools surfaced the editor's captured Warning/Error lines
@@ -365,3 +365,104 @@ python run + recipe, editor health) against the stateful `bridgetest` world (edi
 
 **Evidence.** `go vet ./...` clean; gofmt clean; `go test ./...` all ok; `-race` over tools/e2e/bridge/daemon/uexec
 ok; pytest 17 passed; ruff (as CI: concatenated module + tests) clean; every part `py_compile`s.
+
+**Gate P5a, round 1: B- (GameDev/MCP reviewer).** No test ran the Python op bodies: T1 runs the Go emulator and
+pytest ran only the resolvers. That hid a real bug. Fixed:
+1. *The class filter crashed on every call.* `UClass.is_child_of` is not reflected in 5.7; it is now
+   `unreal.MathLibrary.class_is_child_of`.
+2. *Editor edits were not undoable.* `modify()` without a transaction records nothing. Every editor
+   spawn/delete/transform/set_properties now runs in one `ScopedEditorTransaction` with `modify()` (`_undoable`). PIE
+   edits use neither.
+3. *The matrix and the op bodies were under-tested.* **`tests/fakeunreal.py`** is a stateful fake of the `unreal` API
+   that raises on anything it doesn't model (it deliberately lacks `is_child_of`). `test_v2_ops.py` runs the real op
+   bodies through `_mcp2_dispatch` and covers:
+   - all 8 actor_edit cells, and the transactions;
+   - `@pawn`/`@gamestate`;
+   - actor_call, including unknown function ⇒ `NOT_FOUND` and editor ⇒ `UNSUPPORTED`;
+   - every class-resolver branch: project module, `Module.Class`, plugin module, Blueprint by short name and `_C`,
+     CONFLICT, unresolved;
+   - PIE path translation.
+
+   T1 adds the 4 missing matrix cells, actor_call editor `UNSUPPORTED` and `@pawn`.
+4. *console dropped Info output.* `Bridge.CallLog` now returns every captured line. console returns them as `output`
+   and in its text summary; other tools keep Warning/Error as `editor_log`.
+
+Non-blocking findings, also fixed:
+- short-name lookup uses `find_object` (no "Failed to find" log noise) and accepts `Module.Class` for plugin modules;
+- the `until` deadline margin scales (≤ 1 s, a fifth of the window) and `until` echoes `world`;
+- new lint rule: **world=auto only on ReadOnly tools**;
+- native dispatch keeps a failure's `details`: MCPCore forwards only `result`, so in native mode the companion sends
+  them as `result.details`;
+- set_properties with every property failing is `INVALID_ARGUMENT`;
+- `_edit_world` also rejects `auto` in Python;
+- a missing `static_mesh` on spawn is `NOT_FOUND`;
+- the stale `clean_slate` test comment is fixed and the escalation is pinned.
+
+Kept as designed: PIE `delete` stays Destructive (one tier per op; documented). `_pick_world` users migrate in P5c.
+
+## P5b — viewport / asset_* / reflect / project_* / widget_*
+
+**Landed** in `internal/tools/v2_assets.go` and `internal/bridge/py/96_v2_assets.py`:
+
+| Tool | Ops | Notes |
+|---|---|---|
+| `viewport` | get, set, focus, select, selection | |
+| `asset_query` | list, info, search, deps, tags, thumbnail | thumbnail returns the PNG as image content |
+| `asset_create` | create, replace | |
+| `asset_edit` | set_defaults, add_component, assign_subclass | |
+| `asset_import` | files, reimport, datatable | |
+| `reflect` | object, class, enum | |
+| `project_config` | — | offline `.ini` |
+| `project_map` | project, level | project is offline; level is live |
+| `widget_query` | tree, describe, render | render returns the PNG |
+| `widget_edit` | compose, prune, compile | toolset `ui` |
+
+35 v1 tools are retired: 19 replaced here plus the 16 HUD tools that were never implemented. The stdio surface is now
+**97 tools** (from 139).
+
+**Deviations from the §2.3 table.** Each is strictly safer or more uniform:
+- *`asset_create` has ops `create | replace`.* The table showed only a `kind:` shape. The P3a hazard asked for
+  "`CONFLICT` unless overwrite (Destructive escalation)", but the gate and the annotations work per **op**. An
+  escalating flag would therefore gate either every create or none. `create` (Mutating) returns `CONFLICT` when dest
+  exists. `replace` (Destructive, gated) deletes the existing asset first, so UE's interactive overwrite prompt never
+  appears.
+- *`datatable_import` is `asset_import op=datatable`, not part of `asset_edit`.* It replaces every row (Destructive),
+  and keeping it out of `asset_edit` keeps that tool's annotation non-destructive.
+- *The discriminator is `op` everywhere.* The table used `target_kind:` for `reflect` and `scope:` for `project_map`.
+  With `op`, per-op `Required`/`Rejects` validation applies (R2).
+- *`asset_query` and `widget_query` are Ephemeral, not ReadOnly.* `thumbnail` and `render` write server-owned PNGs and
+  spawn transient actors (P3a policy). Every other op in both tools is ReadOnly and safe to retry.
+- *`widget_tree mode=restore` is dropped.* The op never implemented it (`NOT_IMPLEMENTED`).
+
+Behaviour fixes riding along:
+- viewport and select resolve actors strictly and return paths (v1 silently ignored unknown labels);
+- viewport rotation is `rotation` [pitch,yaw,roll] (was `rotation_pyr`), and `viewport set` rejects `console`;
+- `widget_render` writes only under `Saved/MCP/WidgetRenders` (P3a path hazard);
+- an additive compose may not orphan an authored root: that is a `CONFLICT`; use `prune`;
+- class arguments go through the v2 resolver;
+- asset_info and thumbnail errors are coded (`NOT_FOUND`, `UNSUPPORTED`);
+- `asset_import files` checks that the files exist before calling the editor;
+- per-kind required params are validated server-side.
+
+**Tests.**
+- pytest (35 passing) covers:
+  - asset_create conflict, replace, and dest/kind validation;
+  - the material parent check;
+  - the compose root guard;
+  - strict selection;
+  - viewport having no console passthrough.
+- T1 (`v2_assets_test.go`) covers:
+  - create → CONFLICT → replace, with each op's tier pinned;
+  - asset_import validation before the editor is called;
+  - viewport select, selection, an unknown actor, and console being rejected;
+  - reflect echoing world, plus per-op Rejects;
+  - project_config and project_map offline with no editor, where `level` gives EDITOR_UNREACHABLE;
+  - PRECONDITION when no project is set;
+  - widget_edit compose rejecting `remove` (with the ui toolset enabled).
+- The emulator gained an asset store, selection, reflect, actor_call and `@pawn`/`@gamestate`.
+
+**Evidence.**
+- `go vet ./...` clean; gofmt clean.
+- `go test ./...` all pass; `-race` on tools/e2e/bridge passes.
+- pytest: 35 passed. ruff in the CI form: clean.
+- Golden regenerated (97 tools).

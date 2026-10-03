@@ -105,6 +105,11 @@ def _resolve_class_v2(ref):
             raise _V2Error("CLASS_UNRESOLVED", "could not resolve class %s" % ref)
         return cls
     base = ref[:-2] if ref.endswith("_C") else ref
+    if "." in base:  # Module.Class: any loaded module, incl. plugins
+        cls = unreal.find_object(None, "/Script/" + base)
+        if not cls:
+            raise _V2Error("CLASS_UNRESOLVED", "no loaded class /Script/%s" % base)
+        return cls
     found = {}
     modules = list(_CLASS_MODULES)
     try:
@@ -113,8 +118,10 @@ def _resolve_class_v2(ref):
         pass
     for mod in modules:
         try:
-            c = unreal.load_class(None, "/Script/%s.%s" % (mod, base))
+            c = unreal.find_object(None, "/Script/%s.%s" % (mod, base))
         except Exception:
+            c = None
+        if c is not None and not isinstance(c, unreal.Class):
             c = None
         if c:
             found["/Script/%s.%s" % (mod, base)] = c
@@ -131,7 +138,9 @@ def _resolve_class_v2(ref):
     except Exception:
         pass
     if not found:
-        raise _V2Error("CLASS_UNRESOLVED", "no class named %r (use /Script/Module.Class or a /Game Blueprint path)" % ref)
+        raise _V2Error("CLASS_UNRESOLVED",
+                       "no class named %r in the engine/project modules or /Game Blueprints "
+                       "(use Module.Class, /Script/Module.Class or a /Game Blueprint path)" % ref)
     if len(found) > 1:
         raise _V2Error("CONFLICT", "%d classes are named %r" % (len(found), ref), candidates=sorted(found))
     return next(iter(found.values()))
@@ -163,6 +172,12 @@ def _actor_view(a, world_name, detailed=False):
     return out
 
 
+def _is_a(actor, cls):
+    """actor's class is cls or derives from it (UClass.IsChildOf is not reflected to
+    Python in 5.7; KismetMathLibrary.ClassIsChildOf is)."""
+    return unreal.MathLibrary.class_is_child_of(actor.get_class(), cls)
+
+
 def _op_actor_query(args):
     world, name = _v2_world(args, "editor")
     op = args.get("op")
@@ -180,7 +195,7 @@ def _op_actor_query(args):
         label = a.get_actor_label()
         if flt and flt not in label.lower() and flt not in a.get_class().get_name().lower():
             continue
-        if cls and not a.get_class().is_child_of(cls) and a.get_class() != cls:
+        if cls and not _is_a(a, cls):
             continue
         if where:
             ok = True
@@ -218,9 +233,23 @@ def _set_props(obj, props):
 
 
 def _edit_world(args):
-    if not args.get("world"):
-        raise _V2Error("BAD_VALUE", "actor edits require an explicit world: editor or pie")
+    w = args.get("world")
+    if w not in ("editor", "pie"):
+        raise _V2Error("BAD_VALUE", "actor edits require an explicit world: editor or pie (got %r)" % (w,))
     return _v2_world(args, None)
+
+
+@contextlib.contextmanager
+def _undoable(name, label, *actors):
+    """Editor edits run inside one named undo transaction with the touched actors
+    snapshotted (modify()); PIE edits are transient and need neither."""
+    if name != "editor":
+        yield
+        return
+    with _transaction("MCP: " + label):
+        for a in actors:
+            a.modify()
+        yield
 
 
 def _op_actor_spawn(args):
@@ -231,19 +260,22 @@ def _op_actor_spawn(args):
     loc = _vec(args.get("location"), [0.0, 0.0, 100.0])
     rot = _vec(args.get("rotation"), [0.0, 0.0, 0.0])
     sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
-    actor = sub.spawn_actor_from_class(cls, unreal.Vector(*loc), unreal.Rotator(rot[2], rot[0], rot[1]))
-    if not actor:
-        raise _V2Error("SPAWN_FAILED", "spawn failed for %s" % args.get("class"))
-    if args.get("label"):
-        actor.set_actor_label(args["label"])
-    if args.get("scale"):
-        actor.set_actor_scale3d(unreal.Vector(*_vec(args["scale"], [1.0, 1.0, 1.0])))
-    if args.get("static_mesh"):
-        mesh = unreal.load_asset(args["static_mesh"])
-        comp = actor.get_component_by_class(unreal.StaticMeshComponent)
-        if mesh and comp:
+    with _undoable(name, "spawn " + str(args.get("class"))):
+        actor = sub.spawn_actor_from_class(cls, unreal.Vector(*loc), unreal.Rotator(rot[2], rot[0], rot[1]))
+        if not actor:
+            raise _V2Error("SPAWN_FAILED", "spawn failed for %s" % args.get("class"))
+        if args.get("label"):
+            actor.set_actor_label(args["label"])
+        if args.get("scale"):
+            actor.set_actor_scale3d(unreal.Vector(*_vec(args["scale"], [1.0, 1.0, 1.0])))
+        if args.get("static_mesh"):
+            mesh = unreal.load_asset(args["static_mesh"])
+            comp = actor.get_component_by_class(unreal.StaticMeshComponent)
+            if not mesh or not comp:
+                raise _V2Error("NOT_FOUND", "static_mesh %s did not load (or %s has no StaticMeshComponent)"
+                               % (args["static_mesh"], args.get("class")))
             comp.set_static_mesh(mesh)
-    errors = _set_props(actor, args.get("properties"))
+        errors = _set_props(actor, args.get("properties"))
     return {"world": name, "spawned": _actor_view(actor, name, True), "property_errors": errors}
 
 
@@ -252,7 +284,8 @@ def _op_actor_delete(args):
     actor = _resolve_actor(world, name, args.get("actor"))
     view = _actor_view(actor, name)
     if name == "editor":
-        unreal.get_editor_subsystem(unreal.EditorActorSubsystem).destroy_actor(actor)
+        with _undoable(name, "delete " + view["label"], actor):
+            unreal.get_editor_subsystem(unreal.EditorActorSubsystem).destroy_actor(actor)
     else:
         actor.destroy_actor()
     return {"world": name, "deleted": view}
@@ -264,15 +297,14 @@ def _op_actor_transform(args):
     loc, rot, scale = args.get("location"), args.get("rotation"), args.get("scale")
     if loc is None and rot is None and scale is None:
         raise _V2Error("BAD_VALUE", "transform needs location, rotation and/or scale")
-    if name == "editor":
-        actor.modify()
-    if loc is not None:
-        actor.set_actor_location(unreal.Vector(*_vec(loc, None)), False, False)
-    if rot is not None:
-        r = _vec(rot, None)  # [pitch, yaw, roll] -> Rotator(roll, pitch, yaw)
-        actor.set_actor_rotation(unreal.Rotator(r[2], r[0], r[1]), False)
-    if scale is not None:
-        actor.set_actor_scale3d(unreal.Vector(*_vec(scale, None)))
+    with _undoable(name, "transform " + actor.get_actor_label(), actor):
+        if loc is not None:
+            actor.set_actor_location(unreal.Vector(*_vec(loc, None)), False, False)
+        if rot is not None:
+            r = _vec(rot, None)  # [pitch, yaw, roll] -> Rotator(roll, pitch, yaw)
+            actor.set_actor_rotation(unreal.Rotator(r[2], r[0], r[1]), False)
+        if scale is not None:
+            actor.set_actor_scale3d(unreal.Vector(*_vec(scale, None)))
     return {"world": name, "actor": _actor_view(actor, name, True)}
 
 
@@ -281,9 +313,10 @@ def _op_actor_set_properties(args):
     actor = _resolve_actor(world, name, args.get("actor"))
     if not args.get("properties"):
         raise _V2Error("BAD_VALUE", "set_properties needs a properties map")
-    if name == "editor":
-        actor.modify()
-    errors = _set_props(actor, args["properties"])
+    with _undoable(name, "set properties on " + actor.get_actor_label(), actor):
+        errors = _set_props(actor, args["properties"])
+    if len(errors) == len(args["properties"]):
+        raise _V2Error("BAD_VALUE", "no property was set", property_errors=errors)
     return {"world": name, "actor": _actor_view(actor, name), "property_errors": errors}
 
 
@@ -298,6 +331,11 @@ def _op_actor_call(args):
     fargs = args.get("args") or {}
     if not isinstance(fargs, dict):
         raise _V2Error("BAD_VALUE", "args must be an object of parameter name -> value")
-    result = target.call_method(fn, kwargs=fargs)
+    try:
+        result = target.call_method(fn, kwargs=fargs)
+    except Exception as e:
+        if "find function" in str(e).lower() or "no function" in str(e).lower():
+            raise _V2Error("NOT_FOUND", "%s has no callable function %r" % (target.get_name(), fn)) from e
+        raise
     return {"world": name, "actor": target.get_actor_label() if hasattr(target, "get_actor_label") else str(target),
             "function": fn, "result": _coerce_prop(result, 2048) if result is not None else None}

@@ -38,16 +38,6 @@ type pawnStateIn struct {
 // fixes RC2 — the agent could not SEE a purchased asset before using it. Bridge op
 // (runs in the editor), so it dispatches through the companion module.
 func registerPerceptionTools(s *registrar, b *bridge.Bridge) {
-	add(s, "asset_thumbnail",
-		"Render a Content Browser StaticMesh into a PNG thumbnail (canonical 3/4 angle) and return hard facts (tri/vert count, material slot names, LOD count, bounds). The keystone perception primitive so the agent can SEE an asset before placing it. Requires a live editor.",
-		structHandler[assetThumbnailIn](b, "asset_thumbnail", func(in assetThumbnailIn) map[string]any {
-			m := map[string]any{"asset_path": in.AssetPath}
-			if in.Size > 0 {
-				m["size"] = in.Size
-			}
-			return m
-		}))
-
 	// Audio submix tap (§6.3, RC9): start/stop an ISubmixBufferListener on the main
 	// submix and reduce it to an RMS/peak envelope JSONL the audio_audit tool consumes.
 	// Requires a live PIE session (audio only renders in play).
@@ -152,32 +142,6 @@ func registerCompanyTools(s *registrar, b *bridge.Bridge) {
 			}
 			if in.Market != nil {
 				m["market"] = *in.Market
-			}
-			return m
-		}))
-}
-
-// registerWidgetRenderTool exposes widget_render (offscreen UMG capture via FWidgetRenderer).
-func registerWidgetRenderTool(s *registrar, b *bridge.Bridge) {
-	add(s, "widget_render",
-		"Render a UserWidget class (e.g. /Script/PolyWorld.CityBuildWidget) OFFSCREEN to a PNG at out_path (width x height) via FWidgetRenderer — no PIE. The UMG HUD visual-iteration loop.",
-		structHandler[struct {
-			WidgetClass string `json:"widget_class"`
-			OutPath     string `json:"out_path"`
-			Width       int    `json:"width,omitempty"`
-			Height      int    `json:"height,omitempty"`
-		}](b, "widget_render", func(in struct {
-			WidgetClass string `json:"widget_class"`
-			OutPath     string `json:"out_path"`
-			Width       int    `json:"width,omitempty"`
-			Height      int    `json:"height,omitempty"`
-		}) map[string]any {
-			m := map[string]any{"widget_class": in.WidgetClass, "out_path": in.OutPath}
-			if in.Width > 0 {
-				m["width"] = in.Width
-			}
-			if in.Height > 0 {
-				m["height"] = in.Height
 			}
 			return m
 		}))

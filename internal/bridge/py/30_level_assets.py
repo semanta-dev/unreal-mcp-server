@@ -90,7 +90,7 @@ def _op_asset_info(args):
     path = args["asset_path"]
     asset = unreal.EditorAssetLibrary.load_asset(path)
     if not asset:
-        return {"error": "asset not found: " + str(path)}
+        return {"error": "asset not found: " + str(path), "code": "ASSET_NOT_FOUND"}
     info = {"path": path, "class": asset.get_class().get_name()}
     if isinstance(asset, unreal.StaticMesh):
         info["num_lods"] = asset.get_num_lods()
@@ -120,9 +120,9 @@ def _op_asset_thumbnail(args):
     size = int(args.get("size", 512))
     mesh = unreal.EditorAssetLibrary.load_asset(path)
     if not mesh:
-        return {"error": "asset not found: " + str(path)}
+        return {"error": "asset not found: " + str(path), "code": "ASSET_NOT_FOUND"}
     if not isinstance(mesh, unreal.StaticMesh):
-        return {"error": "asset_thumbnail v1 supports StaticMesh only; got " + mesh.get_class().get_name()}
+        return {"error": "thumbnails support StaticMesh only; got " + mesh.get_class().get_name(), "code": "UNSUPPORTED"}
 
     facts = {"path": path, "class": "StaticMesh"}
     try:

@@ -37,9 +37,10 @@ records the reasoning and the hazards found along the way.
 | Hazard | Where | Fix scheduled |
 |---|---|---|
 | `apply_level_recipe` wipes the level by default (`clean_slate` defaults true) | 30_level_assets.py:54,58,24 | P5a: becomes `python recipe`, `clean_slate` default false |
-| Unsanitized `session` / `filename` / `out_path` → writes outside `Saved/` | capture_start/poses, take_screenshot, pie_screenshot, audio_capture_stop, widget_render | P5c: confine all output paths under `Saved/MCP/` (reject `..`/absolute), T1 + pytest |
+| Unsanitized `session` / `filename` / `out_path` → writes outside `Saved/` | capture_start/poses, take_screenshot, pie_screenshot, audio_capture_stop, widget_render | widget_render **done (P5b)**: always `Saved/MCP/WidgetRenders`; the rest in P5c: confine all output paths under `Saved/MCP/` (reject `..`/absolute), T1 + pytest |
 | `cockpit_info` returns the cockpit session token | 99_dispatch / cockpit probe | internal op only — never exposed as a tool result (P5e `toolsets describe` returns URL/status only) |
-| `*_create` ops with an existing `dest` may hit UE's replace prompt (unverified unattended behaviour) | blueprint/dataasset/datatable/material/widget create | P5b: check existence first → `CONFLICT` unless `overwrite:true` (Destructive escalation) |
+| `*_create` ops with an existing `dest` may hit UE's replace prompt (unverified unattended behaviour) | blueprint/dataasset/datatable/material/widget create | **Done (P5b)**: `asset_create op=create` → `CONFLICT`; the separate `op=replace` (Destructive, gated) deletes first |
 | `scene_apply` overwrites transform/mesh/material of any user actor whose label collides with a spec label | 60_scene.py | P5c: `scene apply` matches by `mcp_scene:<id>` tag, never by bare label |
 | `world=auto` on `company_*` acts on the editor level when PIE is off | 30_level_assets.py:316 | P5e: `polyworld` ops fixed to `world: pie` (PIE_NOT_RUNNING otherwise) |
 | transient capture actors dirty the editor level (affects the git_revert dirty check) | thumbnail/screenshot/capture | P5c: capture helpers clear the dirty flag they caused, or record it in the result |
+| `widget_compose` with a spec root that differs from an authored root orphans the old tree (non-prune) | 86_hud.py:210 | **Done (P5b)**: `CONFLICT` unless `widget_edit op=prune`; an empty `RootPanel` shell may still be replaced |

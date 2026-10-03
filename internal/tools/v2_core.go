@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
@@ -43,28 +44,35 @@ func v2Bridge(c *spec.Call) (*bridge.Bridge, error) {
 // v2Op dispatches a companion op and decodes its result object. Warning/Error lines
 // the editor logged during the op are returned as "editor_log" (also on errors).
 func v2Op(ctx context.Context, c *spec.Call, op string, args map[string]any) (map[string]any, error) {
+	out, _, err := v2OpOutput(ctx, c, op, args)
+	return out, err
+}
+
+// v2OpOutput is v2Op plus every line the editor printed while the op ran.
+func v2OpOutput(ctx context.Context, c *spec.Call, op string, args map[string]any) (map[string]any, []uexec.OutputEntry, error) {
 	b, err := v2Bridge(c)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	raw, log, err := b.CallLog(ctx, op, args)
+	raw, output, err := b.CallLog(ctx, op, args)
+	log := bridge.Problems(output)
 	if err != nil {
 		if len(log) > 0 {
 			e := envelope.Classify(err, c.Op.Tier > spec.ReadOnly)
-			return nil, e.WithDetail("editor_log", log)
+			return nil, output, e.WithDetail("editor_log", log)
 		}
-		return nil, err
+		return nil, output, err
 	}
 	out := map[string]any{}
 	if len(raw) > 0 && string(raw) != "null" {
 		if err := json.Unmarshal(raw, &out); err != nil {
-			return nil, fmt.Errorf("decode %s result: %w", op, err)
+			return nil, output, fmt.Errorf("decode %s result: %w", op, err)
 		}
 	}
 	if len(log) > 0 {
 		out["editor_log"] = log
 	}
-	return out, nil
+	return out, output, nil
 }
 
 // withLog attaches a result's editor_log to an error raised after the call.
@@ -87,7 +95,7 @@ func pick(args map[string]any, keys ...string) map[string]any {
 }
 
 // v2Specs is every v2 tool (grows cluster by cluster until the v1 adapter is gone).
-func v2Specs() []*spec.Spec { return coreSpecs() }
+func v2Specs() []*spec.Spec { return append(coreSpecs(), assetSpecs()...) }
 
 func coreSpecs() []*spec.Spec {
 	return []*spec.Spec{editorSpec(), pythonSpec(), consoleSpec(), levelSpec(),
@@ -253,7 +261,8 @@ func consoleSpec() *spec.Spec {
 		Ops: []spec.OpSpec{{Tier: spec.Exec, Reaches: []string{"console"}}},
 		Description: "Run an Unreal console command. world=editor (default) runs it in the editor context " +
 			"(viewport/show/stat commands); world=pie routes it through the player controller so cheat/exec " +
-			"commands like 'slomo' apply to the running game.",
+			"commands like 'slomo' apply to the running game. Returns every line the command printed as " +
+			"`output` (e.g. a CVar's current value) and its warnings/errors as `editor_log`.",
 		Schema:   spec.SchemaFor[consoleIn](map[string][]any{"world": {"editor", "pie"}}, "command"),
 		Replaces: []string{"execute_console_command"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
@@ -264,8 +273,20 @@ func consoleSpec() *spec.Spec {
 			if in.World == "" {
 				in.World = "editor"
 			}
-			out, err := v2Op(ctx, c, "console", map[string]any{"command": in.Command, "world": in.World})
-			return &spec.Result{Data: out, Summary: fmt.Sprintf("ran %q in %s", in.Command, in.World)}, err
+			out, output, err := v2OpOutput(ctx, c, "console", map[string]any{"command": in.Command, "world": in.World})
+			if err != nil {
+				return nil, err
+			}
+			lines := []string{}
+			for _, e := range output {
+				lines = append(lines, strings.TrimRight(e.Output, "\r\n"))
+			}
+			out["output"] = lines
+			summary := fmt.Sprintf("ran %q in %s", in.Command, in.World)
+			if len(lines) > 0 {
+				summary += ":\n" + strings.Join(lines, "\n")
+			}
+			return &spec.Result{Data: out, Summary: summary}, nil
 		},
 	}
 }
@@ -447,8 +468,13 @@ func actorCall(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	if in.TimeoutS > 0 {
 		timeout = time.Duration(in.TimeoutS * float64(time.Second))
 	}
-	if dl, ok := ctx.Deadline(); ok && time.Until(dl)-time.Second < timeout {
-		timeout = time.Until(dl) - time.Second // return met:false before the call's own deadline
+	if dl, ok := ctx.Deadline(); ok {
+		// Return met:false before the call's own deadline: keep a margin for the last
+		// poll's round trip (a fifth of the window, at most a second).
+		left := time.Until(dl)
+		if lim := left - min(time.Second, left/5); lim < timeout {
+			timeout = lim
+		}
 	}
 	interval := 250 * time.Millisecond
 	if in.IntervalS > 0 {
@@ -457,7 +483,7 @@ func actorCall(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	start := time.Now()
 	deadline := start.Add(timeout)
 	calls := 0
-	var last any
+	var last, world any = nil, "pie"
 	for {
 		out, err := v2Op(ctx, c, "actor_call", args)
 		calls++
@@ -467,14 +493,14 @@ func actorCall(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 				return nil, err // a bad function or target will not fix itself
 			}
 		} else {
-			last = out["result"]
+			last, world = out["result"], out["world"]
 			if ok, _ := pred.Eval(map[string]any{"result": last}); ok {
-				return &spec.Result{Data: map[string]any{"met": true, "result": last, "elapsed_s": time.Since(start).Seconds(), "calls": calls},
+				return &spec.Result{Data: map[string]any{"met": true, "result": last, "world": world, "elapsed_s": time.Since(start).Seconds(), "calls": calls},
 					Summary: "condition met after " + strconv.Itoa(calls) + " calls"}, nil
 			}
 		}
 		if time.Now().Add(interval).After(deadline) {
-			return &spec.Result{Data: map[string]any{"met": false, "result": last, "elapsed_s": time.Since(start).Seconds(), "calls": calls},
+			return &spec.Result{Data: map[string]any{"met": false, "result": last, "world": world, "elapsed_s": time.Since(start).Seconds(), "calls": calls},
 				Summary: "condition not met within " + timeout.String()}, nil
 		}
 		select {

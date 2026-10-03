@@ -16,7 +16,8 @@ var propName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 // specs: names/vocabulary (R3), per-op timing (R6), the op-enum cap (R2), tier
 // rules (§2.1 — ReadOnly tools hold only ReadOnly ops; a Destructive/Exec op only
 // sits in a tool whose other ops are all ≥ Mutating; declared tier ≥ the worst tier
-// of every Python op it Reaches), and unique tool names. It returns every violation.
+// of every Python op it Reaches), world=auto only on ReadOnly tools (R3), and unique
+// tool names. It returns every violation.
 func Lint(specs []*Spec) []string {
 	var v []string
 	add := func(format string, a ...any) { v = append(v, fmt.Sprintf(format, a...)) }
@@ -39,6 +40,15 @@ func Lint(specs []*Spec) []string {
 			for k := range s.Schema.Properties {
 				if !propName.MatchString(k) {
 					add("%s: property %q must match %s", s.Name, k, propName)
+				}
+			}
+			// R3: world "auto" (PIE if running, else the editor) is allowed only on
+			// ReadOnly tools — a write must name the world it changes.
+			if w, ok := s.Schema.Properties["world"]; ok && s.Tier() > ReadOnly {
+				for _, e := range w.Enum {
+					if e == "auto" {
+						add("%s: world=auto on a %s tool (allowed only on readonly tools)", s.Name, s.Tier())
+					}
 				}
 			}
 		}

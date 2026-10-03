@@ -160,9 +160,11 @@ func TestLintRules(t *testing.T) {
 		{Name: "mixed", Max: time.Second, Ops: []OpSpec{{Name: "r", Tier: ReadOnly}, {Name: "d", Tier: Destructive}}},
 		{Name: "under", Max: time.Second, Ops: []OpSpec{{Tier: Mutating, Reaches: []string{"scene_apply"}}}}, // prune escalates
 		{Name: "unk", Max: time.Second, Ops: []OpSpec{{Tier: Mutating, Reaches: []string{"no_such_op"}}}},
+		{Name: "autowrite", Max: time.Second, Ops: []OpSpec{{Tier: Mutating}},
+			Schema: &jsonschema.Schema{Type: "object", Properties: map[string]*jsonschema.Schema{"world": {Type: "string", Enum: []any{"editor", "auto"}}}}},
 	}
 	v := strings.Join(Lint(bad), "\n")
-	for _, want := range []string{"BadName: tool name", "slow op=\"\": sync op", "mixed: destructive/exec op mixed", "under op=\"\": declared mutating but reaches scene_apply", "unclassified python op"} {
+	for _, want := range []string{"BadName: tool name", "slow op=\"\": sync op", "mixed: destructive/exec op mixed", "under op=\"\": declared mutating but reaches scene_apply", "unclassified python op", "autowrite: world=auto on a mutating tool"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("lint missed %q in:\n%s", want, v)
 		}
