@@ -1,6 +1,6 @@
 # Changelog
 
-## v2.0.0 — unreleased
+## v2.0.0 — 2026-10-03
 
 A ground-up overhaul (plan: [`docs/plans/OVERHAUL_PLAN.md`](docs/plans/OVERHAUL_PLAN.md); phase-by-phase evidence:
 [`docs/plans/OVERHAUL_PROGRESS.md`](docs/plans/OVERHAUL_PROGRESS.md)). **Breaking**: tool names and arguments changed;
