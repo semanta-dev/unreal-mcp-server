@@ -11,8 +11,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
-	"github.com/jdziat/unreal-mcp-server/internal/logs"
 	"github.com/jdziat/unreal-mcp-server/internal/eval"
+	"github.com/jdziat/unreal-mcp-server/internal/logs"
 )
 
 type pieObserveIn struct {

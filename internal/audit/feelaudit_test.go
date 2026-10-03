@@ -2,7 +2,6 @@ package audit
 
 import (
 	"testing"
-
 )
 
 func TestFeelAuditDefaultFixtures(t *testing.T) {

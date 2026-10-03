@@ -3,7 +3,6 @@ package audit
 import (
 	"os"
 	"testing"
-
 )
 
 // The REAL shipped PolyWorld capture records static:0 on every frame (a black render,

@@ -2,7 +2,6 @@ package audit
 
 import (
 	"testing"
-
 )
 
 func TestAuditFixtures(t *testing.T) {

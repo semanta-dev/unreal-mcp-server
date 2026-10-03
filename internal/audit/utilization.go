@@ -2,7 +2,6 @@
 // matching AGENTIC_GAMEDEV_PLAN.md section 7.5.
 package audit
 
-
 // UtilizationReport summarizes how much of a pack inventory is referenced by a build.
 type UtilizationReport struct {
 	Pack       string

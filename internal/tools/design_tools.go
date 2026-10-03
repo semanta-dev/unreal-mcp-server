@@ -20,13 +20,13 @@ type decisionAuditIn struct {
 
 type noveltyAuditIn struct {
 	Trace          audit.SessionTrace `json:"trace"`
-	MaxDeadStretch float64                `json:"max_dead_stretch,omitempty"`
+	MaxDeadStretch float64            `json:"max_dead_stretch,omitempty"`
 }
 
 type feelAuditIn struct {
 	Events        []audit.Event `json:"events"`
-	WithinMs      float64           `json:"within_ms,omitempty"`
-	MaxFXPerEvent int               `json:"max_fx_per_event,omitempty"`
+	WithinMs      float64       `json:"within_ms,omitempty"`
+	MaxFXPerEvent int           `json:"max_fx_per_event,omitempty"`
 }
 
 type verbResponseIn struct {
@@ -41,7 +41,7 @@ type inMotionAuditIn struct {
 type renderHealthIn struct {
 	Config       audit.EngineConfig     `json:"config"`
 	Timeline     []audit.TimelineSample `json:"timeline,omitempty"`
-	TimelinePath string                     `json:"timeline_path,omitempty"`
+	TimelinePath string                 `json:"timeline_path,omitempty"`
 }
 
 type audioAuditIn struct {
@@ -60,7 +60,7 @@ type luminanceReportIn struct {
 type luminanceReportOut struct {
 	Aggregate visual.LumReport   `json:"aggregate"`
 	PerFrame  []visual.LumReport `json:"per_frame"`
-	Error     string            `json:"error,omitempty"`
+	Error     string             `json:"error,omitempty"`
 }
 
 type styleCohesionIn struct {
@@ -70,7 +70,7 @@ type styleCohesionIn struct {
 type styleCohesionOut struct {
 	Aggregate visual.StyleReport   `json:"aggregate"`
 	PerFrame  []visual.StyleReport `json:"per_frame"`
-	Error     string                 `json:"error,omitempty"`
+	Error     string               `json:"error,omitempty"`
 }
 
 type balanceSweepIn struct {
@@ -80,28 +80,28 @@ type balanceSweepIn struct {
 
 type balanceSweepOut struct {
 	Sweep balanceSweepReportOut `json:"sweep"`
-	Gate  design.GateReport    `json:"gate"`
+	Gate  design.GateReport     `json:"gate"`
 }
 
 type balanceSweepReportOut struct {
-	DominantPolicy      bool                      `json:"dominant_policy"`
-	DegenerateOptimum   bool                      `json:"degenerate_optimum"`
-	AxisLiveness        float64                   `json:"axis_liveness"`
-	FencedCorners       []string                  `json:"fenced_corners"`
-	WinRateBySpike      map[string]float64        `json:"win_rate_by_spike"`
+	DominantPolicy      bool                     `json:"dominant_policy"`
+	DegenerateOptimum   bool                     `json:"degenerate_optimum"`
+	AxisLiveness        float64                  `json:"axis_liveness"`
+	FencedCorners       []string                 `json:"fenced_corners"`
+	WinRateBySpike      map[string]float64       `json:"win_rate_by_spike"`
 	BestPolicyByVariant map[string]design.Policy `json:"best_policy_by_variant"`
 }
 
 type designExploreIn struct {
 	Seed        design.Genotype   `json:"seed"`
-	Evaluations int                `json:"evaluations,omitempty"`
-	SearchSeed  int64              `json:"search_seed,omitempty"`
-	TopK        int                `json:"top_k,omitempty"`
+	Evaluations int               `json:"evaluations,omitempty"`
+	SearchSeed  int64             `json:"search_seed,omitempty"`
+	TopK        int               `json:"top_k,omitempty"`
 	Donors      []design.Scaffold `json:"donors,omitempty"`
 }
 
 type designExploreOut struct {
-	Filled int                `json:"filled"`
+	Filled int               `json:"filled"`
 	Elites []design.Genotype `json:"elites"`
 }
 

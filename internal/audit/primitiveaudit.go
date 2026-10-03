@@ -5,7 +5,6 @@ package audit
 
 import (
 	"strings"
-
 )
 
 const (

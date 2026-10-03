@@ -10,9 +10,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
+	"github.com/jdziat/unreal-mcp-server/internal/eval"
 	"github.com/jdziat/unreal-mcp-server/internal/snapshot"
 	"github.com/jdziat/unreal-mcp-server/internal/visual"
-	"github.com/jdziat/unreal-mcp-server/internal/eval"
 )
 
 type instancesIn struct {
@@ -132,7 +132,7 @@ func sceneDigest(b *bridge.Bridge) mcp.ToolHandlerFor[sceneDigestIn, map[string]
 			}
 			var r struct {
 				Instances []snapshot.Transform `json:"instances"`
-				Truncated bool               `json:"truncated"`
+				Truncated bool                 `json:"truncated"`
 			}
 			if err := json.Unmarshal(raw, &r); err != nil {
 				return nil, nil, err

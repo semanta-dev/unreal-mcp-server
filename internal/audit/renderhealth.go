@@ -3,7 +3,6 @@
 // static render output for ship-config-blind failures.
 package audit
 
-
 const (
 	reasonNoGameDefaultMap      = "GameDefaultMap is empty"
 	reasonGameDefaultMapNotGame = "GameDefaultMap is not a configured game map"

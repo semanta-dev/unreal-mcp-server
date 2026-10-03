@@ -6,7 +6,6 @@ package audit
 import (
 	"math"
 	"sort"
-
 )
 
 const (

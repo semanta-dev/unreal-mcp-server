@@ -3,7 +3,6 @@ package audit
 import (
 	"fmt"
 	"sort"
-
 )
 
 const defaultMaxDeadStretch = 120.0

@@ -7,7 +7,6 @@ package calibration
 import (
 	"fmt"
 	"sort"
-
 )
 
 const (

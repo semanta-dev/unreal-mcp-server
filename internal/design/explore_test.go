@@ -3,7 +3,6 @@ package design
 import (
 	"reflect"
 	"testing"
-
 )
 
 func TestSearchRediscoversPlantedRegime(t *testing.T) {

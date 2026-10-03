@@ -4,7 +4,6 @@ import (
 	"math"
 	"strconv"
 	"testing"
-
 )
 
 func TestUtilizationPolyWorldScaleDiagnostic(t *testing.T) {

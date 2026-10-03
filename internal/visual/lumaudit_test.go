@@ -5,7 +5,6 @@ import (
 	"image/color"
 	"os"
 	"testing"
-
 )
 
 func TestAnalyzeFullyBlackImageFails(t *testing.T) {

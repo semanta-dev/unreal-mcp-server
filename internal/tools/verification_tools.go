@@ -13,10 +13,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
-	"github.com/jdziat/unreal-mcp-server/internal/visual"
+	"github.com/jdziat/unreal-mcp-server/internal/eval"
 	"github.com/jdziat/unreal-mcp-server/internal/logs"
 	"github.com/jdziat/unreal-mcp-server/internal/perf"
-	"github.com/jdziat/unreal-mcp-server/internal/eval"
+	"github.com/jdziat/unreal-mcp-server/internal/visual"
 )
 
 type worldQueryIn struct {

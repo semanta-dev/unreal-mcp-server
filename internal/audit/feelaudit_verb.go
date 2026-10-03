@@ -3,7 +3,6 @@ package audit
 import (
 	"fmt"
 	"math"
-
 )
 
 const inputOnsetThreshold = 0.000001

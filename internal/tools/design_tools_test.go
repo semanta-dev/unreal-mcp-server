@@ -6,8 +6,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/jdziat/unreal-mcp-server/internal/design"
 	"github.com/jdziat/unreal-mcp-server/internal/audit"
+	"github.com/jdziat/unreal-mcp-server/internal/design"
 )
 
 func callDesignTool(t *testing.T, name string, args map[string]any) (*mcp.CallToolResult, error) {

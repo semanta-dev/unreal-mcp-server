@@ -2,7 +2,6 @@ package audit
 
 import (
 	"testing"
-
 )
 
 func TestDecisionAuditMetronomeFails(t *testing.T) {

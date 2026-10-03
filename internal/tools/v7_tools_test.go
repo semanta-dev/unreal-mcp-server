@@ -63,7 +63,7 @@ func TestFailedFrameIndices(t *testing.T) {
 		{ID: "b", Passed: false, Evidence: &eval.Evidence{FrameIndex: 5}},  // failed -> 5
 		{ID: "c", Passed: false, Evidence: &eval.Evidence{FrameIndex: 5}},  // dup -> once
 		{ID: "d", Passed: false, Evidence: &eval.Evidence{FrameIndex: -1}}, // log check -> skip
-		{ID: "e", Passed: false, Evidence: nil},                              // no evidence -> skip
+		{ID: "e", Passed: false, Evidence: nil},                            // no evidence -> skip
 		{ID: "f", Passed: false, Evidence: &eval.Evidence{FrameIndex: 8}},
 	}}
 	got := failedFrameIndices(r)
