@@ -109,16 +109,21 @@ func nodeMatchesProject(n *Node, projectDir string) (bool, string) {
 	want := normalizePath(projectDir)
 	base := strings.ToLower(filepath.Base(strings.TrimRight(strings.ReplaceAll(projectDir, `\`, "/"), "/")))
 	if n.ProjectRoot != "" {
-		got := normalizePath(n.ProjectRoot)
-		if got == want || strings.HasPrefix(got, want) || strings.HasPrefix(want, got) {
+		// The advertised root decides: one directory contains the other on a path-segment
+		// boundary (C:/games/poly must not match C:/games/poly-world). A root that does not
+		// match is another project or checkout, whatever its name says.
+		got := strings.TrimRight(normalizePath(n.ProjectRoot), "/")
+		w := strings.TrimRight(want, "/")
+		if got == w || strings.HasPrefix(got, w+"/") || strings.HasPrefix(w, got+"/") {
 			return true, "project_root path match"
 		}
+		return false, ""
 	}
 	if n.ProjectName != "" && strings.EqualFold(n.ProjectName, base) {
 		return true, "project_name match"
 	}
-	if len(n.Data) > 0 && base != "" && strings.Contains(strings.ToLower(string(n.Data)), base) {
-		return true, "pong contains project dir name"
+	if n.ProjectName == "" && len(n.Data) > 0 && base != "" && strings.Contains(strings.ToLower(string(n.Data)), base) {
+		return true, "pong contains project dir name" // only for pongs without project fields
 	}
 	return false, ""
 }

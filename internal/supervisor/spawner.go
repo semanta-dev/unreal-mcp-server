@@ -55,6 +55,9 @@ type ProcessSpawner struct {
 // Spawn launches an editor for project and returns a ready bridge + its pid +
 // process identity. Satisfies Spawner.
 func (s *ProcessSpawner) Spawn(ctx context.Context, project, token string) (Editor, int, string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, 0, "", err // never launch an editor nobody will wait for
+	}
 	// Write-ahead intent (§6): persist token+project BEFORE Launch so a crash during
 	// bring-up still leaves a reconcilable record (enumeration finds it by token).
 	_ = s.Records.Write(ReattachRecord{Token: token, Project: project})
@@ -129,10 +132,10 @@ func (s *ProcessSpawner) waitAccepting(ctx context.Context, sess *uexec.Session,
 				// not aged out yet (found live, P7).
 				if raw, perr := br.Call(dctx, "editor_status", map[string]any{}); perr == nil {
 					got := statusPID(raw)
-					if got == pid {
+					switch identifyNode(got, pid) {
+					case nodeIsOurs:
 						return nil
-					}
-					if got != 0 { // 0: no pid reported yet — retry, never accept unverified
+					case nodeIsForeign:
 						s.logger().Warn("discovered editor is not the one launched; excluding it",
 							"node_id", node.ID, "its_pid", got, "launched_pid", pid)
 						sess.ExcludeNode(node.ID)
@@ -160,6 +163,26 @@ var foreignEditors = func(uproject string) []int {
 		}
 	}
 	return out
+}
+
+type nodeIdentity int
+
+const (
+	nodeUnverified nodeIdentity = iota // no pid reported yet: retry, never accept unverified
+	nodeIsOurs
+	nodeIsForeign
+)
+
+// identifyNode decides from the pid an editor reports whether it is the one launched.
+func identifyNode(reported, launched int) nodeIdentity {
+	switch {
+	case reported == 0:
+		return nodeUnverified
+	case reported == launched:
+		return nodeIsOurs
+	default:
+		return nodeIsForeign
+	}
 }
 
 // statusPID reads editor_pid from an editor_status result (0 when absent).

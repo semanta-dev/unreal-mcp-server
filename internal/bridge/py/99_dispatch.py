@@ -9,6 +9,7 @@ _OPS = {
     "actor_call": _op_actor_call,
     "asset_create": _op_asset_create,
     "pie_exec": _op_pie_exec,  # playtest/scenario beats until P5d moves them to actor_call
+    "pie_preflight": _op_pie_preflight,
     "pie_start": _op_pie_start,
     "packages_state": _op_packages_state,
     "quit_editor": _op_quit_editor,

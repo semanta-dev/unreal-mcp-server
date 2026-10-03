@@ -31,3 +31,31 @@ func TestSpawnRefusesNextToAForeignEditor(t *testing.T) {
 		t.Fatalf("the write-ahead intent must be removed: %+v", recs)
 	}
 }
+
+// Gate findings (P7): a spawn binds only the editor it launched; a reply without a pid
+// is never accepted unverified.
+func TestIdentifyNode(t *testing.T) {
+	for _, c := range []struct {
+		reported, launched int
+		want               nodeIdentity
+	}{{4242, 4242, nodeIsOurs}, {999, 4242, nodeIsForeign}, {0, 4242, nodeUnverified}} {
+		if got := identifyNode(c.reported, c.launched); got != c.want {
+			t.Errorf("identifyNode(%d, %d) = %v, want %v", c.reported, c.launched, got, c.want)
+		}
+	}
+	if statusPID([]byte(`{"editor_pid": 77}`)) != 77 || statusPID([]byte(`{}`)) != 0 {
+		t.Fatal("statusPID")
+	}
+}
+
+func TestSpawnNeverLaunchesOnACancelledContext(t *testing.T) {
+	old := foreignEditors
+	t.Cleanup(func() { foreignEditors = old })
+	foreignEditors = func(string) []int { t.Fatal("must not get as far as checking for editors"); return nil }
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	s := &ProcessSpawner{Records: NewRecordStore(t.TempDir(), slog.Default()), EngineDir: "unused"}
+	if _, pid, _, err := s.Spawn(ctx, t.TempDir(), "tok"); err == nil || pid != 0 {
+		t.Fatalf("want an error and no launch, got pid=%d err=%v", pid, err)
+	}
+}

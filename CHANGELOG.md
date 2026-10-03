@@ -50,7 +50,7 @@ See [`docs/validation/T4-2026-10-03.md`](docs/validation/T4-2026-10-03.md).
   install sentinel now includes a source digest.
 - `pie op=start` froze the editor (and every later call) behind Unreal's modal "Blueprint Compilation Errors" dialog:
   a plugin pre-flight refuses with the Blueprint list (or `ignore_blueprint_errors=true` plays anyway), and a modal
-  guard cancels that dialog and names any other dialog holding the game thread.
+  guard cancels that dialog; on timeout it lists the editor's other windows without touching them.
 - `build` ran UBT beside an editor that was running but not answering (locked DLLs); it now refuses (Windows).
 - `git op=checkpoint` failed when `.gitignore` already ignored `Saved/`/`Intermediate/`/`DerivedDataCache/`.
 - A class-filtered snapshot diff reported a World Partition actor in an unloaded cell as removed.

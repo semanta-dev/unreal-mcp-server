@@ -63,3 +63,22 @@ func TestExcludingTheCurrentNodeForgetsIt(t *testing.T) {
 		t.Fatalf("nodeID=%q excluded=%v", s.nodeID, s.excluded)
 	}
 }
+
+// Gate finding (P7): with strict selection on in stdio, matching must respect path
+// segments, and a node advertising another root never matches by name or substring.
+func TestNodeMatchesProjectOnSegmentBoundaries(t *testing.T) {
+	poly := &Node{ProjectRoot: "C:/games/poly-world/", ProjectName: "PolyWorld"}
+	if ok, _ := nodeMatchesProject(poly, "C:/games/poly"); ok {
+		t.Fatal("C:/games/poly must not match C:/games/poly-world")
+	}
+	if ok, _ := nodeMatchesProject(poly, `c:\games\poly-world`); !ok {
+		t.Fatal("same root with other separators/case should match")
+	}
+	if ok, _ := nodeMatchesProject(poly, "C:/games/poly-world/PolyWorld"); !ok {
+		t.Fatal("a project dir inside the advertised root should match")
+	}
+	other := &Node{ProjectRoot: "D:/checkout2/PolyWorld/", ProjectName: "PolyWorld", Data: []byte(`{"x":"polyworld"}`)}
+	if ok, _ := nodeMatchesProject(other, "C:/games/PolyWorld"); ok {
+		t.Fatal("another checkout with the same name must not match")
+	}
+}

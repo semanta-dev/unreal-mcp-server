@@ -313,7 +313,7 @@ def _op_actor_transform(args):
         raise _V2Error("BAD_VALUE", "transform needs location, rotation and/or scale")
     root = actor.get_editor_property("root_component")
     mobility = None
-    if (name == "pie" and root is not None
+    if (name == "pie" and root is not None and (loc is not None or rot is not None)
             and root.get_editor_property("mobility") == unreal.ComponentMobility.STATIC):
         # A Static root ignores moves in a game world: the PIE copy is made Movable
         # (discarded on stop) instead of reporting a move that did not happen.
@@ -326,8 +326,8 @@ def _op_actor_transform(args):
             got = actor.get_actor_location()
             want = _vec(loc, None)
             if max(abs(got.x - want[0]), abs(got.y - want[1]), abs(got.z - want[2])) > 0.5:
-                raise _V2Error("EDITOR_ERROR", "the actor did not move (now at [%g, %g, %g]); it may be attached or "
-                               "constrained; nothing was changed" % (got.x, got.y, got.z))
+                raise _V2Error("EDITOR_ERROR", "the actor did not reach the location; it is now at [%g, %g, %g] (attached "
+                               "or constrained?); rotation and scale were not applied" % (got.x, got.y, got.z))
         if rot is not None:
             r = _vec(rot, None)  # [pitch, yaw, roll] -> Rotator(roll, pitch, yaw)
             actor.set_actor_rotation(unreal.Rotator(r[2], r[0], r[1]), False)

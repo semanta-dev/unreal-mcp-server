@@ -111,7 +111,7 @@ def _recorder_tick(session):
             rel = rec["file_prefix"] + ("f%05d.png" % idx)
             world = _pick_world(rec["world"])
             if rec["source"] == "pie_highres":
-                # HighResShot writes asynchronously to Saved/Screenshots/<rel>;
+                # HighResShot writes asynchronously to the absolute session path;
                 # Go tolerates a not-yet-flushed final frame (skips absent files).
                 unreal.AutomationLibrary.take_high_res_screenshot(rec["width"], rec["height"], rec["dir"] + rel)
             else:

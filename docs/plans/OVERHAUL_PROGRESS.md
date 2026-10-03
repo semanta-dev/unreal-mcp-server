@@ -952,7 +952,8 @@ the daemon takes toolsets only from `.umcp.json`.
 - T4 ran on scratch copies of both projects with their own multicast group; report:
   [`../validation/T4-2026-10-03.md`](../validation/T4-2026-10-03.md). Every checklist item passes live, except item
   7's nested-repository case (T1 only). Seventeen defect groups (about two dozen defects) that the emulator could not
-  show were fixed; all but the thumbnail lighting fix have regression tests (several model engine behaviour in the
+  show were fixed; all but two (thumbnail lighting, the pre-flight's garbage collection — live only) have regression
+  tests (several model engine behaviour in the
   fakes: the editor's sticky command channel, `ARFilter`'s constructor-only fields, the enum's Python name, Static
   mobility in game worlds, the missing `PlayerController.console_command`).
 - Final gate round (three reviewers, B / C+ / B+) and its fixes: an ended session's cold start leased forever,

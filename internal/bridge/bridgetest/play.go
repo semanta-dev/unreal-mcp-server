@@ -24,6 +24,7 @@ func (w *World) Move(label string, loc [3]float64) {
 }
 
 func (w *World) installPlay(e *Emulator) {
+	e.Handle("pie_preflight", func(map[string]any) (any, *OpError) { return map[string]any{}, nil })
 	e.Handle("pie_start", func(map[string]any) (any, *OpError) {
 		w.StartPIE()
 		return map[string]any{"pie": "starting"}, nil

@@ -83,13 +83,10 @@ def _op_asset_tags(args):
     # and get_asset_by_object_path cannot take a path built from a string in 5.7 Python.
     pkg, obj = path.rsplit(".", 1)
     data = None
-    try:
-        for ad in ar.get_assets_by_package_name(pkg) or []:
-            if str(ad.get_editor_property("asset_name")) == obj:
-                data = ad
-                break
-    except Exception:
-        data = None
+    for ad in ar.get_assets_by_package_name(pkg) or []:  # a registry failure propagates
+        if str(ad.get_editor_property("asset_name")) == obj:
+            data = ad
+            break
     if not data or not data.is_valid():
         return {"error": "asset not found: " + str(path), "code": "ASSET_NOT_FOUND"}
     tags = {}

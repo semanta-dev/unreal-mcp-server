@@ -87,6 +87,7 @@ var PyOps = map[string]PyOp{
 	"scene_prune":         {Tier: Destructive, Note: "destroys this scene's tagged actors absent from the spec"},
 	"snapshot_actors":     {Tier: ReadOnly},
 	"snapshot_restore":    {Tier: Mutating, Note: "moves existing actors back (one undo step) and saves map packages"},
+	"pie_preflight":       {Tier: Ephemeral}, // compiles dirty Blueprints in memory; saves nothing
 	"pie_start":           {Tier: Ephemeral},
 	"packages_state":      {Tier: ReadOnly},
 	"quit_editor":         {Tier: Mutating, Note: "graceful editor exit; refuses (PRECONDITION) while anything is unsaved, so nothing is lost"},

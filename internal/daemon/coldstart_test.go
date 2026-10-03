@@ -138,3 +138,14 @@ func TestColdStartsOfOneProjectAreSerialized(t *testing.T) {
 		t.Fatalf("two editors, launched one at a time: max in flight=%d spawned=%d", maxInFlight, sp.spawned())
 	}
 }
+
+// Gate finding (P7): a spawn waiting on the launch lock must not launch an editor after
+// the daemon shut down; restart relaunches take the same lock.
+func TestNoSpawnAfterRouterClose(t *testing.T) {
+	dm := newTestDaemon()
+	sp := dm.spawner.(*wireFakeSpawner)
+	dm.Router.Close()
+	if _, _, _, err := dm.Router.SpawnSerialized(context.Background(), "/A", "tok"); err == nil || sp.spawned() != 0 {
+		t.Fatalf("want an error and no launch after Close: err=%v spawned=%d", err, sp.spawned())
+	}
+}

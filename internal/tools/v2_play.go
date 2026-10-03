@@ -65,7 +65,7 @@ type pieIn struct {
 
 func pieSpec() *spec.Spec {
 	ops := []spec.OpSpec{
-		{Name: "start", Summary: "start Play In Editor (or Simulate)", Tier: spec.Ephemeral, Idempotent: true, Rejects: []string{"key", "action", "duration_s"}, Reaches: []string{"pie_start", "editor_ping"}},
+		{Name: "start", Summary: "start Play In Editor (or Simulate)", Tier: spec.Ephemeral, Idempotent: true, Rejects: []string{"key", "action", "duration_s"}, Timeout: sync28, Reaches: []string{"pie_preflight", "pie_start", "editor_ping"}},
 		{Name: "stop", Summary: "stop PIE (game-world changes are discarded)", Tier: spec.Ephemeral, Idempotent: true, Rejects: []string{"simulate", "ignore_blueprint_errors", "key", "action", "duration_s"}, Reaches: []string{"pie_stop", "editor_ping"}},
 		{Name: "input", Summary: "inject a key/button into the running game", Tier: spec.Ephemeral, Required: []string{"key"}, Rejects: []string{"simulate", "ignore_blueprint_errors", "wait"}, Reaches: []string{"pie_input"}, Needs: []string{"pie", "plugin"}},
 	}
@@ -90,7 +90,22 @@ func pieHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	}
 	want := c.Op.Name == "start"
 	py := map[bool]string{true: "pie_start", false: "pie_stop"}[want]
-	out, err := v2Op(ctx, c, py, pick(c.Args, "simulate", "ignore_blueprint_errors"))
+	var pre map[string]any
+	if want {
+		var perr error
+		if pre, perr = v2Op(ctx, c, "pie_preflight", pick(c.Args, "ignore_blueprint_errors")); perr != nil {
+			if e := envelope.Classify(perr, c.Op.Tier > spec.ReadOnly); e.Details["blueprints"] != nil {
+				return nil, e.WithHint("fix them (the editor log names the errors), or pass ignore_blueprint_errors=true to play anyway")
+			}
+			return nil, perr // PIE was not requested
+		}
+	}
+	out, err := v2Op(ctx, c, py, pick(c.Args, "simulate"))
+	for k, v := range pre {
+		if out != nil {
+			out[k] = v
+		}
+	}
 	if err != nil {
 		// v2Op returns the bridge's error; the envelope is built here so the hint lands.
 		if e := envelope.Classify(err, c.Op.Tier > spec.ReadOnly); e.Details["blueprints"] != nil {
@@ -913,7 +928,7 @@ func captureClear(c *spec.Call, in captureIn) (*spec.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	shots := filepath.Join(filepath.Dir(filepath.Dir(root)), "Screenshots") // Saved/Screenshots (pie_highres frames)
+	shots := filepath.Join(filepath.Dir(filepath.Dir(root)), "Screenshots") // Saved/Screenshots: pie_highres frames of builds before P7
 	var targets []string
 	if in.Session != "" {
 		targets = append(targets, filepath.Join(root, in.Session))
@@ -1216,9 +1231,9 @@ func audioSpec() *spec.Spec {
 	}
 }
 
-// awaitShot finds the file HighResShot actually wrote for `want`: UE puts a bare name
-// under GameScreenshotSaveDirectory (Saved/Screenshots/<Platform>/) and may add a
-// suffix, so look for <stem>*.png in the directory and its subdirectories.
+// awaitShot finds the file HighResShot actually wrote for `want` (an absolute path from
+// the companion): it may add a suffix, so look for <stem>*.png in the directory and
+// its subdirectories.
 func awaitShot(want string, wait time.Duration) string {
 	dir, stem := filepath.Dir(want), strings.TrimSuffix(filepath.Base(want), ".png")
 	deadline := time.Now().Add(wait)

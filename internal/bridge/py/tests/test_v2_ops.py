@@ -123,8 +123,10 @@ def test_pie_transform_of_a_static_actor_moves_its_pie_copy(v2, ue):
 def test_transform_that_does_not_land_is_an_error(v2, ue):
     a = ue.add_actor("/Script/Engine.Actor", "Stuck")
     a.set_actor_location = lambda v, sweep, teleport: False  # e.g. attached/constrained
-    res = err(v2, "actor_transform", {"world": "editor", "actor": "Stuck", "location": [9, 9, 9]})
-    assert res["code"] == "EDITOR_ERROR" and "did not move" in res["error"]
+    res = err(v2, "actor_transform", {"world": "editor", "actor": "Stuck", "location": [9, 9, 9],
+                                      "rotation": [0, 90, 0]})
+    assert res["code"] == "EDITOR_ERROR" and "did not reach" in res["error"]
+    assert (a.rot.pitch, a.rot.yaw, a.rot.roll) == (0, 0, 0)  # rotation not applied after a failed move
 
 
 def test_set_properties_all_failing_is_an_error(v2, ue):

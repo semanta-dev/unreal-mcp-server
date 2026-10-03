@@ -60,24 +60,32 @@ def _pie_blueprint_preflight(acknowledge):
     return [str(p) for p in errored], compiled
 
 
-def _op_pie_start(args):
+def _op_pie_preflight(args):
+    """Its own op (before pie_start): a slow compile that times out never leaves PIE
+    queued behind it."""
     if _pie_running():
-        return {"pie": True, "already_running": True}
+        return {}
     ignore = bool(args.get("ignore_blueprint_errors"))
     pre = _pie_blueprint_preflight(ignore)
-    errored, compiled = pre if pre is not None else (None, None)
+    if pre is None:
+        return {"blueprint_preflight": "unavailable (UnrealMCP plugin missing or older)"}
+    errored, compiled = pre
     if errored and not ignore:
         raise _V2Error("PRECONDITION", "%d Blueprint(s) have compile errors; PIE would stop at a modal dialog"
                        % len(errored), blueprints=errored)
-    _op_start_play(args)
-    out = {"pie": "starting", "simulate": bool(args.get("simulate")), "editor_pid": os.getpid()}
+    out = {}
     if errored:
         out["blueprint_errors_ignored"] = errored
     if compiled:
         out["blueprints_compiled"] = compiled
-    if errored is None:
-        out["blueprint_preflight"] = "unavailable (UnrealMCP plugin missing or older)"
     return out
+
+
+def _op_pie_start(args):
+    if _pie_running():
+        return {"pie": True, "already_running": True}
+    _op_start_play(args)
+    return {"pie": "starting", "simulate": bool(args.get("simulate")), "editor_pid": os.getpid()}
 
 
 def _op_pie_stop(args):

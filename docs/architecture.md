@@ -116,8 +116,9 @@ access token in its fragment; tools never return it.
   refuses while the project's editor runs but does not answer (Windows).
 - **Project binding**: a stdio server with `-project` selects nodes strictly (never another project's editor); the
   daemon's spawner additionally excludes nodes known before its launch and any whose editor reports another pid.
-- **Server-owned outputs**: screenshots, captures, renders, thumbnails and audio go under `Saved/MCP` (HighResShots
-  are given absolute names there); caller-supplied names are validated.
+- **Server-owned outputs**: captures, renders, thumbnails, PIE screenshots and audio go under `Saved/MCP` (HighResShots
+  are given absolute names there); `screenshot op=viewport` writes under `Saved/Screenshots`; caller-supplied names are
+  validated.
 
 ## Package map
 

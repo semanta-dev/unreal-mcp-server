@@ -112,9 +112,14 @@ func (r *Router) Attach(ctx context.Context, sessionID, project string) (instanc
 			r.mu.Unlock()
 			return lease.ID, nil
 		}
-		if q := r.abandoned[key]; len(q) > 0 {
-			p, r.abandoned[key] = q[0], q[1:] // adopt a start an ended session left
-		} else {
+		for len(r.abandoned[key]) > 0 && p == nil {
+			q := r.abandoned[key]
+			r.abandoned[key] = q[1:]
+			if !isDone(q[0]) {
+				p = q[0] // adopt a start an ended session left
+			}
+		}
+		if p == nil {
 			p = &pendingSpawn{project: project, done: make(chan struct{})}
 			go r.spawnFor(p)
 		}
@@ -163,15 +168,16 @@ func (r *Router) launchLock(key string) *sync.Mutex {
 // spawnFor runs one cold start and leases the editor to whichever session holds the
 // start when it is ready; with none (ended, not adopted) it stays warm and unleased.
 func (r *Router) spawnFor(p *pendingSpawn) {
-	defer close(p.done)
 	key := session.ProjectKey(p.project)
-	lm := r.launchLock(key)
-	lm.Lock()
 	token := r.newToken()
-	ed, pid, identity, serr := r.spawner.Spawn(r.life, p.project, token)
-	lm.Unlock()
+	ed, pid, identity, serr := r.SpawnSerialized(r.life, p.project, token)
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	defer func() {
+		// done closes while r.mu is held: Release never sees a finished start as
+		// in flight (it would queue it for adoption after its cleanup ran).
+		close(p.done)
+		r.mu.Unlock()
+	}()
 	r.dropAbandonedLocked(key, p)
 	if serr != nil {
 		p.err = serr
@@ -200,6 +206,21 @@ func (r *Router) spawnFor(p *pendingSpawn) {
 	}
 	r.bindings[p.session] = lease.ID
 	p.id = lease.ID
+}
+
+// SpawnSerialized launches an editor for project under the project's launch lock (cold
+// starts and restart relaunches alike), and never after the router was closed.
+func (r *Router) SpawnSerialized(ctx context.Context, project, token string) (supervisor.Editor, int, string, error) {
+	lm := r.launchLock(session.ProjectKey(project))
+	lm.Lock()
+	defer lm.Unlock()
+	if err := r.life.Err(); err != nil {
+		return nil, 0, "", fmt.Errorf("daemon shutting down: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, 0, "", err
+	}
+	return r.spawner.Spawn(ctx, project, token)
 }
 
 func (r *Router) dropAbandonedLocked(key string, p *pendingSpawn) {

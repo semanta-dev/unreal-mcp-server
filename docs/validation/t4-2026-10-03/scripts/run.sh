@@ -1,4 +1,5 @@
 #!/bin/bash
+# As used on the original machine: the paths (scratchpad, engine, scratch projects) are local to it.
 # run.sh <aesir|PolyWorld> <calls.jsonl> [extra server flags]
 P=$1; F=$2; shift 2
 R=/c/Users/jorda/code/games/unreal-mcp-server

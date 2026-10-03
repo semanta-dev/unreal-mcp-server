@@ -179,7 +179,7 @@ func (dm *Daemon) RestartLease(ctx context.Context, sessionID string, plan sessi
 	// meanwhile, so a cancelled restart never strands the session without an editor.
 	up, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
 	defer cancel()
-	newEd, newPID, newIdentity, serr := dm.spawner.Spawn(up, info.Project, info.Token)
+	newEd, newPID, newIdentity, serr := dm.Router.SpawnSerialized(up, info.Project, info.Token)
 	if serr != nil {
 		dm.Router.Teardown(info.ID)
 		return errors.Join(buildErr, fmt.Errorf("relaunch after restart failed: %w", serr))

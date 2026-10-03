@@ -204,20 +204,21 @@ def _auth(ue, errored):
     return calls
 
 
-def test_pie_start_refuses_blueprint_errors_before_the_modal(v2, ue):
+def test_pie_preflight_refuses_blueprint_errors_before_the_modal(v2, ue):
     calls = _auth(ue, ["/Game/BP_Bad.BP_Bad"])
-    res = err(v2, "pie_start", {})
+    res = err(v2, "pie_preflight", {})
     assert res["code"] == "PRECONDITION" and res["details"]["blueprints"] == ["/Game/BP_Bad.BP_Bad"]
     assert calls == [False] and ue.pie_requests == []
 
 
-def test_pie_start_can_acknowledge_blueprint_errors(v2, ue):
+def test_pie_preflight_can_acknowledge_blueprint_errors(v2, ue):
     calls = _auth(ue, ["/Game/BP_Bad.BP_Bad"])
-    res = ok(v2, "pie_start", {"ignore_blueprint_errors": True})
-    assert calls == [True] and res["blueprint_errors_ignored"] == ["/Game/BP_Bad.BP_Bad"] and res["editor_pid"] > 0
+    res = ok(v2, "pie_preflight", {"ignore_blueprint_errors": True})
+    assert calls == [True] and res["blueprint_errors_ignored"] == ["/Game/BP_Bad.BP_Bad"]
+    assert ok(v2, "pie_start", {})["editor_pid"] > 0  # the start itself never compiles
 
 
-def test_pie_start_reports_what_the_preflight_compiled(v2, ue):
+def test_pie_preflight_reports_what_it_compiled(v2, ue):
     from fakeunreal import _Subsystem
 
     class Auth:
@@ -226,11 +227,11 @@ def test_pie_start_reports_what_the_preflight_compiled(v2, ue):
 
     ue.MCPAuthoringSubsystem = Auth
     ue.get_editor_subsystem = lambda which: Auth() if which is Auth else _Subsystem(ue)
-    assert ok(v2, "pie_start", {})["blueprints_compiled"] == 3
+    assert ok(v2, "pie_preflight", {})["blueprints_compiled"] == 3
 
 
-def test_pie_start_without_the_plugin_says_so(v2, ue):
-    res = ok(v2, "pie_start", {})
+def test_pie_preflight_without_the_plugin_says_so(v2, ue):
+    res = ok(v2, "pie_preflight", {})
     assert res["blueprint_preflight"].startswith("unavailable")
 
 
@@ -265,3 +266,18 @@ def test_null_args_are_no_args(v2, ue):
         sys.stdout = old
     env = json.loads(buf.getvalue().split("__MCP_JSON__", 1)[1])
     assert env["ok"], env
+
+
+def test_widget_render_with_an_older_plugin_is_plugin_missing(v2, ue):
+    # Found live (P7): a project plugin without CaptureWidget raised a Python error.
+    from fakeunreal import _Subsystem
+    ue.UserWidget = ue.add_class("UserWidget", "/Script/UMG.UserWidget")
+    ue.assets["/Game/UI/WBP_X"] = ue.Blueprint(ue.add_class("WBP_X_C", "/Game/UI/WBP_X.WBP_X_C", ue.UserWidget))
+
+    class OldAuth:  # no capture_widget
+        pass
+
+    ue.MCPAuthoringSubsystem = OldAuth
+    ue.get_editor_subsystem = lambda which: OldAuth() if which is OldAuth else _Subsystem(ue)
+    res = err(v2, "widget_render", {"widget_class": "/Game/UI/WBP_X"})
+    assert res["code"] == "PLUGIN_MISSING" and "CaptureWidget" in res["error"]
