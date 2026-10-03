@@ -149,3 +149,38 @@ func TestNoSpawnAfterRouterClose(t *testing.T) {
 		t.Fatalf("want an error and no launch after Close: err=%v spawned=%d", err, sp.spawned())
 	}
 }
+
+// Gate finding (P7): a finished start left in the adoption queue must never be handed
+// to a new session (it would report "attached" without a binding).
+func TestFinishedAbandonedStartIsNotAdopted(t *testing.T) {
+	dm := newTestDaemon()
+	sp := dm.spawner.(*wireFakeSpawner)
+	stale := &pendingSpawn{project: "/A", done: make(chan struct{}), id: "ed-stale"}
+	close(stale.done)
+	key := session.ProjectKey("/A")
+	dm.Router.mu.Lock()
+	dm.Router.abandoned[key] = append(dm.Router.abandoned[key], stale)
+	dm.Router.mu.Unlock()
+	id, err := dm.Router.Attach(context.Background(), "next", "/A")
+	if err != nil || id == "ed-stale" || sp.spawned() != 1 {
+		t.Fatalf("want a fresh start, got id=%q err=%v spawned=%d", id, err, sp.spawned())
+	}
+	if bound, _ := dm.Router.InstanceFor("next"); bound != id {
+		t.Fatalf("the session must be bound to what Attach returned: bound=%q id=%q", bound, id)
+	}
+}
+
+// A launch waiting behind another launch of the project gives up with its context.
+func TestWaitingLaunchIsCancellable(t *testing.T) {
+	dm := newTestDaemon()
+	sp := dm.spawner.(*wireFakeSpawner)
+	sp.gate = make(chan struct{})
+	defer close(sp.gate)
+	go func() { _, _, _, _ = dm.Router.SpawnSerialized(context.Background(), "/A", "t1") }()
+	time.Sleep(20 * time.Millisecond) // the first launch holds the project's slot
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, _, _, err := dm.Router.SpawnSerialized(ctx, "/A", "t2"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("want the wait to end with the context, got %v", err)
+	}
+}

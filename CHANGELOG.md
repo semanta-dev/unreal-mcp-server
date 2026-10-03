@@ -59,10 +59,14 @@ See [`docs/validation/T4-2026-10-03.md`](docs/validation/T4-2026-10-03.md).
   (now refused on Windows, and spawns bind only the editor they launched); during a lease restart the session lost its
   project and jobs.
 - A stdio server with `-project` could bind another project's editor while its own relaunched (after a build); node
-  selection is now strict whenever a project is set.
+  selection is now strict whenever a project is set, and matches on whole path segments: an editor advertising a
+  different project root (another checkout, worktree, `subst` or junction path) is not bound — point `-project` at
+  the directory the editor opened.
 - Daemon gate fixes: a session that ended mid cold start no longer keeps the editor leased forever; abandoned starts
-  are adopted by the next session; cold starts of one project are serialized; restarts refuse overlapping
-  build/revert/lifecycle/headless work.
+  are adopted by the next session; cold starts and restart relaunches of one project are serialized (and give up
+  with their context or daemon shutdown); restarts refuse overlapping build/revert/lifecycle/headless work.
+- `pie op=start` runs the Blueprint pre-flight as its own call before requesting PIE; when it uses most of the call,
+  the result is `pie: "requested"` rather than a timeout.
 - Also: PIE transforms of Static actors, asset search (`ARFilter`), registry tags by package path (and during PIE),
   HighResShots written to absolute paths, stale PIE screenshots, the `game_scene` capture enum, thumbnail lighting,
   widget render class resolution, PIE console commands, null op arguments in playtest beats, garbage collection after

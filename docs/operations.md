@@ -66,7 +66,9 @@ one, `desktop_input` answers it). A timed-out call never wedges the channel: the
 while a dialog is open). A full `build` refuses while the project's editor runs but does not answer (Windows).
 
 **Project binding.** With `-project`, the server only binds an editor of that project — never another project's
-editor, even while its own is relaunching (calls fail with `EDITOR_UNREACHABLE` until it is back).
+editor, even while its own is relaunching (calls fail with `EDITOR_UNREACHABLE` until it is back). The editor's
+project root must be that directory (or contain it): an editor opened from another checkout, worktree or a
+`subst`/junction path is not found — point `-project` at the directory the editor opened.
 
 **One Go peer per editor.** The editor's remote-execution node holds a single command connection: two clients on one
 editor steal it from each other (`EDITOR_BUSY`; `editor_lifecycle op=reclaim` takes it back explicitly). Give each

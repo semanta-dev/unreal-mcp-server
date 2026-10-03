@@ -270,3 +270,20 @@ func TestFullBuildRefusesWhileTheProjectsEditorRunsUnanswering(t *testing.T) {
 		t.Fatalf("nothing may be killed or launched: killed=%v launched=%v", sim.killed, sim.launched)
 	}
 }
+
+// Gate finding (P7): a pre-flight that uses most of the call leaves PIE requested; the
+// call says so instead of timing out and inviting a retry.
+func TestPieStartAfterASlowPreflightReportsRequested(t *testing.T) {
+	old := pieMinPoll
+	pieMinPoll = time.Hour // every deadline counts as "used up"
+	t.Cleanup(func() { pieMinPoll = old })
+	sim := &editorSim{dirty: [][]string{{}}}
+	res, err := callToolDeps(t, lifecycleDeps(t, sim), "pie", map[string]any{"op": "start"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := structuredMap(t, res)
+	if out["pie"] != "requested" || !sim.called("pie_preflight") || !sim.called("pie_start") {
+		t.Fatalf("want pie=requested after preflight+start, got %v (ops %v)", out, sim.ops)
+	}
+}

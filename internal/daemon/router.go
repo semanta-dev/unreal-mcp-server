@@ -40,7 +40,7 @@ type Router struct {
 	editors   map[string]supervisor.Editor // instanceID -> its bridge
 	pending   map[string]*pendingSpawn     // sessionID -> its editor's cold start in progress
 	abandoned map[string][]*pendingSpawn   // project key -> starts whose session ended (adoptable)
-	launchMu  map[string]*sync.Mutex       // project key -> serializes launches (see launchLock)
+	launchMu  map[string]chan struct{}     // project key -> 1-slot semaphore serializing launches
 	life      context.Context              // cancelled by Close: no spawn outlives the daemon
 	stop      context.CancelFunc
 	seq       int
@@ -71,7 +71,7 @@ func NewRouter(pool *supervisor.Pool, spawner supervisor.Spawner, newToken func(
 		pool: pool, spawner: spawner, newToken: newToken,
 		bindings: map[string]string{}, editors: map[string]supervisor.Editor{},
 		pending: map[string]*pendingSpawn{}, abandoned: map[string][]*pendingSpawn{},
-		launchMu: map[string]*sync.Mutex{}, life: life, stop: stop,
+		launchMu: map[string]chan struct{}{}, life: life, stop: stop,
 	}
 }
 
@@ -154,12 +154,12 @@ func isDone(p *pendingSpawn) bool {
 // launchLock serializes cold starts of one project: a spawner treats every node it
 // saw before its launch as not its own, so a second start must begin after the first
 // editor is known, or it could probe (and take over) that editor's channel.
-func (r *Router) launchLock(key string) *sync.Mutex {
+func (r *Router) launchLock(key string) chan struct{} {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	m := r.launchMu[key]
 	if m == nil {
-		m = &sync.Mutex{}
+		m = make(chan struct{}, 1)
 		r.launchMu[key] = m
 	}
 	return m
@@ -212,8 +212,14 @@ func (r *Router) spawnFor(p *pendingSpawn) {
 // starts and restart relaunches alike), and never after the router was closed.
 func (r *Router) SpawnSerialized(ctx context.Context, project, token string) (supervisor.Editor, int, string, error) {
 	lm := r.launchLock(session.ProjectKey(project))
-	lm.Lock()
-	defer lm.Unlock()
+	select { // waiting for another launch of the project is cancellable
+	case lm <- struct{}{}:
+	case <-ctx.Done():
+		return nil, 0, "", ctx.Err()
+	case <-r.life.Done():
+		return nil, 0, "", fmt.Errorf("daemon shutting down: %w", r.life.Err())
+	}
+	defer func() { <-lm }()
 	if err := r.life.Err(); err != nil {
 		return nil, 0, "", fmt.Errorf("daemon shutting down: %w", err)
 	}

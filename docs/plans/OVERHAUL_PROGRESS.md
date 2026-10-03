@@ -962,3 +962,8 @@ the daemon takes toolsets only from `.umcp.json`.
   pre-flight's missing garbage collection, docs accuracy. Re-verification live found one more: a stdio server with
   `-project` bound another project's editor while its own relaunched (node selection is now strict).
 - Not done in P7: the cockpit approval UI wiring (`require` still fails closed), the paid eval (needs approval).
+- Gate round 2 (A- / A- / A-, then A / A after fixes): `pie_preflight` split out of `pie_start` (a slow compile
+  never leaves PIE queued; a pre-flight that uses the call returns `pie: "requested"`), a finished start closes under
+  the router lock and is never adopted, restart relaunches share the per-project launch slot (cancellable),
+  segment-boundary project matching (a different checkout no longer binds), docs on all of it. Row 10 and project
+  binding re-run live after the round-2 build.

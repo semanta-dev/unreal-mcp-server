@@ -79,6 +79,9 @@ func pieSpec() *spec.Spec {
 	}
 }
 
+// pieMinPoll is the least time worth polling for PIE to start (a var for tests).
+var pieMinPoll = 5 * time.Second
+
 func pieHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	var in pieIn
 	if err := c.Decode(&in); err != nil {
@@ -116,6 +119,13 @@ func pieHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	delete(out, "editor_pid")
 	if err != nil || (in.Wait != nil && !*in.Wait) {
 		return &spec.Result{Data: out, Summary: "PIE " + c.Op.Name + " requested"}, err
+	}
+	if dl, ok := ctx.Deadline(); ok && want && time.Until(dl) < pieMinPoll {
+		// A slow pre-flight used the call: PIE is requested, and a timeout here would
+		// only invite a retry of a start that is already under way.
+		out["pie"] = "requested"
+		out["note"] = "the Blueprint pre-flight used most of this call; confirm with editor op=ping (pie)"
+		return &spec.Result{Data: out, Summary: "PIE requested"}, nil
 	}
 	// PIE begins/ends on a later editor tick: poll until the state flips. Each ping is
 	// short so a game thread blocked by a modal dialog is noticed, not waited out.

@@ -114,8 +114,10 @@ access token in its fragment; tools never return it.
   pings; if the editor stops answering, it inspects the editor process's windows (Windows), cancels PIE's
   Blueprint-errors dialog (`WM_CLOSE`) and, on timeout, lists the other windows without touching them. A full build
   refuses while the project's editor runs but does not answer (Windows).
-- **Project binding**: a stdio server with `-project` selects nodes strictly (never another project's editor); the
-  daemon's spawner additionally excludes nodes known before its launch and any whose editor reports another pid.
+- **Project binding**: a stdio server with `-project` selects nodes strictly (never another project's editor),
+  matching the advertised project root on whole path segments — another checkout or a `subst`/junction path of the
+  same project does not match. The daemon's spawner additionally excludes nodes known before its launch and any
+  whose editor reports another pid; launches of one project are serialized.
 - **Server-owned outputs**: captures, renders, thumbnails, PIE screenshots and audio go under `Saved/MCP` (HighResShots
   are given absolute names there); `screenshot op=viewport` writes under `Saved/Screenshots`; caller-supplied names are
   validated.
