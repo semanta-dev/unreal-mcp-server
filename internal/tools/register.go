@@ -66,6 +66,7 @@ func RegisterAll(s *mcp.Server, d Deps) {
 	registerRobustnessTools(s, d)
 	registerHeadlessTools(s, d)
 	registerControlTools(s, d)
+	registerDesktopTools(s, d)
 	registerHUDTools(s, d)
 	registerCockpitTools(s, d)
 }

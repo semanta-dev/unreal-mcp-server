@@ -18,7 +18,8 @@ Claude Code ── stdio ──> unreal-mcp.exe ── UDP/TCP (loopback) ──
                            │                                       (PythonScriptPlugin
   internal/uexec  protocol port  ─────────┘                        remote execution)
   internal/bridge companion-module dispatch (mcp_bridge.py, hot-loaded)
-  internal/tools  58 MCP tools
+  internal/tools  65 MCP tools
+  internal/desktop OS-level screen capture + mouse/keyboard (raw Win32; no editor round-trip)
 ```
 
 - `internal/uexec` — Go port of Epic's remote-execution wire protocol (UDP-multicast
@@ -53,7 +54,7 @@ Registered in the consuming project's `.mcp.json` (see `deploy/`). Key flags/env
 | | `-selftest` | | connect + editor_status round-trip, exit non-zero on failure |
 | | `-version` | | print version and exit |
 
-## Tools (58)
+## Tools (65)
 
 **Parity (16, frozen names):** `editor_status`, `execute_python`, `execute_console_command`,
 `open_level`, `list_actors`, `get_actor`, `spawn_actor`, `delete_actor`, `set_actor_transform`,
@@ -96,6 +97,32 @@ properties — no hardcoded allowlist), `viewport_set`/`viewport_get`, `focus_ac
 
 Pure algorithmic cores are separate, unit-tested Go packages: `internal/{montage,scenespec,framing,
 predicate,rubric}`. See `PLAYTEST_UPGRADE_PLAN.md` for the full design.
+
+### OS-level screen capture & computer control (7) — see the *actual* editor, drive it like a human
+
+These are **OS-level**, not routed through the editor. They capture what is genuinely on screen (the
+Slate UI, panels, the Content Browser, modal dialogs, crash popups, the composited D3D viewport) and
+inject real mouse/keyboard — complementing the in-editor path (`take_screenshot`/`capture_start`/
+`pie_input`), which renders via Python remote exec and only ever sees the 3D scene, never the editor UI.
+
+- `list_windows` — enumerate visible top-level windows (title, pid, handle, on-screen bounds,
+  foreground/minimized) with an optional title filter; use it to find the editor or a dialog.
+- `screen_capture` — PNG of the whole virtual desktop, one monitor, or a region (downscaled to
+  `max_width` for token economy).
+- `window_capture` — PNG of a specific window (auto-detects the Unreal Editor). `method=print`
+  (default) renders it even when **backgrounded/occluded** and never steals focus; `method=screen`
+  blits its on-screen rectangle. Returns the window's screen bounds + a scale factor so image pixels
+  map to `mouse_control` coordinates.
+- `focus_window` — bring a window to the foreground (restoring if minimized).
+- `mouse_control` — real mouse: `move|click|double_click|down|up|drag|scroll`. Coordinates are screen
+  px, or set `window=<title>` to make them relative to that window's top-left (the same origin as
+  `window_capture`'s image), so you can click exactly what you saw.
+- `key_press` — real keyboard shortcuts: a chord (`ctrl+s`, `F5`, `alt+f4`, `escape`) or a sequence.
+- `type_text` — type a literal Unicode string (layout-independent) into the focused control.
+
+Backed by `internal/desktop` (raw Win32 — GDI `BitBlt`/`PrintWindow`, `SendInput`, `EnumWindows`;
+Windows-only, per-monitor-DPI-aware). Pure logic (keymap, downscale, window selection) is unit-tested
+on every platform; the syscall backend is stubbed on non-Windows so the linux CI still builds.
 
 ## Testing
 
