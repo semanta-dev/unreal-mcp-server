@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Tool-selection eval (plan §3.5) run: v2 matches v1 on first-call accuracy and completes every task end to end
+  ([`docs/validation/tooleval/`](docs/validation/tooleval/README.md)); `cmd/tooleval` harness.
+- `toolsets` describes every optional toolset's tools; `python` points at dedicated tools first.
+- `analyze`, `playtest` and `design_audit` resolve project-relative file paths against the project.
+
 ## v2.0.0 — 2026-10-03
 
 A ground-up overhaul (plan: [`docs/plans/OVERHAUL_PLAN.md`](docs/plans/OVERHAUL_PLAN.md); phase-by-phase evidence:

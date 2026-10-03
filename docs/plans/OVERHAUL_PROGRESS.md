@@ -967,3 +967,10 @@ the daemon takes toolsets only from `.umcp.json`.
   the router lock and is never adopted, restart relaunches share the per-project launch slot (cancellable),
   segment-boundary project matching (a different checkout no longer binds), docs on all of it. Row 10 and project
   binding re-run live after the round-2 build.
+
+## §3.5 tool-selection eval (2026-10-03)
+
+Run through the user's Claude router (served by `claude-sonnet-5`): 63 tasks × 3 runs × v1/v2. v2 first tool 97%
+(v1 97%), valid first args 99% (v1 100%), end-to-end 189/189 (95% CI 98–100%) — pass. It found and drove one
+redesign (optional toolsets now listed in the `toolsets` description; `heldout-luminance` 0/3 → 3/3) and a
+project-relative path bug. Report: [`../validation/tooleval/README.md`](../validation/tooleval/README.md).

@@ -47,7 +47,7 @@ Inspect the connected Unreal Editor.
 
 _tier exec_
 
-Run Python in the editor (arbitrary code).
+Run Python in the editor (arbitrary code). Check for a dedicated tool first (toolsets lists the optional ones).
 - run: `code` → captured output; evaluate=true → one expression's value.
 - recipe: run the level-recipe file `path`; clean_slate=true FIRST destroys every actor except WorldSettings; save defaults true.
 
@@ -604,28 +604,28 @@ Film the world: an in-editor recorder saves a frame + state every interval_s.
 
 | param | type | description |
 |---|---|---|
-| `all` | boolean | clear: delete EVERY MCP capture (instead of one session) |
-| `camera_actor` | string | start camera_mode=actor: the actor label to ride |
-| `camera_fov` | number | start source=game_scene: field of view (default 90) |
+| `all` | boolean | clear: delete EVERY MCP capture |
+| `camera_actor` | string | start: actor label to ride (camera_mode=actor) |
+| `camera_fov` | number | game_scene: FOV (default 90) |
 | `camera_mode` | string | start: viewport (default, editor camera) \| fixed \| actor \| player (game_scene POV) — one of: viewport, fixed, actor, player |
 | `cell_height` | integer | start: frame height (default 270) |
 | `cell_width` | integer | start: frame width (default 480) |
 | `cols` | integer | stop/read: contact-sheet columns (default 8 / 6) |
 | `draw_labels` | boolean | stop: stamp each frame's world time |
 | `exclude` | string[] | start: observed property exclude globs |
-| `glob` | string | read: file pattern within the directory (default *) |
+| `glob` | string | read: file glob (default *) |
 | `include` | string[] | start: observed property include globs |
-| `include_ui` | boolean | start source=game_scene: include the HUD (needs a visible window) |
+| `include_ui` | boolean | game_scene: include the HUD (visible window) |
 | `interval_s` | number | start: seconds between frames (default 0.25) |
 | `location` | number[] | start camera_mode=fixed: [x, y, z] |
 | `mark_cells` | integer[] | stop: frame indices to outline in red |
-| `max_frames` | integer | start: auto-stop after this many frames (default 240) |
-| `max_seconds` | number | start: auto-stop after this many seconds (default 60) |
+| `max_frames` | integer | start: stop after N frames (default 240) |
+| `max_seconds` | number | start: stop after N seconds (default 60) |
 | `op` | string | one of: start, status, stop, read, clear |
-| `path` | string | read: a directory of frames on disk instead of a session |
+| `path` | string | read: a frames directory instead of a session |
 | `properties` | string[] | start: exact observed properties |
 | `rotation` | number[] | start camera_mode=fixed: [pitch, yaw, roll] |
-| `session` | string | start: a session id (default generated); status/stop/read/clear: the session |
+| `session` | string | start: id (default generated); else the session |
 | `source` | string | start: scene_capture (default; editor) \| pie_highres (possessed PIE) \| game_scene (PIE, plugin) — one of: scene_capture, pie_highres, game_scene |
 | `track_actors` | string[] | start: actor labels to record per-frame state for |
 | `world` | string | start: editor (default) \| pie — one of: editor, pie |
@@ -889,10 +889,13 @@ Restore the project's files to a git op=checkpoint (umcp/cp/<n> only, else PRECO
 
 _tier ephemeral · offline_
 
-Optional tool groups and what each tool needs.
-- list: toolsets (core always on; daemon, headless, design, ui, desktop, polyworld) and their tools.
-- enable / disable `toolset` for this session.
-- describe `tool`: per op tier, async, needs (editor, pie, plugin, navmesh, project, engine). No `tool`: every enabled tool briefly, the cockpit status, the rollback ladder.
+Optional tool groups: enable one to get its tools.
+- design: design_audit (luminance, style, feel, novelty… audits), design_explore
+- ui: widget_edit (author UMG trees)
+- desktop: desktop_capture, desktop_input (OS screen/input)
+- polyworld: polyworld, polyworld_demolish
+- headless: headless (commandlets, tests)
+ops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|

@@ -787,30 +787,30 @@ func anyVec3(v any) [3]float64 {
 
 type captureIn struct {
 	Op          string    `json:"op" jsonschema:"start | status | stop | read | clear"`
-	Session     string    `json:"session,omitempty" jsonschema:"start: a session id (default generated); status/stop/read/clear: the session"`
+	Session     string    `json:"session,omitempty" jsonschema:"start: id (default generated); else the session"`
 	World       string    `json:"world,omitempty" jsonschema:"start: editor (default) | pie"`
 	Source      string    `json:"source,omitempty" jsonschema:"start: scene_capture (default; editor) | pie_highres (possessed PIE) | game_scene (PIE, plugin)"`
 	IntervalS   float64   `json:"interval_s,omitempty" jsonschema:"start: seconds between frames (default 0.25)"`
 	CellWidth   int       `json:"cell_width,omitempty" jsonschema:"start: frame width (default 480)"`
 	CellHeight  int       `json:"cell_height,omitempty" jsonschema:"start: frame height (default 270)"`
 	CameraMode  string    `json:"camera_mode,omitempty" jsonschema:"start: viewport (default, editor camera) | fixed | actor | player (game_scene POV)"`
-	CameraActor string    `json:"camera_actor,omitempty" jsonschema:"start camera_mode=actor: the actor label to ride"`
-	CameraFov   float64   `json:"camera_fov,omitempty" jsonschema:"start source=game_scene: field of view (default 90)"`
+	CameraActor string    `json:"camera_actor,omitempty" jsonschema:"start: actor label to ride (camera_mode=actor)"`
+	CameraFov   float64   `json:"camera_fov,omitempty" jsonschema:"game_scene: FOV (default 90)"`
 	Location    []float64 `json:"location,omitempty" jsonschema:"start camera_mode=fixed: [x, y, z]"`
 	Rotation    []float64 `json:"rotation,omitempty" jsonschema:"start camera_mode=fixed: [pitch, yaw, roll]"`
 	TrackActors []string  `json:"track_actors,omitempty" jsonschema:"start: actor labels to record per-frame state for"`
-	MaxFrames   int       `json:"max_frames,omitempty" jsonschema:"start: auto-stop after this many frames (default 240)"`
-	MaxSeconds  float64   `json:"max_seconds,omitempty" jsonschema:"start: auto-stop after this many seconds (default 60)"`
+	MaxFrames   int       `json:"max_frames,omitempty" jsonschema:"start: stop after N frames (default 240)"`
+	MaxSeconds  float64   `json:"max_seconds,omitempty" jsonschema:"start: stop after N seconds (default 60)"`
 	Include     []string  `json:"include,omitempty" jsonschema:"start: observed property include globs"`
 	Exclude     []string  `json:"exclude,omitempty" jsonschema:"start: observed property exclude globs"`
 	Properties  []string  `json:"properties,omitempty" jsonschema:"start: exact observed properties"`
-	IncludeUI   bool      `json:"include_ui,omitempty" jsonschema:"start source=game_scene: include the HUD (needs a visible window)"`
+	IncludeUI   bool      `json:"include_ui,omitempty" jsonschema:"game_scene: include the HUD (visible window)"`
 	Cols        int       `json:"cols,omitempty" jsonschema:"stop/read: contact-sheet columns (default 8 / 6)"`
 	DrawLabels  bool      `json:"draw_labels,omitempty" jsonschema:"stop: stamp each frame's world time"`
 	MarkCells   []int     `json:"mark_cells,omitempty" jsonschema:"stop: frame indices to outline in red"`
-	Path        string    `json:"path,omitempty" jsonschema:"read: a directory of frames on disk instead of a session"`
-	Glob        string    `json:"glob,omitempty" jsonschema:"read: file pattern within the directory (default *)"`
-	All         bool      `json:"all,omitempty" jsonschema:"clear: delete EVERY MCP capture (instead of one session)"`
+	Path        string    `json:"path,omitempty" jsonschema:"read: a frames directory instead of a session"`
+	Glob        string    `json:"glob,omitempty" jsonschema:"read: file glob (default *)"`
+	All         bool      `json:"all,omitempty" jsonschema:"clear: delete EVERY MCP capture"`
 }
 
 func captureSpec() *spec.Spec {

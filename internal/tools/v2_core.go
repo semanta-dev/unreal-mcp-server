@@ -225,7 +225,7 @@ func pythonSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "python", Title: "Run Python in the editor", Toolset: spec.Core, Max: sync28, Ops: ops,
-		Description: "Run Python in the editor (arbitrary code).\n- run: `code` → captured output; evaluate=true → one expression's value.\n- recipe: run the level-recipe file `path`; clean_slate=true FIRST destroys every actor except WorldSettings; save defaults true.",
+		Description: "Run Python in the editor (arbitrary code). Check for a dedicated tool first (toolsets lists the optional ones).\n- run: `code` → captured output; evaluate=true → one expression's value.\n- recipe: run the level-recipe file `path`; clean_slate=true FIRST destroys every actor except WorldSettings; save defaults true.",
 		Schema:      spec.SchemaFor[pythonIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces:    []string{"execute_python", "apply_level_recipe"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {

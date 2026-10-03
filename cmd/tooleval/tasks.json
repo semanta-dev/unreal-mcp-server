@@ -756,11 +756,6 @@
    {
     "kind": "answer",
     "text": "100"
-   },
-   {
-    "kind": "called",
-    "tool": "polyworld",
-    "op": "status"
    }
   ],
   "reference": [
@@ -1905,11 +1900,14 @@
   },
   "first_v1": [
    "capture_start",
-   "playtest_capture"
+   "playtest_capture",
+   "editor_state",
+   "editor_status"
   ],
   "first_v2": [
    "capture",
-   "playtest"
+   "playtest",
+   "editor"
   ],
   "success": [
    {
@@ -2978,10 +2976,14 @@
    ]
   },
   "first_v1": [
-   "scene_contact_sheet"
+   "scene_contact_sheet",
+   "get_actor",
+   "find_actors",
+   "list_actors"
   ],
   "first_v2": [
-   "screenshot"
+   "screenshot",
+   "actor_query"
   ],
   "success": [
    {

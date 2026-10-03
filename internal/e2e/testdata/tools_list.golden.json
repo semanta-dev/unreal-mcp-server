@@ -618,15 +618,15 @@
         "additionalProperties": false,
         "properties": {
           "all": {
-            "description": "clear: delete EVERY MCP capture (instead of one session)",
+            "description": "clear: delete EVERY MCP capture",
             "type": "boolean"
           },
           "camera_actor": {
-            "description": "start camera_mode=actor: the actor label to ride",
+            "description": "start: actor label to ride (camera_mode=actor)",
             "type": "string"
           },
           "camera_fov": {
-            "description": "start source=game_scene: field of view (default 90)",
+            "description": "game_scene: FOV (default 90)",
             "type": "number"
           },
           "camera_mode": {
@@ -663,7 +663,7 @@
             "type": "array"
           },
           "glob": {
-            "description": "read: file pattern within the directory (default *)",
+            "description": "read: file glob (default *)",
             "type": "string"
           },
           "include": {
@@ -674,7 +674,7 @@
             "type": "array"
           },
           "include_ui": {
-            "description": "start source=game_scene: include the HUD (needs a visible window)",
+            "description": "game_scene: include the HUD (visible window)",
             "type": "boolean"
           },
           "interval_s": {
@@ -696,11 +696,11 @@
             "type": "array"
           },
           "max_frames": {
-            "description": "start: auto-stop after this many frames (default 240)",
+            "description": "start: stop after N frames (default 240)",
             "type": "integer"
           },
           "max_seconds": {
-            "description": "start: auto-stop after this many seconds (default 60)",
+            "description": "start: stop after N seconds (default 60)",
             "type": "number"
           },
           "op": {
@@ -714,7 +714,7 @@
             "type": "string"
           },
           "path": {
-            "description": "read: a directory of frames on disk instead of a session",
+            "description": "read: a frames directory instead of a session",
             "type": "string"
           },
           "properties": {
@@ -732,7 +732,7 @@
             "type": "array"
           },
           "session": {
-            "description": "start: a session id (default generated); status/stop/read/clear: the session",
+            "description": "start: id (default generated); else the session",
             "type": "string"
           },
           "source": {
@@ -2018,7 +2018,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Run Python in the editor (arbitrary code).\n- run: `code` → captured output; evaluate=true → one expression's value.\n- recipe: run the level-recipe file `path`; clean_slate=true FIRST destroys every actor except WorldSettings; save defaults true.",
+      "description": "Run Python in the editor (arbitrary code). Check for a dedicated tool first (toolsets lists the optional ones).\n- run: `code` → captured output; evaluate=true → one expression's value.\n- recipe: run the level-recipe file `path`; clean_slate=true FIRST destroys every actor except WorldSettings; save defaults true.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2435,7 +2435,7 @@
         "idempotentHint": true,
         "openWorldHint": false
       },
-      "description": "Optional tool groups and what each tool needs.\n- list: toolsets (core always on; daemon, headless, design, ui, desktop, polyworld) and their tools.\n- enable / disable `toolset` for this session.\n- describe `tool`: per op tier, async, needs (editor, pie, plugin, navmesh, project, engine). No `tool`: every enabled tool briefly, the cockpit status, the rollback ladder.",
+      "description": "Optional tool groups: enable one to get its tools.\n- design: design_audit (luminance, style, feel, novelty… audits), design_explore\n- ui: widget_edit (author UMG trees)\n- desktop: desktop_capture, desktop_input (OS screen/input)\n- polyworld: polyworld, polyworld_demolish\n- headless: headless (commandlets, tests)\nops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

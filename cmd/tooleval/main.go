@@ -51,6 +51,7 @@ type runResult struct {
 	Turns                int        `json:"turns"`
 	Answer               string     `json:"answer,omitempty"`
 	Usage                usage      `json:"usage"`
+	Served               []string   `json:"served"` // model that served each turn
 	Err                  string     `json:"error,omitempty"`
 }
 
@@ -67,6 +68,9 @@ func main() {
 	outDir := flag.String("out", "docs/validation/tooleval", "results directory")
 	prices := flag.String("prices", "claude-opus-5-5=15/75,claude-sonnet-5-5=3/15", "USD per million input/output tokens per model (cache read 10%, cache write 125% of input)")
 	seed := flag.Int64("seed", 7, "task-order seed")
+	rerun := flag.String("rerun", "", "full: re-run only the runs that errored in this results .jsonl")
+	only := flag.String("only", "", "comma-separated task ids to run (pilot/full)")
+	merge := flag.String("merge", "", "report only: comma-separated results .jsonl files (a later file's run replaces an earlier one)")
 	flag.Parse()
 
 	tasks, err := loadTasks(*tasksPath)
@@ -75,6 +79,40 @@ func main() {
 	must(err)
 	ctx := context.Background()
 
+	if *merge != "" {
+		var rs []runResult
+		idx := map[string]int{}
+		for _, f := range strings.Split(*merge, ",") {
+			for _, r := range readResults(f) {
+				k := fmt.Sprintf("%s|%s|%s|%d", r.Task, r.Model, r.Surface, r.Run)
+				if i, ok := idx[k]; ok {
+					rs[i] = r
+				} else {
+					idx[k] = len(rs)
+					rs = append(rs, r)
+				}
+			}
+		}
+		// First-tool hits are re-scored against the current task file (the calls are recorded).
+		byID := map[string]*task{}
+		for _, t := range tasks {
+			byID[t.ID] = t
+		}
+		for i := range rs {
+			if t := byID[rs[i].Task]; t != nil && rs[i].FirstTool != "" {
+				want := t.FirstV2
+				if rs[i].Surface == "v1" {
+					want = t.FirstV1
+				}
+				rs[i].FirstOK = contains(want, rs[i].FirstTool)
+			}
+		}
+		models := strings.Split(*modelsFlag, ",")
+		report := summarize(rs, models, parsePrices(*prices), "full (merged)", len(tasks), *runs, len(tasks), *runs)
+		must(os.WriteFile(filepath.Join(*outDir, "full-merged.md"), []byte(report), 0o644))
+		fmt.Println(report)
+		return
+	}
 	if *mode == "dry" {
 		code := dryRun(ctx, tasks)
 		for _, t := range tasks {
@@ -94,15 +132,33 @@ func main() {
 		must(err)
 		key = strings.TrimSpace(string(b))
 	}
-	if key == "" {
-		fmt.Fprintln(os.Stderr, "no API key: set ANTHROPIC_API_KEY or pass -key-file")
+	token := os.Getenv("ANTHROPIC_AUTH_TOKEN")
+	if key == "" && token == "" {
+		fmt.Fprintln(os.Stderr, "no credentials: set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN, or pass -key-file")
 		os.Exit(2)
 	}
-	cl := &client{key: key, http: &http.Client{Timeout: 5 * time.Minute}}
+	base := os.Getenv("ANTHROPIC_BASE_URL")
+	if base == "" {
+		base = "https://api.anthropic.com"
+	}
+	cl := &client{key: key, token: token, baseURL: base, http: &http.Client{Timeout: 5 * time.Minute}}
 	models := strings.Split(*modelsFlag, ",")
 	order := append([]*task(nil), tasks...)
 	rand.New(rand.NewSource(*seed)).Shuffle(len(order), func(i, j int) { order[i], order[j] = order[j], order[i] })
 	nRuns := *runs
+	if *only != "" {
+		keep := map[string]bool{}
+		for _, id := range strings.Split(*only, ",") {
+			keep[id] = true
+		}
+		var sel []*task
+		for _, t := range order {
+			if keep[t.ID] {
+				sel = append(sel, t)
+			}
+		}
+		order = sel
+	}
 	if *mode == "pilot" {
 		order = order[:min(*pilotN, len(order))]
 		nRuns = 1
@@ -115,6 +171,18 @@ func main() {
 		surface string
 	}
 	var jobs []job
+	if *rerun != "" {
+		byID := map[string]*task{}
+		for _, t := range tasks {
+			byID[t.ID] = t
+		}
+		for _, r := range readResults(*rerun) {
+			if r.Err != "" && byID[r.Task] != nil {
+				jobs = append(jobs, job{byID[r.Task], r.Model, r.Run, r.Surface})
+			}
+		}
+		order = nil
+	}
 	for _, t := range order {
 		for _, m := range models {
 			for r := 1; r <= nRuns; r++ {
@@ -233,7 +301,7 @@ func validArgs(schemas map[string]*jsonschema.Resolved, tool string, input json.
 }
 
 func userTurn(t *task) message {
-	return message{Role: "user", Content: []block{{Type: "text", Text: t.Prompt}}}
+	return message{Role: "user", Content: raws([]block{{Type: "text", Text: t.Prompt}})}
 }
 
 // runV1 scores the first call on the v1 surface (one model turn).
@@ -246,8 +314,9 @@ func runV1(ctx context.Context, cl *client, model string, t *task, tools []apiTo
 		return r
 	}
 	r.Usage.add(resp.Usage)
+	r.Served = append(r.Served, resp.Model)
 	r.Turns = 1
-	for _, b := range resp.Content {
+	for _, b := range parseBlocks(resp.Content) {
 		if b.Type == "tool_use" {
 			r.FirstTool = b.Name
 			r.FirstOK = contains(t.FirstV1, b.Name)
@@ -292,10 +361,11 @@ func runV2(ctx context.Context, cl *client, model string, t *task, maxTurns int)
 			break
 		}
 		r.Usage.add(resp.Usage)
+		r.Served = append(r.Served, resp.Model)
 		r.Turns++
 		msgs = append(msgs, message{Role: "assistant", Content: resp.Content})
 		var results []block
-		for _, b := range resp.Content {
+		for _, b := range parseBlocks(resp.Content) {
 			switch b.Type {
 			case "text":
 				r.Answer = b.Text
@@ -319,7 +389,7 @@ func runV2(ctx context.Context, cl *client, model string, t *task, maxTurns int)
 		if len(results) == 0 || resp.StopReason != "tool_use" {
 			break
 		}
-		msgs = append(msgs, message{Role: "user", Content: results})
+		msgs = append(msgs, message{Role: "user", Content: raws(results)})
 		if env.toolsChanged() {
 			if nt, ns, err := listTools(); err == nil {
 				tools, schemas = nt, ns
@@ -518,6 +588,19 @@ func summarize(rs []runResult, models []string, prices map[string]price, mode st
 				float64(py)/math.Max(1, float64(n)), errs, c)
 		}
 	}
+	served := map[string]map[string]int{}
+	for _, r := range rs {
+		if served[r.Model] == nil {
+			served[r.Model] = map[string]int{}
+		}
+		for _, s := range r.Served {
+			served[r.Model][s]++
+		}
+	}
+	b.WriteString("\n**Models that actually served the turns** (a router may substitute):\n\n")
+	for _, m := range models {
+		fmt.Fprintf(&b, "- requested `%s` → %v\n", m, served[m])
+	}
 	fmt.Fprintf(&b, "\nTotal cost: **$%.2f** (prices: input/output per MTok as passed in -prices; cache reads 10%%, writes 125%%).\n", total)
 	if mode == "pilot" && nTasks > 0 {
 		scale := float64(allTasks*fullRuns) / float64(nTasks*nRuns)
@@ -600,4 +683,20 @@ func pct(k, n int) string {
 		return "—"
 	}
 	return fmt.Sprintf("%.0f%%", 100*float64(k)/float64(n))
+}
+
+func readResults(path string) []runResult {
+	b, err := os.ReadFile(path)
+	must(err)
+	var out []runResult
+	for _, line := range strings.Split(string(b), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var r runResult
+		if json.Unmarshal([]byte(line), &r) == nil {
+			out = append(out, r)
+		}
+	}
+	return out
 }

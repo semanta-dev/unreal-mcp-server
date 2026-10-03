@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -41,9 +42,30 @@ type imageSource struct {
 	Data      string `json:"data"`
 }
 
+// message content is kept as raw JSON so assistant turns go back verbatim: thinking
+// blocks carry a signature the API (or a router) verifies on the next turn.
 type message struct {
-	Role    string  `json:"role"`
-	Content []block `json:"content"`
+	Role    string            `json:"role"`
+	Content []json.RawMessage `json:"content"`
+}
+
+func raws(bs []block) []json.RawMessage {
+	out := make([]json.RawMessage, len(bs))
+	for i, b := range bs {
+		out[i], _ = json.Marshal(b)
+	}
+	return out
+}
+
+func parseBlocks(rs []json.RawMessage) []block {
+	out := make([]block, 0, len(rs))
+	for _, r := range rs {
+		var b block
+		if json.Unmarshal(r, &b) == nil {
+			out = append(out, b)
+		}
+	}
+	return out
 }
 
 type usage struct {
@@ -69,14 +91,17 @@ type request struct {
 }
 
 type response struct {
-	Content    []block `json:"content"`
-	StopReason string  `json:"stop_reason"`
-	Usage      usage   `json:"usage"`
+	Model      string            `json:"model"` // the model that actually served it (a router may substitute)
+	Content    []json.RawMessage `json:"content"`
+	StopReason string            `json:"stop_reason"`
+	Usage      usage             `json:"usage"`
 }
 
 type client struct {
-	key  string
-	http *http.Client
+	key     string // x-api-key (ANTHROPIC_API_KEY)
+	token   string // Authorization: Bearer (ANTHROPIC_AUTH_TOKEN, e.g. a local proxy)
+	baseURL string // ANTHROPIC_BASE_URL; "/v1/messages" is appended
+	http    *http.Client
 }
 
 func (c *client) create(ctx context.Context, req request) (*response, error) {
@@ -93,11 +118,15 @@ func (c *client) create(ctx context.Context, req request) (*response, error) {
 			case <-time.After(time.Duration(1<<attempt) * time.Second):
 			}
 		}
-		hr, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.anthropic.com/v1/messages", bytes.NewReader(body))
+		hr, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.baseURL, "/")+"/v1/messages", bytes.NewReader(body))
 		if err != nil {
 			return nil, err
 		}
-		hr.Header.Set("x-api-key", c.key)
+		if c.token != "" {
+			hr.Header.Set("Authorization", "Bearer "+c.token)
+		} else {
+			hr.Header.Set("x-api-key", c.key)
+		}
 		hr.Header.Set("anthropic-version", "2023-06-01")
 		hr.Header.Set("content-type", "application/json")
 		resp, err := c.http.Do(hr)
@@ -107,7 +136,17 @@ func (c *client) create(ctx context.Context, req request) (*response, error) {
 		}
 		data, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
+		// A router that lost the target a signed thinking turn came from: transient.
+		routerLost := resp.StatusCode == 400 && strings.Contains(string(data), "no retained native target")
+		if routerLost {
+			// The router moved the conversation to another target: resend the history without
+			// the thinking blocks the old target signed.
+			req.Messages = withoutThinking(req.Messages)
+			if body, err = json.Marshal(req); err != nil {
+				return nil, err
+			}
+		}
+		if resp.StatusCode == 429 || resp.StatusCode >= 500 || routerLost {
 			last = fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(data), 300))
 			continue
 		}
@@ -128,4 +167,22 @@ func truncate(s string, n int) string {
 		return s[:n] + "…"
 	}
 	return s
+}
+
+// withoutThinking drops thinking / redacted_thinking blocks from assistant turns.
+func withoutThinking(msgs []message) []message {
+	out := make([]message, len(msgs))
+	for i, m := range msgs {
+		out[i] = message{Role: m.Role}
+		for _, raw := range m.Content {
+			var probe struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(raw, &probe) == nil && (probe.Type == "thinking" || probe.Type == "redacted_thinking") {
+				continue
+			}
+			out[i].Content = append(out[i].Content, raw)
+		}
+	}
+	return out
 }
