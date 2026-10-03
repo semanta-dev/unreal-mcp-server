@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v2.0.1 — 2026-10-03
 
 - Tool-selection eval (plan §3.5) run: v2 matches v1 on first-call accuracy and completes every task end to end
   ([`docs/validation/tooleval/`](docs/validation/tooleval/README.md)); `cmd/tooleval` harness.
