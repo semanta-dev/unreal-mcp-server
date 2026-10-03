@@ -33,6 +33,7 @@ func main() {
 	images := flag.String("images", "", "directory for image content (default: discard)")
 	timeout := flag.Duration("timeout", 10*time.Minute, "overall deadline")
 	url := flag.String("url", "", "a StreamableHTTP endpoint instead of a server command")
+	list := flag.Bool("list", false, "print the server's tools/list as JSON and exit")
 	flag.Parse()
 	argv := flag.Args()
 	if len(argv) == 0 && *url == "" {
@@ -56,6 +57,15 @@ func main() {
 	}
 	defer cs.Close()
 	out := json.NewEncoder(os.Stdout)
+	if *list {
+		tl, err := cs.ListTools(ctx, nil)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "tools/list:", err)
+			os.Exit(1)
+		}
+		_ = out.Encode(tl.Tools)
+		return
+	}
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 1<<20), 1<<24)
 	n := 0

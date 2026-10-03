@@ -56,6 +56,10 @@ func (w *World) StartPIE() {
 	for _, a := range w.editor {
 		c := *a
 		c.Path = strings.Replace(a.Path, "/L_Test.", "/UEDPIE_0_L_Test.", 1)
+		c.Properties = make(map[string]any, len(a.Properties)) // a PIE edit never reaches the level
+		for k, v := range a.Properties {
+			c.Properties[k] = v
+		}
 		w.pie[c.Path] = &c
 	}
 }
@@ -265,4 +269,44 @@ func (w *World) actorSetProperties(args map[string]any) (any, *OpError) {
 		a.Properties[k] = v
 	}
 	return map[string]any{"world": name, "actor": view(a, name), "property_errors": []any{}}, nil
+}
+
+// AddActor places an editor actor directly (fixtures, e.g. the tool-selection eval's
+// starting levels) and returns its object path.
+func (w *World) AddActor(label, class string, loc [3]float64, props map[string]any) string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.seq++
+	if props == nil {
+		props = map[string]any{}
+	}
+	a := &Actor{Label: label, Class: class, Location: loc, Properties: props,
+		Path: fmt.Sprintf("/Game/Maps/L_Test.L_Test:PersistentLevel.%s_%d", label, w.seq)}
+	w.editor[a.Path] = a
+	return a.Path
+}
+
+// State is a copy of the world for assertions.
+type State struct {
+	Editor, PIE []Actor
+	PIERunning  bool
+	Assets      map[string]string
+	Level       string
+}
+
+// Snapshot copies the world's state.
+func (w *World) Snapshot() State {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	st := State{PIERunning: w.pie != nil, Level: w.level, Assets: map[string]string{}}
+	for _, a := range w.editor {
+		st.Editor = append(st.Editor, *a)
+	}
+	for _, a := range w.pie {
+		st.PIE = append(st.PIE, *a)
+	}
+	for k, v := range w.assets {
+		st.Assets[k] = v
+	}
+	return st
 }

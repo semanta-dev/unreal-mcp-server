@@ -301,6 +301,33 @@ func renderAudit(raw []byte) (any, error) {
 	return audit.RenderHealth(in.Config, timeline), nil
 }
 
+// projectPaths resolves the file paths an audit input names (frame_paths,
+// timeline_path) against the project directory.
+func projectPaths(c *spec.Call, input map[string]any) map[string]any {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]any, len(input))
+	for k, v := range input {
+		out[k] = v
+	}
+	if p, ok := out["timeline_path"].(string); ok {
+		out["timeline_path"] = projectPath(c, p)
+	}
+	if ps, ok := out["frame_paths"].([]any); ok {
+		res := make([]any, len(ps))
+		for i, x := range ps {
+			if s, ok := x.(string); ok {
+				res[i] = projectPath(c, s)
+			} else {
+				res[i] = x
+			}
+		}
+		out["frame_paths"] = res
+	}
+	return out
+}
+
 func framesAudit[R any](f func([]audit.Frame) ([]R, R, error)) func([]byte) (any, error) {
 	return func(raw []byte) (any, error) {
 		var in struct {
@@ -351,7 +378,7 @@ func designAuditSpec() *spec.Spec {
 			if err := c.Decode(&in); err != nil {
 				return nil, err
 			}
-			raw, _ := json.Marshal(in.Input)
+			raw, _ := json.Marshal(projectPaths(c, in.Input))
 			report, err := designAudits[in.Kind].run(raw)
 			if err != nil {
 				return nil, err

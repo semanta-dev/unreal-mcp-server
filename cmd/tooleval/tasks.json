@@ -1,0 +1,3070 @@
+[
+ {
+  "id": "editor-status",
+  "source": "derived",
+  "tags": [
+   "transcript"
+  ],
+  "prompt": "Is the editor connected right now, and which level is open?",
+  "first_v1": [
+   "editor_status",
+   "editor_state",
+   "health_check",
+   "editor_ping"
+  ],
+  "first_v2": [
+   "editor"
+  ],
+  "success": [
+   {
+    "kind": "answer",
+    "text": "L_Test"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "editor",
+    "args": {
+     "op": "status"
+    }
+   }
+  ],
+  "reference_answer": "Connected; the open level is L_Test.",
+  "setup": {}
+ },
+ {
+  "id": "open-level",
+  "source": "derived",
+  "tags": [
+   "transcript"
+  ],
+  "prompt": "Open the level /Game/PolyWorld/Maps/L_CompanyCity.",
+  "first_v1": [
+   "open_level"
+  ],
+  "first_v2": [
+   "level"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "level",
+    "op": "open"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "level",
+    "args": {
+     "op": "open",
+     "level": "/Game/PolyWorld/Maps/L_CompanyCity"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "count-pie-class",
+  "source": "derived",
+  "tags": [
+   "transcript",
+   "multi-step"
+  ],
+  "prompt": "Start Play In Editor, then tell me how many EnemySpawnPoint actors exist in the running game.",
+  "setup": {
+   "actors": [
+    {
+     "label": "Spawn_A",
+     "class": "EnemySpawnPoint",
+     "location": [
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "label": "Spawn_B",
+     "class": "EnemySpawnPoint",
+     "location": [
+      500,
+      0,
+      0
+     ]
+    },
+    {
+     "label": "Spawn_C",
+     "class": "EnemySpawnPoint",
+     "location": [
+      1000,
+      0,
+      0
+     ]
+    },
+    {
+     "label": "Floor",
+     "class": "StaticMeshActor",
+     "location": [
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "label": "ArenaGameState",
+     "class": "ArenaGameState",
+     "location": [
+      0,
+      0,
+      0
+     ],
+     "properties": {
+      "StartWave": true,
+      "wave_number": 1
+     }
+    },
+    {
+     "label": "PlayerPawn",
+     "class": "DefaultPawn",
+     "location": [
+      0,
+      0,
+      100
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "start_play"
+  ],
+  "first_v2": [
+   "pie"
+  ],
+  "success": [
+   {
+    "kind": "answer",
+    "text": "3"
+   },
+   {
+    "kind": "called",
+    "tool": "pie",
+    "op": "start"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "pie",
+    "args": {
+     "op": "start"
+    }
+   },
+   {
+    "tool": "actor_query",
+    "args": {
+     "op": "list",
+     "world": "pie",
+     "class": "EnemySpawnPoint"
+    }
+   }
+  ],
+  "reference_answer": "3"
+ },
+ {
+  "id": "pie-screenshot",
+  "source": "derived",
+  "tags": [
+   "transcript",
+   "multi-step"
+  ],
+  "prompt": "Start Play In Editor and take a screenshot of the running game.",
+  "first_v1": [
+   "start_play"
+  ],
+  "first_v2": [
+   "pie"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "screenshot",
+    "op": "pie"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "pie",
+    "args": {
+     "op": "start"
+    }
+   },
+   {
+    "tool": "screenshot",
+    "args": {
+     "op": "pie"
+    }
+   }
+  ],
+  "setup": {
+   "actors": [
+    {
+     "label": "ArenaGameState",
+     "class": "ArenaGameState",
+     "location": [
+      0,
+      0,
+      0
+     ],
+     "properties": {
+      "StartWave": true,
+      "wave_number": 1
+     }
+    },
+    {
+     "label": "PlayerPawn",
+     "class": "DefaultPawn",
+     "location": [
+      0,
+      0,
+      100
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "topdown-shot",
+  "source": "derived",
+  "tags": [
+   "transcript"
+  ],
+  "prompt": "Take a top-down screenshot of the level from 6000 units straight above the origin.",
+  "first_v1": [
+   "take_screenshot"
+  ],
+  "first_v2": [
+   "screenshot"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "screenshot",
+    "op": "viewport"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "screenshot",
+    "args": {
+     "op": "viewport",
+     "location": [
+      0,
+      0,
+      6000
+     ],
+     "rotation": [
+      -90,
+      0,
+      0
+     ]
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "stop-play",
+  "source": "derived",
+  "tags": [
+   "transcript"
+  ],
+  "prompt": "Stop the play session that is running.",
+  "setup": {
+   "pie": true,
+   "actors": [
+    {
+     "label": "ArenaGameState",
+     "class": "ArenaGameState",
+     "location": [
+      0,
+      0,
+      0
+     ],
+     "properties": {
+      "StartWave": true,
+      "wave_number": 1
+     }
+    },
+    {
+     "label": "PlayerPawn",
+     "class": "DefaultPawn",
+     "location": [
+      0,
+      0,
+      100
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "stop_play"
+  ],
+  "first_v2": [
+   "pie"
+  ],
+  "success": [
+   {
+    "kind": "pie",
+    "want": false
+   }
+  ],
+  "reference": [
+   {
+    "tool": "pie",
+    "args": {
+     "op": "stop"
+    }
+   }
+  ]
+ },
+ {
+  "id": "log-tail",
+  "source": "derived",
+  "tags": [
+   "transcript"
+  ],
+  "prompt": "Show me the last 30 lines of the editor log.",
+  "first_v1": [
+   "logs_tail"
+  ],
+  "first_v2": [
+   "logs"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "logs",
+    "op": "tail"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "logs",
+    "args": {
+     "op": "tail",
+     "lines": 30
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "livecoding-log",
+  "source": "derived",
+  "tags": [
+   "transcript"
+  ],
+  "prompt": "Check the LogLiveCoding category in the editor log for the result of the last compile.",
+  "first_v1": [
+   "logs_tail",
+   "logs_since"
+  ],
+  "first_v2": [
+   "logs"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "logs",
+    "op": "tail"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "logs",
+    "args": {
+     "op": "tail",
+     "categories": [
+      "LogLiveCoding"
+     ],
+     "lines": 20
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "save-all",
+  "source": "derived",
+  "tags": [
+   "transcript"
+  ],
+  "prompt": "Save everything that is unsaved.",
+  "first_v1": [
+   "save_all"
+  ],
+  "first_v2": [
+   "level"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "level",
+    "op": "save_all"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "level",
+    "args": {
+     "op": "save_all"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "console-stat",
+  "source": "derived",
+  "tags": [
+   "transcript"
+  ],
+  "prompt": "Run the console command 'stat fps' in the editor.",
+  "first_v1": [
+   "execute_console_command"
+  ],
+  "first_v2": [
+   "console"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "console"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "console",
+    "args": {
+     "command": "stat fps",
+     "world": "editor"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "cleanup-probes",
+  "source": "derived",
+  "tags": [
+   "transcript"
+  ],
+  "prompt": "Delete every actor whose label starts with TileProbe_ — but nothing else.",
+  "setup": {
+   "actors": [
+    {
+     "label": "TileProbe_1",
+     "class": "StaticMeshActor",
+     "location": [
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "label": "TileProbe_2",
+     "class": "StaticMeshActor",
+     "location": [
+      100,
+      0,
+      0
+     ]
+    },
+    {
+     "label": "TileProbe_ground",
+     "class": "StaticMeshActor",
+     "location": [
+      0,
+      0,
+      -10
+     ]
+    },
+    {
+     "label": "Keep_Floor",
+     "class": "StaticMeshActor",
+     "location": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "list_actors",
+   "find_actors",
+   "delete_actor",
+   "execute_python"
+  ],
+  "first_v2": [
+   "actor_query",
+   "actor_edit"
+  ],
+  "success": [
+   {
+    "kind": "actor_absent",
+    "label": "TileProbe_1"
+   },
+   {
+    "kind": "actor_absent",
+    "label": "TileProbe_2"
+   },
+   {
+    "kind": "actor_absent",
+    "label": "TileProbe_ground"
+   },
+   {
+    "kind": "actor_exists",
+    "label": "Keep_Floor"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "actor_query",
+    "args": {
+     "op": "list",
+     "filter": "TileProbe_"
+    }
+   },
+   {
+    "tool": "actor_edit",
+    "args": {
+     "op": "delete",
+     "world": "editor",
+     "actor": "TileProbe_1"
+    }
+   },
+   {
+    "tool": "actor_edit",
+    "args": {
+     "op": "delete",
+     "world": "editor",
+     "actor": "TileProbe_2"
+    }
+   },
+   {
+    "tool": "actor_edit",
+    "args": {
+     "op": "delete",
+     "world": "editor",
+     "actor": "TileProbe_ground"
+    }
+   }
+  ]
+ },
+ {
+  "id": "count-meshes",
+  "source": "derived",
+  "tags": [
+   "transcript"
+  ],
+  "prompt": "How many StaticMeshActors are in the editor level? Answer with the number.",
+  "setup": {
+   "actors": [
+    {
+     "label": "Rock_1",
+     "class": "StaticMeshActor",
+     "location": [
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "label": "Rock_2",
+     "class": "StaticMeshActor",
+     "location": [
+      1,
+      0,
+      0
+     ]
+    },
+    {
+     "label": "Rock_3",
+     "class": "StaticMeshActor",
+     "location": [
+      2,
+      0,
+      0
+     ]
+    },
+    {
+     "label": "Rock_4",
+     "class": "StaticMeshActor",
+     "location": [
+      3,
+      0,
+      0
+     ]
+    },
+    {
+     "label": "Sun",
+     "class": "DirectionalLight",
+     "location": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "list_actors",
+   "find_actors"
+  ],
+  "first_v2": [
+   "actor_query"
+  ],
+  "success": [
+   {
+    "kind": "answer",
+    "text": "4"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "actor_query",
+    "args": {
+     "op": "list",
+     "class": "StaticMeshActor"
+    }
+   }
+  ],
+  "reference_answer": "4"
+ },
+ {
+  "id": "live-coding",
+  "source": "derived",
+  "tags": [
+   "transcript"
+  ],
+  "prompt": "I just edited a function body in the game module's C++. Recompile it into the running editor.",
+  "first_v1": [
+   "live_coding_compile",
+   "build_compile"
+  ],
+  "first_v2": [
+   "build"
+  ],
+  "success": [
+   {
+    "kind": "attempted",
+    "tool": "build"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "build",
+    "args": {
+     "strategy": "livecoding"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "window-capture",
+  "source": "derived",
+  "tags": [
+   "transcript",
+   "toolset"
+  ],
+  "prompt": "Take an OS-level screenshot of the actual Unreal Editor window, including all its UI panels.",
+  "first_v1": [
+   "window_capture",
+   "screen_capture",
+   "list_windows"
+  ],
+  "first_v2": [
+   "toolsets",
+   "desktop_capture"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "desktop_capture"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "toolsets",
+    "args": {
+     "op": "enable",
+     "toolset": "desktop"
+    }
+   },
+   {
+    "tool": "desktop_capture",
+    "args": {
+     "op": "window"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "company-capital",
+  "source": "derived",
+  "tags": [
+   "transcript",
+   "toolset"
+  ],
+  "prompt": "In the running PolyWorld game, what is the company's current capital? Answer with the number.",
+  "setup": {
+   "pie": true,
+   "actors": [
+    {
+     "label": "ArenaGameState",
+     "class": "ArenaGameState",
+     "location": [
+      0,
+      0,
+      0
+     ],
+     "properties": {
+      "StartWave": true,
+      "wave_number": 1
+     }
+    },
+    {
+     "label": "PlayerPawn",
+     "class": "DefaultPawn",
+     "location": [
+      0,
+      0,
+      100
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "company_status"
+  ],
+  "first_v2": [
+   "toolsets",
+   "polyworld"
+  ],
+  "success": [
+   {
+    "kind": "answer",
+    "text": "100"
+   },
+   {
+    "kind": "called",
+    "tool": "polyworld",
+    "op": "status"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "toolsets",
+    "args": {
+     "op": "enable",
+     "toolset": "polyworld"
+    }
+   },
+   {
+    "tool": "polyworld",
+    "args": {
+     "op": "status"
+    }
+   }
+  ],
+  "reference_answer": "100"
+ },
+ {
+  "id": "raise-wall",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Raise the actor Wall_North by 200 units (it is currently at z=300).",
+  "setup": {
+   "actors": [
+    {
+     "label": "Wall_North",
+     "class": "StaticMeshActor",
+     "location": [
+      0,
+      5000,
+      300
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "set_actor_transform",
+   "get_actor"
+  ],
+  "first_v2": [
+   "actor_edit",
+   "actor_query"
+  ],
+  "success": [
+   {
+    "kind": "actor_near",
+    "label": "Wall_North",
+    "at": [
+     0,
+     5000,
+     500
+    ]
+   }
+  ],
+  "reference": [
+   {
+    "tool": "actor_edit",
+    "args": {
+     "op": "transform",
+     "world": "editor",
+     "actor": "Wall_North",
+     "location": [
+      0,
+      5000,
+      500
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "id": "snapshot-then-move",
+  "source": "derived",
+  "tags": [
+   "workflow",
+   "multi-step"
+  ],
+  "prompt": "Take a snapshot of the level named before_fix, then move the actor Crate to (100, 0, 0).",
+  "setup": {
+   "actors": [
+    {
+     "label": "Crate",
+     "class": "StaticMeshActor",
+     "location": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "level_snapshot",
+   "scene_snapshot"
+  ],
+  "first_v2": [
+   "snapshot"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "snapshot",
+    "op": "take",
+    "args": {
+     "name": "before_fix"
+    }
+   },
+   {
+    "kind": "actor_near",
+    "label": "Crate",
+    "at": [
+     100,
+     0,
+     0
+    ]
+   }
+  ],
+  "reference": [
+   {
+    "tool": "snapshot",
+    "args": {
+     "op": "take",
+     "name": "before_fix"
+    }
+   },
+   {
+    "tool": "actor_edit",
+    "args": {
+     "op": "transform",
+     "world": "editor",
+     "actor": "Crate",
+     "location": [
+      100,
+      0,
+      0
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "id": "snapshot-roundtrip",
+  "source": "derived",
+  "tags": [
+   "workflow",
+   "multi-step"
+  ],
+  "prompt": "Snapshot the level as s1, move the actor Crate to (500, 0, 0), then put everything back the way it was in s1.",
+  "setup": {
+   "actors": [
+    {
+     "label": "Crate",
+     "class": "StaticMeshActor",
+     "location": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "level_snapshot",
+   "scene_snapshot"
+  ],
+  "first_v2": [
+   "snapshot"
+  ],
+  "success": [
+   {
+    "kind": "attempted",
+    "tool": "snapshot_restore"
+   },
+   {
+    "kind": "called",
+    "tool": "snapshot",
+    "op": "take"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "snapshot",
+    "args": {
+     "op": "take",
+     "name": "s1"
+    }
+   },
+   {
+    "tool": "actor_edit",
+    "args": {
+     "op": "transform",
+     "world": "editor",
+     "actor": "Crate",
+     "location": [
+      500,
+      0,
+      0
+     ]
+    }
+   },
+   {
+    "tool": "snapshot_restore",
+    "args": {
+     "name": "s1"
+    }
+   }
+  ]
+ },
+ {
+  "id": "git-checkpoint",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Commit the current project state as a checkpoint with the message 'before lighting pass'.",
+  "first_v1": [
+   "git_checkpoint"
+  ],
+  "first_v2": [
+   "git"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "git",
+    "op": "checkpoint"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "git",
+    "args": {
+     "op": "checkpoint",
+     "message": "before lighting pass"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "git-status",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Which files in the project have uncommitted changes?",
+  "first_v1": [
+   "git_status"
+  ],
+  "first_v2": [
+   "git"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "git",
+    "op": "status"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "git",
+    "args": {
+     "op": "status"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "git-revert",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Revert the project's files to checkpoint 1.",
+  "first_v1": [
+   "git_revert_to",
+   "git_log"
+  ],
+  "first_v2": [
+   "git_revert",
+   "git"
+  ],
+  "success": [
+   {
+    "kind": "attempted",
+    "tool": "git_revert"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "git_revert",
+    "args": {
+     "to": "1",
+     "wait_s": 10
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "pie-wait-wave",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "The game is running. Wait (up to 10 seconds) until the game state's wave number reaches 2.",
+  "setup": {
+   "pie": true,
+   "actors": [
+    {
+     "label": "ArenaGameState",
+     "class": "ArenaGameState",
+     "location": [
+      0,
+      0,
+      0
+     ],
+     "properties": {
+      "StartWave": true,
+      "wave_number": 1
+     }
+    },
+    {
+     "label": "PlayerPawn",
+     "class": "DefaultPawn",
+     "location": [
+      0,
+      0,
+      100
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "pie_wait_until"
+  ],
+  "first_v2": [
+   "pie_wait"
+  ],
+  "success": [
+   {
+    "kind": "attempted",
+    "tool": "pie_wait"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "pie_wait",
+    "args": {
+     "predicate": "gamestate.wave_number >= 2",
+     "timeout_s": 10
+    }
+   }
+  ]
+ },
+ {
+  "id": "pie-jump",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "The game is running. Make the player jump by pressing the SpaceBar.",
+  "setup": {
+   "pie": true,
+   "actors": [
+    {
+     "label": "ArenaGameState",
+     "class": "ArenaGameState",
+     "location": [
+      0,
+      0,
+      0
+     ],
+     "properties": {
+      "StartWave": true,
+      "wave_number": 1
+     }
+    },
+    {
+     "label": "PlayerPawn",
+     "class": "DefaultPawn",
+     "location": [
+      0,
+      0,
+      100
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "pie_input"
+  ],
+  "first_v2": [
+   "pie"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "pie",
+    "op": "input"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "pie",
+    "args": {
+     "op": "input",
+     "key": "SpaceBar"
+    }
+   }
+  ]
+ },
+ {
+  "id": "pie-call-gamestate",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "The game is running. Call the StartWave function on the game state.",
+  "setup": {
+   "pie": true,
+   "actors": [
+    {
+     "label": "ArenaGameState",
+     "class": "ArenaGameState",
+     "location": [
+      0,
+      0,
+      0
+     ],
+     "properties": {
+      "StartWave": true,
+      "wave_number": 1
+     }
+    },
+    {
+     "label": "PlayerPawn",
+     "class": "DefaultPawn",
+     "location": [
+      0,
+      0,
+      100
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "pie_exec"
+  ],
+  "first_v2": [
+   "actor_call"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "actor_call"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "actor_call",
+    "args": {
+     "actor": "@gamestate",
+     "function": "StartWave"
+    }
+   }
+  ]
+ },
+ {
+  "id": "pie-set-health",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "The game is running. Set the Turret's Health to 5 in the running game only (do not change the level).",
+  "setup": {
+   "pie": true,
+   "actors": [
+    {
+     "label": "Turret",
+     "class": "Actor",
+     "location": [
+      0,
+      0,
+      0
+     ],
+     "properties": {
+      "Health": 100
+     }
+    },
+    {
+     "label": "ArenaGameState",
+     "class": "ArenaGameState",
+     "location": [
+      0,
+      0,
+      0
+     ],
+     "properties": {
+      "StartWave": true,
+      "wave_number": 1
+     }
+    },
+    {
+     "label": "PlayerPawn",
+     "class": "DefaultPawn",
+     "location": [
+      0,
+      0,
+      100
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "pie_set_property"
+  ],
+  "first_v2": [
+   "actor_edit"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "actor_edit",
+    "op": "set_properties",
+    "args": {
+     "world": "pie"
+    }
+   },
+   {
+    "kind": "prop",
+    "label": "Turret",
+    "key": "Health",
+    "value": 100
+   }
+  ],
+  "reference": [
+   {
+    "tool": "actor_edit",
+    "args": {
+     "op": "set_properties",
+     "world": "pie",
+     "actor": "Turret",
+     "properties": {
+      "Health": 5
+     }
+    }
+   }
+  ]
+ },
+ {
+  "id": "list-blueprints",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "List the assets under /Game/Blueprints.",
+  "first_v1": [
+   "list_assets",
+   "asset_query"
+  ],
+  "first_v2": [
+   "asset_query"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "asset_query"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "asset_query",
+    "args": {
+     "op": "list",
+     "folder": "/Game/Blueprints"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "create-bp",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Create a new Actor Blueprint at /Game/Blueprints/BP_Pickup.",
+  "first_v1": [
+   "blueprint_create"
+  ],
+  "first_v2": [
+   "asset_create"
+  ],
+  "success": [
+   {
+    "kind": "asset_exists",
+    "path": "/Game/Blueprints/BP_Pickup"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "asset_create",
+    "args": {
+     "op": "create",
+     "kind": "blueprint",
+     "class": "/Script/Engine.Actor",
+     "dest": "/Game/Blueprints/BP_Pickup"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "replace-bp",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Create an Actor Blueprint at /Game/Blueprints/BP_Pickup, replacing the one that is already there.",
+  "setup": {
+   "assets": [
+    "/Game/Blueprints/BP_Pickup"
+   ]
+  },
+  "first_v1": [
+   "blueprint_create",
+   "asset_info"
+  ],
+  "first_v2": [
+   "asset_create",
+   "asset_query"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "asset_create",
+    "op": "replace"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "asset_create",
+    "args": {
+     "op": "replace",
+     "kind": "blueprint",
+     "class": "/Script/Engine.Actor",
+     "dest": "/Game/Blueprints/BP_Pickup"
+    }
+   }
+  ]
+ },
+ {
+  "id": "bp-defaults",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Set the Range default of the Blueprint /Game/BP/BP_Turret to 4000.",
+  "setup": {
+   "assets": [
+    "/Game/BP/BP_Turret"
+   ]
+  },
+  "first_v1": [
+   "blueprint_set_defaults"
+  ],
+  "first_v2": [
+   "asset_edit"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "asset_edit",
+    "op": "set_defaults"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "asset_edit",
+    "args": {
+     "op": "set_defaults",
+     "asset": "/Game/BP/BP_Turret",
+     "properties": {
+      "Range": 4000
+     }
+    }
+   }
+  ]
+ },
+ {
+  "id": "bp-component",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Add a StaticMeshComponent named Barrel to the Blueprint /Game/BP/BP_Turret.",
+  "setup": {
+   "assets": [
+    "/Game/BP/BP_Turret"
+   ]
+  },
+  "first_v1": [
+   "blueprint_add_component"
+  ],
+  "first_v2": [
+   "asset_edit"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "asset_edit",
+    "op": "add_component"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "asset_edit",
+    "args": {
+     "op": "add_component",
+     "asset": "/Game/BP/BP_Turret",
+     "class": "StaticMeshComponent",
+     "name": "Barrel"
+    }
+   }
+  ]
+ },
+ {
+  "id": "mesh-thumbnail",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Show me what the static mesh /Game/Props/SM_Crate looks like.",
+  "first_v1": [
+   "asset_thumbnail"
+  ],
+  "first_v2": [
+   "asset_query"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "asset_query",
+    "op": "thumbnail"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "asset_query",
+    "args": {
+     "op": "thumbnail",
+     "asset": "/Game/Props/SM_Crate"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "reflect-class",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "What properties does the class /Script/Game.EnemyCharacter expose?",
+  "first_v1": [
+   "reflect_class"
+  ],
+  "first_v2": [
+   "reflect"
+  ],
+  "success": [
+   {
+    "kind": "attempted",
+    "tool": "reflect"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "reflect",
+    "args": {
+     "op": "class",
+     "class": "/Script/Game.EnemyCharacter"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "gameplay-tag",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Add the gameplay tag Ability.Dash to the project.",
+  "first_v1": [
+   "gameplay_tag_add"
+  ],
+  "first_v2": [
+   "project_config"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "project_config",
+    "op": "gameplay_tag"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "project_config",
+    "args": {
+     "op": "gameplay_tag",
+     "tag": "Ability.Dash"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "input-action",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Add an input action named Interact bound to the E key.",
+  "first_v1": [
+   "input_action"
+  ],
+  "first_v2": [
+   "project_config"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "project_config",
+    "op": "input_action"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "project_config",
+    "args": {
+     "op": "input_action",
+     "name": "Interact",
+     "key": "E"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "default-gamemode",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Make /Script/Game.ArenaGameMode the project's default game mode.",
+  "first_v1": [
+   "set_gamemode"
+  ],
+  "first_v2": [
+   "project_config"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "project_config",
+    "op": "set_default_gamemode"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "project_config",
+    "args": {
+     "op": "set_default_gamemode",
+     "class": "/Script/Game.ArenaGameMode"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "level-gamemode",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Override the game mode for just the current level to /Script/Game.TutorialGameMode.",
+  "first_v1": [
+   "set_world_gamemode"
+  ],
+  "first_v2": [
+   "level"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "level",
+    "op": "set_world_gamemode"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "level",
+    "args": {
+     "op": "set_world_gamemode",
+     "class": "/Script/Game.TutorialGameMode"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "select-frame",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Select the actor Boss in the editor and frame it in the viewport.",
+  "setup": {
+   "actors": [
+    {
+     "label": "Boss",
+     "class": "Character",
+     "location": [
+      2000,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "select_actors",
+   "focus_actors"
+  ],
+  "first_v2": [
+   "viewport"
+  ],
+  "success": [
+   {
+    "kind": "any_of",
+    "any": [
+     {
+      "kind": "called",
+      "tool": "viewport",
+      "op": "focus"
+     },
+     {
+      "kind": "called",
+      "tool": "viewport",
+      "op": "select",
+      "args": {
+       "frame": true
+      }
+     }
+    ]
+   }
+  ],
+  "reference": [
+   {
+    "tool": "viewport",
+    "args": {
+     "op": "select",
+     "actors": [
+      "Boss"
+     ]
+    }
+   },
+   {
+    "tool": "viewport",
+    "args": {
+     "op": "focus",
+     "actors": [
+      "Boss"
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "id": "viewport-move",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Move the editor viewport camera to (1000, -2000, 800), pitched 45 degrees down.",
+  "first_v1": [
+   "viewport_set"
+  ],
+  "first_v2": [
+   "viewport"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "viewport",
+    "op": "set"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "viewport",
+    "args": {
+     "op": "set",
+     "location": [
+      1000,
+      -2000,
+      800
+     ],
+     "rotation": [
+      -45,
+      0,
+      0
+     ]
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "line-trace",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Is anything blocking a straight line from (0, 0, 100) to (5000, 0, 100) in the level?",
+  "first_v1": [
+   "world_query"
+  ],
+  "first_v2": [
+   "world_query"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "world_query",
+    "op": "line_trace"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "world_query",
+    "args": {
+     "op": "line_trace",
+     "start": [
+      0,
+      0,
+      100
+     ],
+     "end": [
+      5000,
+      0,
+      100
+     ]
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "nav-path",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Can an AI character walk from (0, 0, 0) to (3000, 0, 0) on the navmesh?",
+  "first_v1": [
+   "world_query"
+  ],
+  "first_v2": [
+   "world_query"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "world_query",
+    "op": "nav_path"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "world_query",
+    "args": {
+     "op": "nav_path",
+     "start": [
+      0,
+      0,
+      0
+     ],
+     "end": [
+      3000,
+      0,
+      0
+     ]
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "record-gameplay",
+  "source": "derived",
+  "tags": [
+   "workflow",
+   "multi-step"
+  ],
+  "prompt": "The game is running. Record a few seconds of it and show me a contact sheet of what happened.",
+  "setup": {
+   "pie": true,
+   "actors": [
+    {
+     "label": "ArenaGameState",
+     "class": "ArenaGameState",
+     "location": [
+      0,
+      0,
+      0
+     ],
+     "properties": {
+      "StartWave": true,
+      "wave_number": 1
+     }
+    },
+    {
+     "label": "PlayerPawn",
+     "class": "DefaultPawn",
+     "location": [
+      0,
+      0,
+      100
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "capture_start",
+   "playtest_capture"
+  ],
+  "first_v2": [
+   "capture",
+   "playtest"
+  ],
+  "success": [
+   {
+    "kind": "any_of",
+    "any": [
+     {
+      "kind": "called",
+      "tool": "capture",
+      "op": "stop"
+     },
+     {
+      "kind": "attempted",
+      "tool": "playtest"
+     }
+    ]
+   }
+  ],
+  "reference": [
+   {
+    "tool": "capture",
+    "args": {
+     "op": "start",
+     "session": "rec1",
+     "world": "pie",
+     "source": "pie_highres",
+     "interval_s": 0.5,
+     "max_frames": 3
+    }
+   },
+   {
+    "tool": "capture",
+    "args": {
+     "op": "stop",
+     "session": "rec1"
+    }
+   }
+  ]
+ },
+ {
+  "id": "run-scenario",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Run the saved playtest scenario .mcp/scenarios/smoke.json and tell me whether it passed.",
+  "first_v1": [
+   "scenario_run",
+   "playtest_capture",
+   "scenario_list"
+  ],
+  "first_v2": [
+   "playtest",
+   "analyze"
+  ],
+  "success": [
+   {
+    "kind": "attempted",
+    "tool": "playtest",
+    "op": "run"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "playtest",
+    "args": {
+     "op": "run",
+     "path": ".mcp/scenarios/smoke.json",
+     "wait_s": 5
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "list-scenarios",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Which playtest scenarios are saved in this project?",
+  "first_v1": [
+   "scenario_list"
+  ],
+  "first_v2": [
+   "analyze"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "analyze",
+    "op": "scenarios"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "analyze",
+    "args": {
+     "op": "scenarios"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "image-diff",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Compare the image Saved/shot_a.png against the baseline Saved/shot_b.png and tell me whether they match.",
+  "first_v1": [
+   "image_compare"
+  ],
+  "first_v2": [
+   "analyze"
+  ],
+  "success": [
+   {
+    "kind": "attempted",
+    "tool": "analyze",
+    "op": "image_diff"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "analyze",
+    "args": {
+     "op": "image_diff",
+     "path": "Saved/shot_a.png",
+     "baseline": "Saved/shot_b.png"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "perf-parse",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Parse the CSV profiler capture at Saved/Profiling/run.csv and summarize the frame times.",
+  "first_v1": [
+   "perf_parse"
+  ],
+  "first_v2": [
+   "analyze"
+  ],
+  "success": [
+   {
+    "kind": "attempted",
+    "tool": "analyze",
+    "op": "perf"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "analyze",
+    "args": {
+     "op": "perf",
+     "path": "Saved/Profiling/run.csv"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "restart-editor",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "The editor is acting up — restart it.",
+  "first_v1": [
+   "editor_restart"
+  ],
+  "first_v2": [
+   "editor_lifecycle"
+  ],
+  "success": [
+   {
+    "kind": "attempted",
+    "tool": "editor_lifecycle",
+    "op": "restart"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "editor_lifecycle",
+    "args": {
+     "op": "restart",
+     "wait_s": 5
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "full-rebuild",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "I added a new UCLASS to the C++ code. Do a full rebuild of the project.",
+  "first_v1": [
+   "build_compile"
+  ],
+  "first_v2": [
+   "build"
+  ],
+  "success": [
+   {
+    "kind": "attempted",
+    "tool": "build"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "build",
+    "args": {
+     "strategy": "ubt",
+     "wait_s": 5
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "create-widget",
+  "source": "derived",
+  "tags": [
+   "workflow"
+  ],
+  "prompt": "Create a Widget Blueprint at /Game/UI/WBP_Score.",
+  "first_v1": [
+   "widget_create"
+  ],
+  "first_v2": [
+   "asset_create"
+  ],
+  "success": [
+   {
+    "kind": "asset_exists",
+    "path": "/Game/UI/WBP_Score"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "asset_create",
+    "args": {
+     "op": "create",
+     "kind": "widget_blueprint",
+     "dest": "/Game/UI/WBP_Score"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "heldout-render-widget",
+  "source": "heldout",
+  "prompt": "I want to eyeball the layout of the widget /Game/UI/WBP_HUD without starting the game. Get me an image of it.",
+  "setup": {
+   "assets": [
+    "/Game/UI/WBP_HUD"
+   ]
+  },
+  "first_v1": [
+   "widget_render"
+  ],
+  "first_v2": [
+   "widget_query"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "widget_query",
+    "op": "render"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "widget_query",
+    "args": {
+     "op": "render",
+     "class": "/Game/UI/WBP_HUD"
+    }
+   }
+  ]
+ },
+ {
+  "id": "heldout-widget-text",
+  "source": "heldout",
+  "tags": [
+   "toolset"
+  ],
+  "prompt": "Put a TextBlock named ScoreText onto the root canvas of the widget /Game/UI/WBP_HUD.",
+  "setup": {
+   "assets": [
+    "/Game/UI/WBP_HUD"
+   ]
+  },
+  "first_v1": [
+   "widget_compose",
+   "widget_tree"
+  ],
+  "first_v2": [
+   "toolsets",
+   "widget_query"
+  ],
+  "success": [
+   {
+    "kind": "attempted",
+    "tool": "widget_edit"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "toolsets",
+    "args": {
+     "op": "enable",
+     "toolset": "ui"
+    }
+   },
+   {
+    "tool": "widget_edit",
+    "args": {
+     "op": "compose",
+     "asset": "/Game/UI/WBP_HUD",
+     "mode": "patch",
+     "tree": {
+      "name": "ScoreText",
+      "class": "TextBlock"
+     }
+    }
+   }
+  ]
+ },
+ {
+  "id": "heldout-luminance",
+  "source": "heldout",
+  "tags": [
+   "toolset"
+  ],
+  "prompt": "Check whether the screenshot Saved/frame.png is too dark to read (a luminance audit).",
+  "first_v1": [
+   "luminance_report"
+  ],
+  "first_v2": [
+   "toolsets",
+   "design_audit"
+  ],
+  "success": [
+   {
+    "kind": "attempted",
+    "tool": "design_audit"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "toolsets",
+    "args": {
+     "op": "enable",
+     "toolset": "design"
+    }
+   },
+   {
+    "tool": "design_audit",
+    "args": {
+     "kind": "luminance",
+     "input": {
+      "frame_paths": [
+       "Saved/frame.png"
+      ]
+     }
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "heldout-road",
+  "source": "heldout",
+  "tags": [
+   "toolset"
+  ],
+  "prompt": "The PolyWorld game is running. Lay a road from grid cell (2, 2) to (6, 2).",
+  "setup": {
+   "pie": true,
+   "actors": [
+    {
+     "label": "ArenaGameState",
+     "class": "ArenaGameState",
+     "location": [
+      0,
+      0,
+      0
+     ],
+     "properties": {
+      "StartWave": true,
+      "wave_number": 1
+     }
+    },
+    {
+     "label": "PlayerPawn",
+     "class": "DefaultPawn",
+     "location": [
+      0,
+      0,
+      100
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "company_road"
+  ],
+  "first_v2": [
+   "toolsets",
+   "polyworld"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "polyworld",
+    "op": "road"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "toolsets",
+    "args": {
+     "op": "enable",
+     "toolset": "polyworld"
+    }
+   },
+   {
+    "tool": "polyworld",
+    "args": {
+     "op": "road",
+     "start": [
+      2,
+      2
+     ],
+     "end": [
+      6,
+      2
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "id": "heldout-demolish",
+  "source": "heldout",
+  "tags": [
+   "toolset"
+  ],
+  "prompt": "The PolyWorld game is running. Tear down whatever building is closest to world position (800, 800, 0).",
+  "setup": {
+   "pie": true,
+   "actors": [
+    {
+     "label": "ArenaGameState",
+     "class": "ArenaGameState",
+     "location": [
+      0,
+      0,
+      0
+     ],
+     "properties": {
+      "StartWave": true,
+      "wave_number": 1
+     }
+    },
+    {
+     "label": "PlayerPawn",
+     "class": "DefaultPawn",
+     "location": [
+      0,
+      0,
+      100
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "company_demolish"
+  ],
+  "first_v2": [
+   "toolsets",
+   "polyworld_demolish"
+  ],
+  "success": [
+   {
+    "kind": "attempted",
+    "tool": "polyworld_demolish"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "toolsets",
+    "args": {
+     "op": "enable",
+     "toolset": "polyworld"
+    }
+   },
+   {
+    "tool": "polyworld_demolish",
+    "args": {
+     "location": [
+      800,
+      800,
+      0
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "id": "heldout-headless-tests",
+  "source": "heldout",
+  "tags": [
+   "toolset"
+  ],
+  "prompt": "Run the Project.Functional automation tests in a separate headless editor process.",
+  "first_v1": [
+   "headless_run"
+  ],
+  "first_v2": [
+   "toolsets",
+   "headless"
+  ],
+  "success": [
+   {
+    "kind": "attempted",
+    "tool": "headless",
+    "op": "tests"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "toolsets",
+    "args": {
+     "op": "enable",
+     "toolset": "headless"
+    }
+   },
+   {
+    "tool": "headless",
+    "args": {
+     "op": "tests",
+     "filter": "Project.Functional",
+     "wait_s": 5
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "heldout-spawn-verify",
+  "source": "heldout",
+  "tags": [
+   "multi-step"
+  ],
+  "prompt": "Spawn a PointLight labeled TestLight at (0, 0, 300), start play, and confirm TestLight exists in the running game.",
+  "first_v1": [
+   "spawn_actor"
+  ],
+  "first_v2": [
+   "actor_edit"
+  ],
+  "success": [
+   {
+    "kind": "actor_exists",
+    "label": "TestLight",
+    "class": "PointLight"
+   },
+   {
+    "kind": "called",
+    "tool": "pie",
+    "op": "start"
+   },
+   {
+    "kind": "any_of",
+    "any": [
+     {
+      "kind": "called",
+      "tool": "actor_query",
+      "args": {
+       "world": "pie"
+      }
+     },
+     {
+      "kind": "called",
+      "tool": "actor_query",
+      "args": {
+       "world": "auto"
+      }
+     },
+     {
+      "kind": "called",
+      "tool": "pie_observe"
+     }
+    ]
+   }
+  ],
+  "reference": [
+   {
+    "tool": "actor_edit",
+    "args": {
+     "op": "spawn",
+     "world": "editor",
+     "class": "PointLight",
+     "label": "TestLight",
+     "location": [
+      0,
+      0,
+      300
+     ]
+    }
+   },
+   {
+    "tool": "pie",
+    "args": {
+     "op": "start"
+    }
+   },
+   {
+    "tool": "actor_query",
+    "args": {
+     "op": "get",
+     "world": "pie",
+     "actor": "TestLight"
+    }
+   }
+  ],
+  "setup": {
+   "actors": [
+    {
+     "label": "ArenaGameState",
+     "class": "ArenaGameState",
+     "location": [
+      0,
+      0,
+      0
+     ],
+     "properties": {
+      "StartWave": true,
+      "wave_number": 1
+     }
+    },
+    {
+     "label": "PlayerPawn",
+     "class": "DefaultPawn",
+     "location": [
+      0,
+      0,
+      100
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "heldout-move-and-look",
+  "source": "heldout",
+  "tags": [
+   "multi-step"
+  ],
+  "prompt": "Lift the Crate to z=250 and then take a viewport screenshot so I can verify it.",
+  "setup": {
+   "actors": [
+    {
+     "label": "Crate",
+     "class": "StaticMeshActor",
+     "location": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "set_actor_transform",
+   "get_actor"
+  ],
+  "first_v2": [
+   "actor_edit",
+   "actor_query"
+  ],
+  "success": [
+   {
+    "kind": "actor_near",
+    "label": "Crate",
+    "at": [
+     0,
+     0,
+     250
+    ]
+   },
+   {
+    "kind": "called",
+    "tool": "screenshot"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "actor_edit",
+    "args": {
+     "op": "transform",
+     "world": "editor",
+     "actor": "Crate",
+     "location": [
+      0,
+      0,
+      250
+     ]
+    }
+   },
+   {
+    "tool": "screenshot",
+    "args": {
+     "op": "viewport"
+    }
+   }
+  ]
+ },
+ {
+  "id": "heldout-snapshot-diff",
+  "source": "heldout",
+  "tags": [
+   "multi-step"
+  ],
+  "prompt": "Snapshot the level, delete Debris_1 and Debris_2, then show me what changed compared with the snapshot.",
+  "setup": {
+   "actors": [
+    {
+     "label": "Debris_1",
+     "class": "StaticMeshActor",
+     "location": [
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "label": "Debris_2",
+     "class": "StaticMeshActor",
+     "location": [
+      50,
+      0,
+      0
+     ]
+    },
+    {
+     "label": "Statue",
+     "class": "StaticMeshActor",
+     "location": [
+      0,
+      500,
+      0
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "level_snapshot",
+   "scene_snapshot"
+  ],
+  "first_v2": [
+   "snapshot"
+  ],
+  "success": [
+   {
+    "kind": "actor_absent",
+    "label": "Debris_1"
+   },
+   {
+    "kind": "actor_absent",
+    "label": "Debris_2"
+   },
+   {
+    "kind": "actor_exists",
+    "label": "Statue"
+   },
+   {
+    "kind": "called",
+    "tool": "snapshot",
+    "op": "diff"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "snapshot",
+    "args": {
+     "op": "take",
+     "name": "pre"
+    }
+   },
+   {
+    "tool": "actor_edit",
+    "args": {
+     "op": "delete",
+     "world": "editor",
+     "actor": "Debris_1"
+    }
+   },
+   {
+    "tool": "actor_edit",
+    "args": {
+     "op": "delete",
+     "world": "editor",
+     "actor": "Debris_2"
+    }
+   },
+   {
+    "tool": "snapshot",
+    "args": {
+     "op": "diff",
+     "name": "pre"
+    }
+   }
+  ]
+ },
+ {
+  "id": "heldout-shot-and-stop",
+  "source": "heldout",
+  "tags": [
+   "multi-step"
+  ],
+  "prompt": "Start the game, grab a screenshot of it, then stop the game.",
+  "first_v1": [
+   "start_play"
+  ],
+  "first_v2": [
+   "pie"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "screenshot",
+    "op": "pie"
+   },
+   {
+    "kind": "pie",
+    "want": false
+   }
+  ],
+  "reference": [
+   {
+    "tool": "pie",
+    "args": {
+     "op": "start"
+    }
+   },
+   {
+    "tool": "screenshot",
+    "args": {
+     "op": "pie"
+    }
+   },
+   {
+    "tool": "pie",
+    "args": {
+     "op": "stop"
+    }
+   }
+  ],
+  "setup": {
+   "actors": [
+    {
+     "label": "ArenaGameState",
+     "class": "ArenaGameState",
+     "location": [
+      0,
+      0,
+      0
+     ],
+     "properties": {
+      "StartWave": true,
+      "wave_number": 1
+     }
+    },
+    {
+     "label": "PlayerPawn",
+     "class": "DefaultPawn",
+     "location": [
+      0,
+      0,
+      100
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "heldout-python",
+  "source": "heldout",
+  "prompt": "Run this in the editor's Python and tell me the output: print(unreal.SystemLibrary.get_engine_version())",
+  "first_v1": [
+   "execute_python"
+  ],
+  "first_v2": [
+   "python"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "python",
+    "op": "run"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "python",
+    "args": {
+     "op": "run",
+     "code": "import unreal\nprint(unreal.SystemLibrary.get_engine_version())"
+    }
+   }
+  ],
+  "setup": {}
+ },
+ {
+  "id": "heldout-find-hurt",
+  "source": "heldout",
+  "prompt": "Which actors of class Enemy currently have Health equal to 0 in the level? List their labels.",
+  "setup": {
+   "actors": [
+    {
+     "label": "Grunt_1",
+     "class": "Enemy",
+     "location": [
+      0,
+      0,
+      0
+     ],
+     "properties": {
+      "Health": 0
+     }
+    },
+    {
+     "label": "Grunt_2",
+     "class": "Enemy",
+     "location": [
+      1,
+      0,
+      0
+     ],
+     "properties": {
+      "Health": 50
+     }
+    },
+    {
+     "label": "Grunt_3",
+     "class": "Enemy",
+     "location": [
+      2,
+      0,
+      0
+     ],
+     "properties": {
+      "Health": 0
+     }
+    }
+   ]
+  },
+  "first_v1": [
+   "find_actors",
+   "list_actors"
+  ],
+  "first_v2": [
+   "actor_query"
+  ],
+  "success": [
+   {
+    "kind": "answer",
+    "text": "Grunt_1"
+   },
+   {
+    "kind": "answer",
+    "text": "Grunt_3"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "actor_query",
+    "args": {
+     "op": "find",
+     "class": "Enemy",
+     "properties": [
+      "Health"
+     ]
+    }
+   }
+  ],
+  "reference_answer": "Grunt_1 and Grunt_3"
+ },
+ {
+  "id": "heldout-rename-tag",
+  "source": "heldout",
+  "prompt": "Set the property MaxSpeed of the actor Car_1 to 1200 in the level.",
+  "setup": {
+   "actors": [
+    {
+     "label": "Car_1",
+     "class": "Actor",
+     "location": [
+      0,
+      0,
+      0
+     ],
+     "properties": {
+      "MaxSpeed": 600
+     }
+    }
+   ]
+  },
+  "first_v1": [
+   "execute_python",
+   "get_actor"
+  ],
+  "first_v2": [
+   "actor_edit",
+   "actor_query"
+  ],
+  "success": [
+   {
+    "kind": "prop",
+    "label": "Car_1",
+    "key": "MaxSpeed",
+    "value": 1200
+   }
+  ],
+  "reference": [
+   {
+    "tool": "actor_edit",
+    "args": {
+     "op": "set_properties",
+     "world": "editor",
+     "actor": "Car_1",
+     "properties": {
+      "MaxSpeed": 1200
+     }
+    }
+   }
+  ]
+ },
+ {
+  "id": "heldout-orbit",
+  "source": "heldout",
+  "prompt": "Give me a contact sheet of the Statue from several angles around it.",
+  "setup": {
+   "actors": [
+    {
+     "label": "Statue",
+     "class": "StaticMeshActor",
+     "location": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "scene_contact_sheet"
+  ],
+  "first_v2": [
+   "screenshot"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "screenshot",
+    "op": "orbit"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "screenshot",
+    "args": {
+     "op": "orbit",
+     "actors": [
+      "Statue"
+     ],
+     "num_angles": 4
+    }
+   }
+  ]
+ },
+ {
+  "id": "heldout-duplicate-label",
+  "source": "heldout",
+  "prompt": "Delete the actor labeled Lamp. (There may be more than one actor with that label — if so, delete the one at x=500.)",
+  "setup": {
+   "actors": [
+    {
+     "label": "Lamp",
+     "class": "PointLight",
+     "location": [
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "label": "Lamp",
+     "class": "PointLight",
+     "location": [
+      500,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  "first_v1": [
+   "delete_actor",
+   "find_actors",
+   "list_actors"
+  ],
+  "first_v2": [
+   "actor_query",
+   "actor_edit"
+  ],
+  "success": [
+   {
+    "kind": "actor_exists",
+    "label": "Lamp"
+   },
+   {
+    "kind": "called",
+    "tool": "actor_edit",
+    "op": "delete"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "actor_query",
+    "args": {
+     "op": "list",
+     "filter": "Lamp"
+    }
+   },
+   {
+    "tool": "actor_edit",
+    "args": {
+     "op": "delete",
+     "world": "editor",
+     "actor": "/Game/Maps/L_Test.L_Test:PersistentLevel.Lamp_2"
+    }
+   }
+  ]
+ }
+]

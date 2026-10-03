@@ -231,7 +231,7 @@ func analyze(_ context.Context, c *spec.Call) (*spec.Result, error) {
 	}
 	switch c.Op.Name {
 	case "scenarios":
-		dir := in.Dir
+		dir := projectPath(c, in.Dir)
 		if dir == "" {
 			pd, err := projectDir(c)
 			if err != nil {
@@ -266,7 +266,7 @@ func analyze(_ context.Context, c *spec.Call) (*spec.Result, error) {
 		rep := eval.Evaluate(samples, ls, scenarioRubric(in.Rubric))
 		return &spec.Result{Data: reportToJSON(rep), Summary: "verdict " + rep.Verdict}, nil
 	case "perf":
-		data, err := os.ReadFile(in.Path)
+		data, err := os.ReadFile(projectPath(c, in.Path))
 		if err != nil {
 			return nil, envelope.New(envelope.NotFound, "%v", err)
 		}
@@ -279,11 +279,11 @@ func analyze(_ context.Context, c *spec.Call) (*spec.Result, error) {
 		}
 		return &spec.Result{Data: map[string]any{"frames": fs}, Summary: "frame stats"}, nil
 	}
-	a, err := visual.Load(in.Path)
+	a, err := visual.Load(projectPath(c, in.Path))
 	if err != nil {
 		return nil, envelope.New(envelope.NotFound, "path: %v", err)
 	}
-	b, err := visual.Load(in.Baseline)
+	b, err := visual.Load(projectPath(c, in.Baseline))
 	if err != nil {
 		return nil, envelope.New(envelope.NotFound, "baseline: %v", err)
 	}
@@ -588,7 +588,7 @@ func playtestHandler(_ context.Context, c *spec.Call) (*spec.Result, error) {
 	case in.Path != "" && in.JSON != "":
 		return nil, envelope.New(envelope.InvalidArgument, "give the scenario as path or json, not both")
 	case in.Path != "":
-		b, err := os.ReadFile(in.Path)
+		b, err := os.ReadFile(projectPath(c, in.Path))
 		if err != nil {
 			return nil, envelope.New(envelope.NotFound, "scenario: %v", err)
 		}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -57,6 +58,16 @@ func notWhileRestarting(c *spec.Call) error {
 	e.Hint = "wait for the restart (job op=wait), then retry"
 	e.Retryable = true
 	return e
+}
+
+// projectPath resolves a caller's relative file path against the project directory: a
+// stdio server's working directory is not the project, and agents write project-relative
+// paths (found by the tool-selection eval).
+func projectPath(c *spec.Call, p string) string {
+	if p == "" || filepath.IsAbs(p) || c.Deps.ProjectDir == "" {
+		return p
+	}
+	return filepath.Join(c.Deps.ProjectDir, filepath.FromSlash(p))
 }
 
 // v2Op dispatches a companion op and decodes its result object. Warning/Error lines

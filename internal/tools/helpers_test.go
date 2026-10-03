@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jdziat/unreal-mcp-server/internal/tools/envelope"
+	"github.com/jdziat/unreal-mcp-server/internal/tools/spec"
 )
 
 func TestContentPackage(t *testing.T) {
@@ -114,5 +115,28 @@ func TestSummarizeAutomationAndLastLines(t *testing.T) {
 	}
 	if lastLines("a\nb\nc", 2) != "b\nc" {
 		t.Fatal("lastLines")
+	}
+}
+
+// Found by the tool-selection eval: agents pass project-relative paths, and a stdio
+// server's working directory is not the project.
+func TestAnalyzeResolvesProjectRelativePaths(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "Saved", "Profiling"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Saved", "Profiling", "run.csv"), []byte("FrameTime\n16.6\n33.4\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := callToolDeps(t, Deps{ProjectDir: dir}, "analyze", map[string]any{"op": "perf", "path": "Saved/Profiling/run.csv"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("a project-relative path should resolve: %+v", res.Content)
+	}
+	abs := filepath.Join(t.TempDir(), "x.png")
+	if p := projectPath(&spec.Call{Deps: Deps{ProjectDir: dir}}, abs); p != abs {
+		t.Fatalf("absolute paths are kept: %q", p)
 	}
 }
