@@ -1,8 +1,6 @@
 package bridge
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"testing"
 )
 
@@ -32,18 +30,6 @@ func TestOpNamesExtractsAll(t *testing.T) {
 		if !found {
 			t.Errorf("expected op %q not found in _OPS extraction", n)
 		}
-	}
-}
-
-// splitSourceSHA256 is the SHA-256 of the monolithic mcp_bridge.py (v37) at the
-// moment it was split into section files (P1). The pure-move split must reproduce
-// it byte-for-byte; delete this test when the module is first edited (P5a).
-const splitSourceSHA256 = "40fc6ba8df3f1186d36a5aceca55f52fa32a209a4af651dd2589d2044b659190"
-
-func TestSplitIsByteIdentical(t *testing.T) {
-	sum := sha256.Sum256([]byte(CompanionSource()))
-	if got := hex.EncodeToString(sum[:]); got != splitSourceSHA256 {
-		t.Fatalf("concatenated section files differ from the pre-split module: sha256 %s", got)
 	}
 }
 

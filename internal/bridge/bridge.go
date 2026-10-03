@@ -60,7 +60,8 @@ type NativeResult struct {
 
 // NativeDispatcher is the framed-transport backend a Bridge dispatches op RESULTS
 // through when the native cockpit channel is selected for a session (§5.4). The op body
-// still runs in the editor's Python (via MCPCore's _mcp_dispatch_native); only the result
+// still runs in the editor's Python (MCPCore calls __main__._mcp_dispatch_native, which
+// ClaimNative points at the v2 companion); only the result
 // transport changes. Kept as an interface so bridge does not import cockpit (no cycle);
 // an adapter over *cockpit.Client satisfies it at the daemon.
 type NativeDispatcher interface {
@@ -81,6 +82,9 @@ type Bridge struct {
 	nativeMu sync.Mutex
 	native   NativeDispatcher // when set, op dispatch routes through the framed socket
 }
+
+// Generation is the command channel generation (changes on reconnect/editor restart).
+func (b *Bridge) Generation() uint64 { return b.run.Generation() }
 
 // SetNative selects (or clears, with nil) the native framed backend for op dispatch. Per
 // §5.4 the selection is exclusive per session and one-way in practice: once the cockpit
@@ -175,7 +179,7 @@ func (b *Bridge) dispatch(ctx context.Context, op string, args any) (dispatchEnv
 
 	// base64 -> the arg literal is pure ASCII with no chars needing escaping and
 	// zero Python-injection surface (the editor does json.loads(base64.b64decode)).
-	code := fmt.Sprintf("_mcp_dispatch(%q, %q)", op, base64.StdEncoding.EncodeToString(j))
+	code := fmt.Sprintf("_mcp2_dispatch(%q, %q)", op, base64.StdEncoding.EncodeToString(j))
 
 	for attempt := 0; attempt < 2; attempt++ {
 		if err := b.ensureInstalled(ctx); err != nil {
@@ -346,7 +350,7 @@ func looksUninstalled(res uexec.CommandResult) bool {
 		return false
 	}
 	blob := res.Result + "\n" + FormatOutput(res)
-	return strings.Contains(blob, "_mcp_dispatch") &&
+	return strings.Contains(blob, "_mcp2_dispatch") &&
 		(strings.Contains(blob, "NameError") || strings.Contains(blob, "not defined"))
 }
 

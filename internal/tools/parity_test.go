@@ -32,7 +32,7 @@ type scriptedRunner struct {
 func (scriptedRunner) Generation() uint64 { return 1 }
 
 func (r *scriptedRunner) RunCommand(_ context.Context, code string, mode uexec.ExecMode) (uexec.CommandResult, error) {
-	if mode == uexec.ModeEval && strings.Contains(code, "_MCP_BRIDGE_VERSION") {
+	if mode == uexec.ModeEval && strings.Contains(code, "_MCP2_BRIDGE_VERSION") {
 		return uexec.CommandResult{Success: true, Result: strconv.Itoa(r.version)}, nil
 	}
 	body := strings.TrimPrefix(code, "# mcp\n")
@@ -41,7 +41,7 @@ func (r *scriptedRunner) RunCommand(_ context.Context, code string, mode uexec.E
 		r.version = bridge.CompanionVersion()
 		return uexec.CommandResult{Success: true}, nil
 	}
-	if mode == uexec.ModeExecFile && strings.HasPrefix(body, "_mcp_dispatch(") {
+	if mode == uexec.ModeExecFile && strings.HasPrefix(body, "_mcp2_dispatch(") {
 		op, args := splitDispatch(body)
 		result := r.dispatch(op, args)
 		env, _ := json.Marshal(map[string]any{"ok": true, "result": result})
@@ -57,7 +57,7 @@ func (r *scriptedRunner) RunCommand(_ context.Context, code string, mode uexec.E
 }
 
 func splitDispatch(code string) (string, map[string]any) {
-	inner := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(code), "_mcp_dispatch("), ")")
+	inner := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(code), "_mcp2_dispatch("), ")")
 	parts := strings.SplitN(inner, ", ", 2)
 	op, _ := strconv.Unquote(parts[0])
 	var args map[string]any

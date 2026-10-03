@@ -48,8 +48,7 @@ func Launch(engineDir, uproject string, extraArgs ...string) (int, error) {
 	if _, err := os.Stat(uproject); err != nil {
 		return 0, fmt.Errorf("uproject not found at %s: %w", uproject, err)
 	}
-	args := append([]string{uproject}, extraArgs...)
-	cmd := exec.Command(exe, args...)
+	cmd := exec.Command(exe, launchArgs(uproject, extraArgs)...)
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("launch editor: %w", err)
 	}
@@ -58,6 +57,22 @@ func Launch(engineDir, uproject string, extraArgs ...string) (int, error) {
 	go func() { _ = cmd.Wait() }()
 	return cmd.Process.Pid, nil
 }
+
+// launchArgs builds the editor command line. Every launch declines UE's modal
+// "restore packages" dialog (a crash or forced kill would otherwise leave the editor
+// blocked on it, unattended); projects also driven by hand keep package recovery via
+// .umcp.json {"keep_package_recovery": true}.
+func launchArgs(uproject string, extra []string) []string {
+	args := append([]string{uproject}, extra...)
+	if pf, err := LoadProjectFile(filepath.Dir(uproject)); err != nil || !pf.KeepPackageRecovery {
+		args = append(args, AutoDeclineRecoveryFlag)
+	}
+	return args
+}
+
+// AutoDeclineRecoveryFlag makes the editor decline package recovery without a dialog
+// (UE 5.7 PackageAutoSaver.cpp: bAutoDeclineRecovery), removing the restore files.
+const AutoDeclineRecoveryFlag = "-AutoDeclinePackageRecovery"
 
 // Kill force-terminates a process by PID (best-effort, cross-platform via os.Process.Kill:
 // TerminateProcess on Windows, SIGKILL elsewhere). Used to close an editor that ignored the

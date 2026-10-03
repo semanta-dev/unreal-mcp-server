@@ -62,7 +62,7 @@ func (b *Bridge) markUninstalled() {
 
 // installedVersion reads the editor-side _MCP_BRIDGE_VERSION sentinel (0 if absent).
 func (b *Bridge) installedVersion(ctx context.Context) (int, error) {
-	s, err := b.Eval(ctx, "globals().get('_MCP_BRIDGE_VERSION', 0)")
+	s, err := b.Eval(ctx, "globals().get('_MCP2_BRIDGE_VERSION', 0)")
 	if err != nil {
 		return 0, fmt.Errorf("%w: version check: %w", ErrInstall, err)
 	}
@@ -104,8 +104,12 @@ func (b *Bridge) installModule(ctx context.Context) error {
 // guaranteed free of that trigger; it decodes and execs the source into globals.
 func (b *Bridge) installHotload(ctx context.Context) error {
 	b64 := base64.StdEncoding.EncodeToString([]byte(CompanionSource()))
-	boot := fmt.Sprintf("import base64\n"+
-		"exec(compile(base64.b64decode(%q).decode(\"utf-8\"), \"mcp_bridge\", \"exec\"), globals())", b64)
+	boot := fmt.Sprintf("import base64, types\n"+
+		"_mcp2 = types.ModuleType(\"mcp2\")\n"+
+		"exec(compile(base64.b64decode(%q).decode(\"utf-8\"), \"mcp_bridge\", \"exec\"), _mcp2.__dict__)\n"+
+		"_mcp2_dispatch = _mcp2._mcp2_dispatch\n"+
+		"_mcp2_dispatch_native = _mcp2._mcp2_dispatch_native\n"+
+		"_MCP2_BRIDGE_VERSION = _mcp2._MCP2_BRIDGE_VERSION", b64)
 	res, err := b.run.RunCommand(ctx, boot, uexec.ModeExecFile)
 	if err != nil {
 		return fmt.Errorf("%w: hotload: %w", ErrInstall, err)
@@ -139,15 +143,38 @@ if %q not in sys.path:
     sys.path.insert(0, %q)
 import mcp_bridge as _mcpb
 importlib.reload(_mcpb)
-globals()['_mcp_dispatch'] = _mcpb._mcp_dispatch
-globals()['_mcp_dispatch_native'] = _mcpb._mcp_dispatch_native
-globals()['_MCP_BRIDGE_VERSION'] = _mcpb._MCP_BRIDGE_VERSION`, pyDir, pyDir)
+globals()['_mcp2'] = _mcpb
+globals()['_mcp2_dispatch'] = _mcpb._mcp2_dispatch
+globals()['_mcp2_dispatch_native'] = _mcpb._mcp2_dispatch_native
+globals()['_MCP2_BRIDGE_VERSION'] = _mcpb._MCP2_BRIDGE_VERSION`, pyDir, pyDir)
 	res, err := b.run.RunCommand(ctx, boot, uexec.ModeExecFile)
 	if err != nil {
 		return fmt.Errorf("%w: ondisk import: %w", ErrInstall, err)
 	}
 	if !res.Success {
 		return fmt.Errorf("%w: ondisk import:\n%s", ErrInstall, FormatOutput(res))
+	}
+	return nil
+}
+
+// ClaimNative points the editor's native-dispatch entry point at the v2 companion.
+// The MCPCore plugin calls __main__._mcp_dispatch_native by that fixed name
+// (MCPCockpitServer.cpp), so this is the one name v2 must share with a v1 companion.
+// It is claimed only when v2 attaches the cockpit, and it also invalidates the v1
+// install sentinel so that a rollback to v1 reinstalls v1 instead of finding the
+// entry point redirected to v2.
+func (b *Bridge) ClaimNative(ctx context.Context) error {
+	if err := b.ensureInstalled(ctx); err != nil {
+		return err
+	}
+	const claim = "globals()['_mcp_dispatch_native'] = _mcp2._mcp2_dispatch_native\n" +
+		"globals()['_MCP_BRIDGE_VERSION'] = 0"
+	res, err := b.run.RunCommand(uexec.WithRetryPolicy(ctx, uexec.RetryIdempotent), claim, uexec.ModeExecFile)
+	if err != nil {
+		return fmt.Errorf("%w: claim native entry point: %w", ErrInstall, err)
+	}
+	if !res.Success {
+		return fmt.Errorf("%w: claim native entry point:\n%s", ErrInstall, FormatOutput(res))
 	}
 	return nil
 }

@@ -29,7 +29,24 @@ type commandConn struct {
 	dec     *json.Decoder
 	tainted bool
 	lastIO  time.Time
+	now     func() time.Time // the session's clock (nil = time.Now)
 }
+
+func (c *commandConn) clock() time.Time {
+	if c.now != nil {
+		return c.now()
+	}
+	return time.Now()
+}
+
+// probeResult is what the liveness probe found on an idle channel.
+type probeResult int
+
+const (
+	probeAlive  probeResult = iota // nothing to read: the channel is up
+	probeDead                      // EOF/reset: the peer closed it
+	probeDesync                    // unsolicited bytes: unusable, but not a peer close
+)
 
 // open performs the reverse-connect: listen on the command port, broadcast
 // open_connection advertising that port, and accept the editor's connect-back.
@@ -67,7 +84,7 @@ func (c *commandConn) open(ctx context.Context) error {
 		// exact-multiple-of-8192 hang in the reference recv-until-short-read loop.
 		c.br = newBufReader(conn)
 		c.dec = newDecoder(c.br)
-		c.lastIO = time.Now()
+		c.lastIO = c.clock()
 		ln.Close() // channel is 1:1; stop holding the port once connected
 		c.logger.Info("command channel established", "node_id", c.remote, "local", conn.LocalAddr().String(), "remote", conn.RemoteAddr().String())
 		return nil
@@ -123,7 +140,7 @@ func (c *commandConn) runCommand(ctx context.Context, code string, mode ExecMode
 		}
 		return CommandResult{}, err
 	}
-	c.lastIO = time.Now()
+	c.lastIO = c.clock()
 	// Validate the reply: addressed to us, correct type, AND from the node we
 	// targeted. The source check is the result-spoofing defense (§12.4): a rogue
 	// same-user local process that connected to our listener would have to also
@@ -227,16 +244,16 @@ const probeWindow = 3 * time.Millisecond
 // alive reports whether an idle channel is still connected, without consuming any
 // protocol bytes (plan §2.8, case 0). Whitespace left over after a reply is consumed;
 // any other unsolicited byte is a protocol desync and reported as dead.
-func (c *commandConn) alive(skipIfRecent bool) bool {
+func (c *commandConn) probe(skipIfRecent bool) probeResult {
 	if c.tainted || c.conn == nil {
-		return false
+		return probeDead
 	}
-	if skipIfRecent && time.Since(c.lastIO) < probeIdle {
-		return true
+	if skipIfRecent && c.clock().Sub(c.lastIO) < probeIdle {
+		return probeAlive
 	}
 	if buffered, err := io.ReadAll(c.dec.Buffered()); err == nil && len(bytes.TrimSpace(buffered)) > 0 {
 		c.logger.Warn("command channel desync: unsolicited buffered data", "bytes", len(buffered))
-		return false
+		return probeDesync
 	}
 	defer func() { _ = c.conn.SetReadDeadline(time.Time{}) }()
 	for {
@@ -244,16 +261,22 @@ func (c *commandConn) alive(skipIfRecent bool) bool {
 		b, err := c.br.Peek(1)
 		if err != nil {
 			var ne net.Error
-			return errors.As(err, &ne) && ne.Timeout() // timeout = nothing to read = alive
+			if errors.As(err, &ne) && ne.Timeout() {
+				return probeAlive // nothing to read
+			}
+			return probeDead
 		}
 		if b[0] == ' ' || b[0] == '\n' || b[0] == '\r' || b[0] == '\t' {
 			_, _ = c.br.ReadByte()
 			continue
 		}
 		c.logger.Warn("command channel desync: unsolicited data on an idle channel")
-		return false
+		return probeDesync
 	}
 }
+
+// alive reports whether the probe found the channel usable.
+func (c *commandConn) alive(skipIfRecent bool) bool { return c.probe(skipIfRecent) == probeAlive }
 
 func (c *commandConn) taint() {
 	c.tainted = true

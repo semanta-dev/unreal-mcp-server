@@ -105,6 +105,6 @@ def _op_editor_state(args):
         "selection": {"count": len(sel), "labels": [a.get_actor_label() for a in sel]},
         "actor_count": len(sub.get_all_level_actors()),
         "recorders": [s for s, r in _MCP_RECORDERS.items() if r["running"]],
-        "bridge_version": _MCP_BRIDGE_VERSION,
+        "bridge_version": _MCP2_BRIDGE_VERSION,
     }
 

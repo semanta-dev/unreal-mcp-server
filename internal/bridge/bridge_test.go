@@ -19,8 +19,8 @@ import (
 type fakeEditorRunner struct {
 	mu           sync.Mutex
 	gen          uint64
-	moduleVer    int  // editor-side _MCP_BRIDGE_VERSION (0 = absent)
-	moduleLoaded bool // whether _mcp_dispatch is defined
+	moduleVer    int  // editor-side _MCP2_BRIDGE_VERSION (0 = absent)
+	moduleLoaded bool // whether _mcp2_dispatch is defined
 	dispatch     func(op string, args map[string]any) (ok bool, result any, errMsg string)
 
 	versionChecks int
@@ -53,7 +53,7 @@ func (f *fakeEditorRunner) RunCommand(_ context.Context, code string, mode uexec
 	defer f.mu.Unlock()
 
 	// Version sentinel check.
-	if mode == uexec.ModeEval && strings.Contains(code, "_MCP_BRIDGE_VERSION") {
+	if mode == uexec.ModeEval && strings.Contains(code, "_MCP2_BRIDGE_VERSION") {
 		f.versionChecks++
 		return okResult(strconv.Itoa(f.moduleVer)), nil
 	}
@@ -65,12 +65,12 @@ func (f *fakeEditorRunner) RunCommand(_ context.Context, code string, mode uexec
 		return uexec.CommandResult{Success: true}, nil
 	}
 	// A dispatch call.
-	if mode == uexec.ModeExecFile && strings.HasPrefix(strings.TrimPrefix(code, "# mcp\n"), "_mcp_dispatch(") {
+	if mode == uexec.ModeExecFile && strings.HasPrefix(strings.TrimPrefix(code, "# mcp\n"), "_mcp2_dispatch(") {
 		if !f.moduleLoaded {
 			return uexec.CommandResult{
 				Success: false,
-				Result:  "NameError: name '_mcp_dispatch' is not defined",
-				Output:  []uexec.OutputEntry{{Type: "Error", Output: "NameError: name '_mcp_dispatch' is not defined"}},
+				Result:  "NameError: name '_mcp2_dispatch' is not defined",
+				Output:  []uexec.OutputEntry{{Type: "Error", Output: "NameError: name '_mcp2_dispatch' is not defined"}},
 			}, nil
 		}
 		op, args := parseDispatch(code)
@@ -91,10 +91,10 @@ func okResult(result string) uexec.CommandResult {
 	return uexec.CommandResult{Success: true, Result: result}
 }
 
-// parseDispatch extracts op + decoded args from a `_mcp_dispatch("op", "b64")` call.
+// parseDispatch extracts op + decoded args from a `_mcp2_dispatch("op", "b64")` call.
 func parseDispatch(code string) (string, map[string]any) {
 	code = strings.TrimPrefix(code, "# mcp\n")
-	inner := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(code), "_mcp_dispatch("), ")")
+	inner := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(code), "_mcp2_dispatch("), ")")
 	parts := strings.SplitN(inner, ", ", 2)
 	op, _ := strconv.Unquote(parts[0])
 	var args map[string]any
@@ -244,7 +244,7 @@ func TestEval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Our fake returns the version-check pathway only for _MCP_BRIDGE_VERSION;
+	// Our fake returns the version-check pathway only for _MCP2_BRIDGE_VERSION;
 	// a generic eval returns Success with empty Result here.
 	_ = got
 
@@ -311,8 +311,8 @@ func TestSnippetVersionParsed(t *testing.T) {
 	if CompanionVersion() < 1 {
 		t.Fatalf("snippet version should be >= 1, got %d", CompanionVersion())
 	}
-	if !strings.Contains(CompanionSource(), "def _mcp_dispatch") {
-		t.Fatal("embedded module missing _mcp_dispatch")
+	if !strings.Contains(CompanionSource(), "def _mcp2_dispatch") {
+		t.Fatal("embedded module missing _mcp2_dispatch")
 	}
 }
 
@@ -321,7 +321,7 @@ var _ Runner = (*uexec.Session)(nil)
 
 func TestParseDispatchHelper(t *testing.T) {
 	// guards the test helper itself against silent breakage.
-	op, args := parseDispatch(fmt.Sprintf("# mcp\n_mcp_dispatch(%q, %q)", "spawn_actor",
+	op, args := parseDispatch(fmt.Sprintf("# mcp\n_mcp2_dispatch(%q, %q)", "spawn_actor",
 		base64.StdEncoding.EncodeToString([]byte(`{"x":1}`))))
 	if op != "spawn_actor" || args["x"] != 1.0 {
 		t.Fatalf("parseDispatch broken: op=%q args=%v", op, args)

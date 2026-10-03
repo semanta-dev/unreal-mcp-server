@@ -48,7 +48,7 @@ func openBroadcast(ctx context.Context, cfg Config, self string, logger *slog.Lo
 		loName = lo.Name
 	}
 	logger.Info("discovery listening", "group", cfg.MulticastGroup, "bind", cfg.BindAddress, "interface", loName, "ttl", cfg.MulticastTTL)
-	if lo == nil {
+	if lo == nil && group.IP.IsMulticast() {
 		logger.Warn("no loopback interface found; multicast may not reach a same-host editor (see Risk #1)")
 	}
 	bc := newBroadcastConn(self, pc, group, cfg.PingInterval, cfg.NodeTimeout, logger)

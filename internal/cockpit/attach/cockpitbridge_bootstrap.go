@@ -3,6 +3,7 @@ package attach
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"time"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
@@ -15,6 +16,9 @@ import (
 type Selectable interface {
 	Call(ctx context.Context, op string, args any) (json.RawMessage, error)
 	SetNative(bridge.NativeDispatcher)
+	// ClaimNative points the editor's fixed native-dispatch entry point at this
+	// server's companion (see bridge.Bridge.ClaimNative).
+	ClaimNative(ctx context.Context) error
 }
 
 // EpochStore remembers the plugin-minted session_epoch (and the resume seq) per project,
@@ -70,6 +74,11 @@ func Bootstrap(ctx context.Context, b Selectable, cfg BootstrapConfig) (*cockpit
 		return nil, err
 	}
 	// Route op dispatch through the framed socket; uexec remains the install/fallback.
+	// The plugin calls the fixed __main__._mcp_dispatch_native name: point it at v2.
+	if err := b.ClaimNative(ctx); err != nil {
+		sess.Close()
+		return nil, err
+	}
 	b.SetNative(NewAdapter(sess.Client()))
 	if cfg.Epochs != nil {
 		cfg.Epochs.Record(cfg.Project, info.SessionEpoch)
@@ -77,29 +86,57 @@ func Bootstrap(ctx context.Context, b Selectable, cfg BootstrapConfig) (*cockpit
 	return sess, nil
 }
 
-// MemEpochStore is a simple in-memory EpochStore (per-daemon). Resume seq tracking is
-// left to the caller updating LastSeq via the Session; here it only tracks the epoch so a
-// change is detectable.
+// MemEpochStore is an in-memory EpochStore: per project it remembers the editor's
+// session epoch and the highest observation seq seen in that epoch, so a reconnect to
+// the SAME editor session resumes the event stream where it left off, and a new
+// epoch (editor restarted) starts from 0.
 type MemEpochStore struct {
-	epochs map[string]string
+	mu sync.Mutex
+	m  map[string]epochSeq
+}
+
+type epochSeq struct {
+	epoch string
+	seq   uint64
 }
 
 // NewMemEpochStore builds an empty in-memory epoch store.
-func NewMemEpochStore() *MemEpochStore { return &MemEpochStore{epochs: map[string]string{}} }
+func NewMemEpochStore() *MemEpochStore { return &MemEpochStore{m: map[string]epochSeq{}} }
 
-// LastSeq returns 0 (no persisted seq) but is where resume would read once wired.
-func (m *MemEpochStore) LastSeq(project, epoch string) uint64 {
-	if m.epochs[project] == epoch {
-		return 0 // same epoch, no persisted gap yet
+// LastSeq returns the resume point for (project, epoch): the last seen seq if the
+// epoch is the one recorded, else 0 (full re-sync).
+func (s *MemEpochStore) LastSeq(project, epoch string) uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if e := s.m[project]; e.epoch == epoch {
+		return e.seq
 	}
 	return 0
 }
 
 // EpochChanged reports whether the recorded epoch differs from the given one.
-func (m *MemEpochStore) EpochChanged(project, epoch string) bool {
-	prev, ok := m.epochs[project]
-	return ok && prev != epoch
+func (s *MemEpochStore) EpochChanged(project, epoch string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.m[project]
+	return ok && e.epoch != epoch
 }
 
-// Record stores the current epoch for the project.
-func (m *MemEpochStore) Record(project, epoch string) { m.epochs[project] = epoch }
+// Record stores the current epoch for the project (a new epoch resets the seq).
+func (s *MemEpochStore) Record(project, epoch string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if e := s.m[project]; e.epoch != epoch {
+		s.m[project] = epochSeq{epoch: epoch}
+	}
+}
+
+// Advance raises the resume point for (project, epoch) to seq.
+func (s *MemEpochStore) Advance(project, epoch string, seq uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if e := s.m[project]; e.epoch == epoch && seq > e.seq {
+		e.seq = seq
+		s.m[project] = e
+	}
+}

@@ -143,7 +143,7 @@ def _op_editor_ping(args):
         pie = bool(les.is_in_play_in_editor())
     except Exception:
         pass
-    return {"ok": True, "version": _MCP_BRIDGE_VERSION, "pie": pie, "t": time.time()}
+    return {"ok": True, "version": _MCP2_BRIDGE_VERSION, "pie": pie, "t": time.time()}
 
 
 def _op_cockpit_info(args):

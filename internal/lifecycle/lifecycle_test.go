@@ -41,3 +41,23 @@ func TestLaunchMissingEditorErrors(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestLaunchArgsDeclineRecoveryUnlessKept(t *testing.T) {
+	dir := t.TempDir()
+	up := filepath.Join(dir, "Game.uproject")
+	has := func(args []string) bool {
+		for _, a := range args {
+			if a == AutoDeclineRecoveryFlag {
+				return true
+			}
+		}
+		return false
+	}
+	if args := launchArgs(up, []string{"-nosplash"}); !has(args) || args[0] != up {
+		t.Fatalf("every launch must decline package recovery: %v", args)
+	}
+	os.WriteFile(filepath.Join(dir, ProjectFileName), []byte(`{"keep_package_recovery":true}`), 0o644)
+	if args := launchArgs(up, nil); has(args) {
+		t.Fatalf("keep_package_recovery must opt out: %v", args)
+	}
+}

@@ -140,7 +140,7 @@ def _classify_error(e):
     return m if m != "EDITOR_ERROR" else "EDITOR_ERROR"
 
 
-def _mcp_dispatch(op, b64args):
+def _mcp2_dispatch(op, b64args):
     try:
         args = json.loads(base64.b64decode(b64args)) if b64args else {}
         fn = _OPS.get(op)
@@ -165,7 +165,7 @@ def _mcp_dispatch(op, b64args):
                "retryable": code in _RETRYABLE_CODES, "traceback": traceback.format_exc()})
 
 
-def _mcp_dispatch_native(op, b64args, op_id):
+def _mcp2_dispatch_native(op, b64args, op_id):
     """Native dispatch entry (Phase B1). MCPCore's game-thread Dispatcher calls this via
     ExecPythonCommandEx. It sets the per-dispatch native sink so the op's single _emit
     routes its result to the framed channel keyed by op_id, then always clears it — so a
@@ -175,6 +175,6 @@ def _mcp_dispatch_native(op, b64args, op_id):
     global _MCP_NATIVE_SINK
     _MCP_NATIVE_SINK = op_id
     try:
-        _mcp_dispatch(op, b64args)
+        _mcp2_dispatch(op, b64args)
     finally:
         _MCP_NATIVE_SINK = None

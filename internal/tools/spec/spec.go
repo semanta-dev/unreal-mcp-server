@@ -472,6 +472,7 @@ func (s *Spec) gated(ctx context.Context, c *Call, o Options, mutating bool) *mc
 				}
 				return nil, envelope.New(envelope.Precondition, "%s was not approved", s.Name).WithDetail("reason", reason)
 			}
+			me.SetOwner("") // approved: from here on it is project work, not session-scoped
 		case <-t.C:
 			sever()
 			return nil, envelope.New(envelope.Precondition, "%s approval timed out", s.Name).WithDetail("reason", "approval_timeout")
@@ -479,7 +480,9 @@ func (s *Spec) gated(ctx context.Context, c *Call, o Options, mutating bool) *mc
 			sever()
 			return nil, jctx.Err()
 		}
-		me.SetOwner("")
+		if jctx.Err() != nil { // teardown raced the approval: the op never starts
+			return nil, jctx.Err()
+		}
 		progress("approved; running")
 		out, err := s.invoke(jctx, dc)
 		if err != nil {

@@ -49,6 +49,15 @@ func newMulticastConn(ctx context.Context, cfg Config) (net.PacketConn, *net.UDP
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("resolve multicast group %q: %w", cfg.MulticastGroup, err)
 	}
+	if !group.IP.IsMulticast() {
+		// Unicast discovery: ping one editor endpoint directly (a fake editor in the
+		// binary smoke tests, or an editor reached by address rather than multicast).
+		pc, err := net.ListenPacket("udp4", net.JoinHostPort(cfg.BindAddress, "0"))
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("bind udp for unicast discovery: %w", err)
+		}
+		return pc, group, nil, nil
+	}
 	bindAddr := net.JoinHostPort(cfg.BindAddress, strconv.Itoa(group.Port))
 
 	lc := net.ListenConfig{Control: controlReuseAddr}

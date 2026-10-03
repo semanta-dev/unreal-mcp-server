@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jdziat/unreal-mcp-server/internal/app"
+	"github.com/jdziat/unreal-mcp-server/internal/cockpit/attach"
 	"log/slog"
 	"net/http"
 	"os"
@@ -36,6 +37,12 @@ func runDaemon(ctx context.Context, cfg config.Config, logger *slog.Logger) erro
 	dm, err := daemon.NewDaemon(ctx, cfg.Uexec(), cfg.EngineDir, recordsDir, bridge.SnippetMode(cfg.SnippetMode), logger)
 	if err != nil {
 		return fmt.Errorf("daemon init: %w", err)
+	}
+
+	if cfg.Cockpit == "on" {
+		dm.OnEditorReady = func(ctx context.Context, project string, b *bridge.Bridge) {
+			attach.NewLauncher().Run(ctx, b, attach.LaunchConfig{Project: project, ProjectDir: project}, logger)
+		}
 	}
 
 	// §6 reattach BARRIER: before serving any project_attach, reconcile persisted

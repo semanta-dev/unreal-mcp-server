@@ -212,3 +212,36 @@ func TestPeerClosesOutsideTheftWindowAreNotTheft(t *testing.T) {
 		t.Fatal("not theft")
 	}
 }
+
+func TestStolenClearsWhenTheEditorNodeLeaves(t *testing.T) {
+	_, a, b, _ := twoClients(t)
+	ctx := context.Background()
+	run := func(s *Session, cmd string) error { _, err := s.RunCommand(ctx, cmd, ModeExecFile); return err }
+	_ = run(a, "A1")
+	_ = run(b, "B1")
+	_ = run(a, "A2")
+	_ = run(b, "B2")
+	if err := run(a, "A3"); !errors.Is(err, ErrChannelStolen) {
+		t.Fatalf("setup: want stolen, got %v", err)
+	}
+	// The stolen node disappears from discovery (editor quit/restarted).
+	a.mu.Lock()
+	a.bc.nodes.mu.Lock()
+	delete(a.bc.nodes.m, a.nodeID)
+	a.bc.nodes.mu.Unlock()
+	a.mu.Unlock()
+	// The next call no longer fails fast on a theft that no longer applies (it may
+	// reconnect to whatever editor discovery now reports).
+	if err := run(a, "A4"); errors.Is(err, ErrChannelStolen) {
+		t.Fatal("stolen state must clear once the stolen editor node is gone")
+	}
+}
+
+func TestDesyncIsNotCountedAsPeerClose(t *testing.T) {
+	c, server := probePair(t)
+	server.Write([]byte("garbage"))
+	time.Sleep(20 * time.Millisecond)
+	if got := c.probe(false); got != probeDesync {
+		t.Fatalf("probe = %v, want desync (not a peer close)", got)
+	}
+}

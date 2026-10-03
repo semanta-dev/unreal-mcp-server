@@ -2,12 +2,6 @@ package session
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/jdziat/unreal-mcp-server/internal/lifecycle"
@@ -91,39 +85,11 @@ func StateFrom(ctx context.Context) (*State, bool) {
 // ProjectKey canonicalizes a project path (see lifecycle.ProjectKey).
 func ProjectKey(path string) string { return lifecycle.ProjectKey(path) }
 
-// ProjectFile is a project's optional .umcp.json (per-project server defaults).
-type ProjectFile struct {
-	Toolsets            []string `json:"toolsets,omitempty"`
-	GatePolicy          string   `json:"gate_policy,omitempty"` // "off" | "require"
-	KeepPackageRecovery bool     `json:"keep_package_recovery,omitempty"`
-}
+// ProjectFile is a project's optional .umcp.json (see lifecycle.ProjectFile).
+type ProjectFile = lifecycle.ProjectFile
 
 // ProjectFileName is the per-project config file name.
-const ProjectFileName = ".umcp.json"
+const ProjectFileName = lifecycle.ProjectFileName
 
-// LoadProjectFile reads <dir>/.umcp.json. A missing file is not an error (zero value).
-func LoadProjectFile(dir string) (ProjectFile, error) {
-	var pf ProjectFile
-	if dir == "" {
-		return pf, nil
-	}
-	if strings.EqualFold(filepath.Ext(dir), ".uproject") {
-		dir = filepath.Dir(dir)
-	}
-	b, err := os.ReadFile(filepath.Join(dir, ProjectFileName))
-	if errors.Is(err, fs.ErrNotExist) {
-		return pf, nil
-	}
-	if err != nil {
-		return pf, err
-	}
-	if err := json.Unmarshal(b, &pf); err != nil {
-		return pf, err
-	}
-	switch pf.GatePolicy {
-	case "", "off", "require":
-	default:
-		return pf, errors.New(ProjectFileName + `: gate_policy must be "off" or "require"`)
-	}
-	return pf, nil
-}
+// LoadProjectFile reads <dir>/.umcp.json (see lifecycle.LoadProjectFile).
+func LoadProjectFile(dir string) (ProjectFile, error) { return lifecycle.LoadProjectFile(dir) }

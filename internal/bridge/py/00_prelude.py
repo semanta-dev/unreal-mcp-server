@@ -1,5 +1,8 @@
-# mcp_bridge.py — companion module hot-loaded into the Unreal Editor's __main__
-# namespace by the Go MCP server. The server invokes _mcp_dispatch(op, b64args)
+# mcp_bridge.py — companion module the Go MCP server (v2) loads into the Unreal Editor
+# as its OWN module object, bound in __main__ as `_mcp2` (so it can never collide with
+# a v1 companion's helpers). __main__ only gets the entry points _mcp2_dispatch,
+# _mcp2_dispatch_native and _MCP2_BRIDGE_VERSION. The server invokes
+# _mcp2_dispatch(op, b64args)
 # with base64-encoded JSON args; each op returns a JSON-serializable value that
 # is emitted back via the __MCP_JSON__ marker. Keeping all editor-side logic here
 # (not hand-built in Go) is the DRY + injection-safe design (GO_REWRITE_PLAN.md §8).
@@ -13,7 +16,7 @@
 # Text-style ops return a "message" field carrying the exact string the Python
 # server produced, so the A/B parity harness can assert text equality.
 
-_MCP_BRIDGE_VERSION = 37
+_MCP2_BRIDGE_VERSION = 1
 
 import unreal
 import json
@@ -63,7 +66,7 @@ def _actor_ref(a):
 # --- native cockpit sink (Phase B1, EDITOR_PLUGIN_PLAN.md §5.1) -------------
 # When MCPCore drives a dispatch it sets _MCP_NATIVE_SINK to the current op_id so _emit
 # routes the result to the native framed channel instead of the stdout marker. This is
-# strictly PER-DISPATCH (set/cleared around one op by _mcp_dispatch_native), deliberately
+# strictly PER-DISPATCH (set/cleared around one op by _mcp2_dispatch_native), deliberately
 # DECOUPLED from the cockpit_info presence probe, so a session that fell back to uexec can
 # never mis-route a result into the native ring and hang.
 _MCP_NATIVE_SINK = None

@@ -47,12 +47,12 @@ func mustConcatCompanion(fsys embed.FS) string {
 // companionSource of truth (a drift between Go and Python would reinstall forever).
 var companionVersion = mustParseVersion(companionSource)
 
-var companionVersionRe = regexp.MustCompile(`(?m)^_MCP_BRIDGE_VERSION\s*=\s*(\d+)`)
+var companionVersionRe = regexp.MustCompile(`(?m)^_MCP2_BRIDGE_VERSION\s*=\s*(\d+)`)
 
 func mustParseVersion(src string) int {
 	m := companionVersionRe.FindStringSubmatch(src)
 	if m == nil {
-		panic("snippets: _MCP_BRIDGE_VERSION not found in py/00_prelude.py")
+		panic("bridge: _MCP2_BRIDGE_VERSION not found in py/00_prelude.py")
 	}
 	n, err := strconv.Atoi(m[1])
 	if err != nil {

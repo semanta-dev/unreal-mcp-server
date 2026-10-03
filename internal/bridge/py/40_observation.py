@@ -1,7 +1,7 @@
 # ===========================================================================
 # v7 additions — reflection-driven observation, multi-frame capture recorder,
 # declarative scene realize + design lint, and tighter editor integration.
-# All ops are additive and injection-safe (base64-JSON args via _mcp_dispatch).
+# All ops are additive and injection-safe (base64-JSON args via _mcp2_dispatch).
 # ===========================================================================
 
 # --- reflection-driven observation (game-agnostic; replaces hardcoded allowlists) ---

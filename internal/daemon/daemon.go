@@ -36,6 +36,13 @@ type Daemon struct {
 	records         *supervisor.RecordStore
 	logger          *slog.Logger
 
+	// OnEditorReady, when set, runs once per editor instance after a session first
+	// leases it (e.g. the cockpit launcher); its ctx ends when the instance leaves
+	// the pool.
+	OnEditorReady func(ctx context.Context, project string, b *bridge.Bridge)
+	readyMu       sync.Mutex
+	readyStarted  map[string]bool // instanceID -> OnEditorReady started
+
 	jobsMu      sync.Mutex
 	projectJobs map[string]*jobs.Registry // canonical project key -> that project's jobs
 

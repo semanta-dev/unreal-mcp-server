@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"github.com/jdziat/unreal-mcp-server/internal/supervisor"
 	"time"
 
 	"github.com/jdziat/unreal-mcp-server/internal/jobs"
@@ -63,8 +64,50 @@ func (dm *Daemon) Attach(ctx context.Context, sid, project string) (string, erro
 	id, err := dm.Router.Attach(ctx, sid, project)
 	if err == nil {
 		dm.touch(sid)
+		dm.editorReady(sid, id, project)
 	}
 	return id, err
+}
+
+// editorReady starts OnEditorReady once per instance, with a context that ends when
+// the instance leaves the pool.
+func (dm *Daemon) editorReady(sid, id, project string) {
+	if dm.OnEditorReady == nil {
+		return
+	}
+	dm.readyMu.Lock()
+	if dm.readyStarted == nil {
+		dm.readyStarted = map[string]bool{}
+	}
+	if dm.readyStarted[id] {
+		dm.readyMu.Unlock()
+		return
+	}
+	dm.readyStarted[id] = true
+	dm.readyMu.Unlock()
+	ed, _, err := dm.Router.Resolve(sid)
+	if err != nil {
+		return
+	}
+	eh, ok := ed.(*supervisor.EditorHandle)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { // end the hook when the instance is gone
+		defer cancel()
+		t := time.NewTicker(5 * time.Second)
+		defer t.Stop()
+		for range t.C {
+			if _, ok := dm.Pool.Get(id); !ok {
+				dm.readyMu.Lock()
+				delete(dm.readyStarted, id)
+				dm.readyMu.Unlock()
+				return
+			}
+		}
+	}()
+	go dm.OnEditorReady(ctx, project, eh.Bridge())
 }
 
 // Release implements session.ProjectManager (explicit project_release).

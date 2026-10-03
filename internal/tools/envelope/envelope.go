@@ -163,8 +163,11 @@ func Classify(err error, mutating bool) *Error {
 		return &Error{Code: EditorBusy, Message: err.Error(), Outcome: outcome, Retryable: false,
 			Details: map[string]any{"reason": "channel_stolen"},
 			Hint:    "another MCP server is connected to this editor; stop it, or reclaim the channel explicitly"}
-	case errors.Is(err, uexec.ErrConnectionLost):
+	case errors.Is(err, uexec.ErrOutcomeUnknown):
 		return &Error{Code: EditorUnreachable, Message: err.Error(), Outcome: unknown, Retryable: !mutating}
+	case errors.Is(err, uexec.ErrConnectionLost):
+		// Lost before anything was sent (connect or write failed): nothing executed.
+		return &Error{Code: EditorUnreachable, Message: err.Error(), Outcome: OutcomeNone, Retryable: true}
 	case errors.Is(err, bridge.ErrInstall):
 		return &Error{Code: EditorUnreachable, Message: err.Error(), Outcome: OutcomeNone, Retryable: true,
 			Hint: "the companion module could not be installed; check the editor log"}

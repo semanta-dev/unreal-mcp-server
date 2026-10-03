@@ -58,7 +58,19 @@ func (l *Launcher) Run(ctx context.Context, b *bridge.Bridge, cfg LaunchConfig, 
 		cfg.RetryEvery = 3 * time.Second
 	}
 	epochs := NewMemEpochStore()
+	retry := cfg.RetryEvery
+	var absentGen uint64 // channel generation on which MCPCore was found absent (0 = none)
 	for ctx.Err() == nil {
+		// MCPCore absence is a property of the running editor: don't re-probe the
+		// game thread every few seconds — only after the command channel changes
+		// (reconnect / editor restart), or at the backoff cap.
+		if !shouldProbe(absentGen, b.Generation()) {
+			if sleep(ctx, maxRetry) {
+				return
+			}
+			absentGen = 0 // re-probe once per cap interval as a backstop
+			continue
+		}
 		sess, err := Bootstrap(ctx, b, BootstrapConfig{
 			Project:      cfg.Project,
 			CockpitToken: randToken(),
@@ -66,15 +78,18 @@ func (l *Launcher) Run(ctx context.Context, b *bridge.Bridge, cfg LaunchConfig, 
 			Epochs:       epochs,
 		})
 		if err != nil || sess == nil {
-			// editor unreachable yet, or MCPCore not loaded (uexec fallback) → retry.
-			if err != nil {
-				logger.Debug("cockpit bootstrap retrying", "err", err)
+			if err != nil { // editor unreachable yet → back off
+				logger.Debug("cockpit bootstrap retrying", "err", err, "in", retry.String())
+			} else { // MCPCore not loaded → uexec fallback; remember for this channel
+				absentGen = b.Generation()
 			}
-			if sleep(ctx, cfg.RetryEvery) {
+			if sleep(ctx, retry) {
 				return
 			}
+			retry = nextBackoff(retry)
 			continue
 		}
+		retry = cfg.RetryEvery
 		url := sess.CockpitURL()
 		l.set(sess, url, true)
 		writeURLFile(cfg.ProjectDir, url, logger)
@@ -84,12 +99,23 @@ func (l *Launcher) Run(ctx context.Context, b *bridge.Bridge, cfg LaunchConfig, 
 		case <-ctx.Done():
 			sess.Close()
 			return
-		case <-sess.Done(): // editor dropped → clear + re-bootstrap
+		case <-sess.Done(): // editor dropped → clear + re-bootstrap (resuming the event seq)
+			epochs.Advance(cfg.Project, sess.EditorEpoch(), sess.Client().LastSeq())
 			l.set(nil, "", false)
 			logger.Info("cockpit session ended; will re-open when the editor is reachable")
 		}
 	}
 }
+
+// maxRetry caps the bootstrap backoff.
+const maxRetry = 60 * time.Second
+
+// nextBackoff doubles the retry interval up to maxRetry.
+func nextBackoff(d time.Duration) time.Duration { return min(2*d, maxRetry) }
+
+// shouldProbe reports whether to probe for MCPCore: always, unless it was found
+// absent on the current command-channel generation.
+func shouldProbe(absentGen, gen uint64) bool { return absentGen == 0 || absentGen != gen }
 
 func randToken() string {
 	b := make([]byte, 16)

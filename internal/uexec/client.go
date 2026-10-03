@@ -118,7 +118,7 @@ func (s *Session) openCommandLocked(ctx context.Context, nodeID string) error {
 		s.cmd.close()
 		s.cmd = nil
 	}
-	cmd := &commandConn{cfg: s.cfg, self: s.self, remote: nodeID, bc: s.bc, logger: s.logger}
+	cmd := &commandConn{cfg: s.cfg, self: s.self, remote: nodeID, bc: s.bc, logger: s.logger, now: s.now}
 	if err := cmd.open(ctx); err != nil {
 		return err
 	}
@@ -158,17 +158,29 @@ func (s *Session) RunCommand(ctx context.Context, code string, mode ExecMode) (C
 		return CommandResult{}, errors.New("uexec: session not started")
 	}
 	if s.stolen {
-		return CommandResult{}, ErrChannelStolen
+		// The slot was taken from THIS editor instance. If that node has left discovery
+		// (the editor quit, crashed or was restarted), the theft no longer applies.
+		if s.nodeListedLocked() {
+			return CommandResult{}, ErrChannelStolen
+		}
+		s.logger.Info("stolen editor node is gone; resuming normal reconnects", "node_id", s.nodeID)
+		s.stolen, s.peerReconnAt = false, time.Time{}
 	}
 	policy := retryPolicy(ctx)
 
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		// Case 0: replace a channel that died while idle before sending anything.
-		if s.cmd != nil && !s.cmd.tainted && !s.cmd.alive(policy == RetryIdempotent) {
-			s.cmd.taint()
-			if err := s.notePeerCloseLocked(); err != nil {
-				return CommandResult{}, err
+		// Case 0: replace a channel that died while idle before sending anything. A
+		// desync (unsolicited bytes) is reconnected but is not a peer close.
+		if s.cmd != nil && !s.cmd.tainted {
+			switch s.cmd.probe(policy == RetryIdempotent) {
+			case probeDead:
+				s.cmd.taint()
+				if err := s.notePeerCloseLocked(); err != nil {
+					return CommandResult{}, err
+				}
+			case probeDesync:
+				s.cmd.taint()
 			}
 		}
 		if s.cmd == nil || s.cmd.tainted {
@@ -216,7 +228,7 @@ func (s *Session) notePeerCloseLocked() error {
 	if s.now != nil {
 		now = s.now()
 	}
-	if !s.peerReconnAt.IsZero() && now.Sub(s.peerReconnAt) <= theftWindow && s.nodeAnsweringLocked() {
+	if !s.peerReconnAt.IsZero() && now.Sub(s.peerReconnAt) <= theftWindow && s.freshPongLocked(freshPongWait) {
 		s.stolen = true
 		s.logger.Warn("command channel stolen by another client; not reconnecting until reclaimed", "node_id", s.nodeID)
 		return ErrChannelStolen
@@ -225,7 +237,32 @@ func (s *Session) notePeerCloseLocked() error {
 	return nil
 }
 
-func (s *Session) nodeAnsweringLocked() bool {
+// freshPongWait bounds the theft check's discovery round-trip.
+const freshPongWait = time.Second
+
+// freshPongLocked pings and reports whether the SAME editor node answers within
+// wait — a pong received after now, not a cached table entry (a node that just
+// crashed stays listed until NodeTimeout).
+func (s *Session) freshPongLocked(wait time.Duration) bool {
+	if s.bc == nil || s.nodeID == "" {
+		return false
+	}
+	since := time.Now()
+	s.bc.sendPing()
+	deadline := since.Add(wait)
+	for time.Now().Before(deadline) {
+		for _, n := range s.bc.nodes.list() {
+			if n.ID == s.nodeID && n.LastPong.After(since) {
+				return true
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return false
+}
+
+// nodeListedLocked reports whether the session's node is still in discovery.
+func (s *Session) nodeListedLocked() bool {
 	if s.bc == nil || s.nodeID == "" {
 		return false
 	}

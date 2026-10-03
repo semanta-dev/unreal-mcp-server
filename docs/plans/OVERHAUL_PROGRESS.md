@@ -275,3 +275,48 @@ is a per-daemon field (a package var raced across tests under `-race`).
   until `Reclaim`, which reconnects exactly once; peer closes outside the theft window reconnect normally.
 - `TestCallsSurviveChannelDrops` (P0 baseline) rewritten to a one-off drop: an editor that drops after *every* reply
   now reads as channel theft and fails fast (visible + recoverable) instead of silently reconnecting on every command.
+
+**Gate P3b, round 2: A (pass).** Early read on P4a raised 4 issues, all fixed in P4b below.
+
+**P4b: remaining supervisor & connection work (done).**
+- *P4a review fixes*: theft now requires a **fresh pong** received after the close (active ping, ≤ 1 s) — a node that
+  just crashed stays in the cached table for `NodeTimeout`, which could falsely mark a session stolen; a stolen
+  session **clears itself** once that editor node leaves discovery (quit/crash/restart); a probe **desync** (unsolicited
+  bytes) reconnects but does not count toward theft (`probeResult` = alive/dead/desync); a bare `ErrConnectionLost`
+  (connect/write failed — nothing sent) now classifies `outcome:"none"`, retryable, while `ErrOutcomeUnknown` keeps
+  `unknown`; the probe's skip window uses the session's injected clock; the gated job clears its session owner inside
+  the approval branch and never starts if teardown raced the decision.
+- **`_mcp2` companion namespacing**: the companion now executes in its **own module object** (`__main__._mcp2`,
+  `types.ModuleType`; on-disk mode binds the imported module the same way) and only `_mcp2_dispatch`,
+  `_mcp2_dispatch_native`, `_MCP2_BRIDGE_VERSION` (= 1) are bound into `__main__`. Verified in real CPython with a
+  stub `unreal`: no helper leaks into `__main__`, v1 names untouched, unknown op → `UNKNOWN_OP` envelope.
+  **Plan finding:** the C++ plugin hard-codes `__main__._mcp_dispatch_native` (`MCPCockpitServer.cpp:218`) — the one
+  name v2 cannot namespace without a plugin rebuild. `Bridge.ClaimNative` points it at the v2 companion **only when v2
+  attaches the cockpit** and zeroes v1's `_MCP_BRIDGE_VERSION`, so a rollback to v1 reinstalls v1 instead of calling a
+  redirected entry point. `attach.Bootstrap` claims before selecting the native backend (tested).
+- Emulator: v2 names, module install, **on-disk install emulation** (reads the written `mcp_bridge.py`; P0 gate
+  note), native-claim counter. Split byte-identity test retired (the module is now edited, as planned).
+- **Every editor launch passes `-AutoDeclinePackageRecovery`** (`lifecycle.launchArgs`), unless the project's
+  `.umcp.json` sets `keep_package_recovery` (project-file loader moved to `lifecycle`; `session` re-exports).
+- **Cockpit**: bootstrap retry backs off 3 s → 60 s; MCPCore absence is cached per command-channel generation (no
+  game-thread probe every 3 s); `MemEpochStore` really tracks the resume seq per (project, epoch) and the launcher
+  advances it when a session drops. `-cockpit off|on` (default **off** until P7: the plugin accepts one Go peer);
+  daemon mode attaches a launcher per leased editor via `Daemon.OnEditorReady` when on.
+- **Config**: `Validate()` (snippet mode, ondisk⇒project, auto-relaunch⇒project+engine, log level/format, timeouts,
+  session-idle, cockpit) — exits 2 on bad config; engine dir resolves flag → `UMCP_ENGINE_DIR` → `UE_ENGINE_DIR` →
+  Epic launcher `LauncherInstalled.dat` (project's `EngineAssociation` first, else newest, numeric version compare);
+  the hard-coded `D:/Unreal/Engine/UE_5.7` default is gone. `LoadFrom(flagset,args)` makes it testable: coverage
+  **94.2%** (plan target 90%).
+- **Unicast discovery**: a non-multicast `-group` address pings that endpoint directly (binary tests; remote editors).
+- **T3 binary smoke** (`internal/e2e/binary_test.go`): `go build -cover`; stdio over `mcp.CommandTransport` against a
+  fake editor → 152 tools, spawn→list round-trip, stdin EOF ⇒ exit 0 in < 5 s, `covcounters.*` present (stdout purity
+  implicit — any stray stdout write breaks the transport); daemon over HTTP: two concurrent sessions, daemon toolset
+  present, `project_list` works, unattached `editor_status` fails cleanly. Both pass.
+- `scripts/refs.ps1` now verifies the §0 baseline against the `v1-final` tag (the overhaul changes those lines).
+
+**Deviation: stdio is not literally "a pool of size 1".** In stdio the server attaches to a user-launched editor that
+carries no daemon token, so a lease pool adds no safety; what the plan's unification protects — launch flags,
+relaunch, orphan reaping, liveness, record store — is shared in `supervisor`/`lifecycle` by both topologies.
+
+**Evidence.** `go vet ./...` clean; gofmt clean; `go test ./...` all ok; `-race -short ./internal/...` all ok;
+uexec theft/probe/exactly-once tests stable at `-count=10`; refs exit 0.

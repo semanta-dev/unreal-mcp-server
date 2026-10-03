@@ -8,7 +8,7 @@ def _op_editor_status(args):
         "project_dir": unreal.SystemLibrary.get_project_directory(),
         "current_level": world.get_name() if world else None,
         "is_in_pie": unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).is_in_play_in_editor(),
-        "bridge_version": _MCP_BRIDGE_VERSION,
+        "bridge_version": _MCP2_BRIDGE_VERSION,
         "editor_pid": os.getpid(),
     }
 

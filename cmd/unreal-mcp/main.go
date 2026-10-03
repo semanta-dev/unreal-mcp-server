@@ -33,6 +33,10 @@ func main() {
 		fmt.Println(version.String())
 		return
 	}
+	if err := cfg.Validate(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 
 	// STDOUT PURITY: it carries the MCP JSON-RPC frame. All logging goes to
 	// stderr, and the stdlib default logger is caged to stderr too.
@@ -88,7 +92,9 @@ func main() {
 	// native MCPCore channel is reachable; the launcher surfaces its URL via a log line, a
 	// Saved/PyMCP/cockpit_url.txt file, and the cockpit_url tool.
 	launcher := attach.NewLauncher()
-	go launcher.Run(ctx, b, attach.LaunchConfig{Project: cfg.ProjectDir, ProjectDir: cfg.ProjectDir}, logger)
+	if cfg.Cockpit == "on" {
+		go launcher.Run(ctx, b, attach.LaunchConfig{Project: cfg.ProjectDir, ProjectDir: cfg.ProjectDir}, logger)
+	}
 
 	st := session.NewState("stdio")
 	defer st.Teardown()
