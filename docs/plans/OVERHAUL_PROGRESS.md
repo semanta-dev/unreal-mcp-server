@@ -232,3 +232,46 @@ timeout_s-shortening unit test added).
   closer/warm release/prune; jobs WaitFor/CancelOwned/List.
 - v1 surface unchanged (`TestV1SurfaceFrozen` 155 names, `TestV1EnvelopeGolden` byte-identical); archtest updated
   for `app`, `session → lifecycle`, `tools/spec → jobs`.
+
+**Gate P3b, round 1: B+ (fail)** — MCP/test reviewer. Fixed:
+1. *Sweeper test flaky (21/30 fails without `-race`)*: a zero-TTL sweep compared `lastSeen.Before(now)`, and Windows'
+   coarse monotonic clock put both on the same tick. The sweep now treats `lastSeen ≤ cutoff` as idle (same semantics
+   for real TTLs). Proven: `-count=50` without `-race` → 50/50.
+2. *Teardown cancelled approved, running ops*: the pending-approval job is owned by `approval:<session>` only while it
+   awaits a decision; on approval it clears its owner (`Job.SetOwner("")`, owner now mutex-guarded), so a session that
+   ends mid-run lets the op finish and the lease drains. Test: approve → teardown mid-run → op completes once.
+3. *Progress after the response*: an approved op runs on a **detached** copy of the call (no progress token, no
+   `wait_s`); an approved **async** op's pending job waits for the inner job and carries its final result. Test:
+   zero progress notifications after the `pending_approval` response; job result = inner job's `succeeded` view.
+NB fixes: sessions that never send `notifications/initialized` are bound on their first request (single `sync.Once`
+bind shared with the InitializedHandler); `Toolsets.Apply` validates every name before changing anything and keeps
+the startup toolsets (`base`); drains are keyed by **session** (two drains on one project no longer overwrite) and
+released promptly by a per-drain watcher (`TickDrains` stays the backstop) — tests for both; the drain poll interval
+is a per-daemon field (a package var raced across tests under `-race`).
+
+## P4 — Supervisor & connection semantics (in progress)
+
+**P4a: exactly-once dispatch + connection-loss decision table (done, in the same commit as the P3b fixes).**
+- `uexec`: `RetryPolicy` carried in the context (`RetryNone` default, `RetryIdempotent`); `ErrOutcomeUnknown` (wraps
+  `ErrConnectionLost`) for a read-side loss after a successful write; `ErrChannelStolen` + `Session.Stolen/Reclaim`;
+  the decision table in `RunCommand`: (0) liveness probe before sending — retained `bufio.Reader`, `Peek(1)` with a
+  3 ms deadline, whitespace consumed, any other unsolicited byte = desync; (1) self-taint as before; (2) failed write
+  re-sent once; (3) read loss after write → `ErrOutcomeUnknown`, re-sent once only under `RetryIdempotent`; (4) a peer
+  close within 10 s of reconnecting from one, while the same node still answers discovery → stolen, fail fast, no
+  reconnect until `Reclaim`. Injected clock for the theft window.
+- **Deviation from the plan (found while testing):** the probe is skipped on a recently-used channel only for
+  idempotent commands. A non-idempotent command always probes (≈3 ms), because an editor that closes the channel
+  right after its last reply would otherwise swallow the next mutating command with an unknown outcome — the old
+  `TestReconnectOnEditorDroppedConnection` caught exactly this. Also: a *failed reconnect* while the node still answers
+  is reported as `EDITOR_BUSY`, not theft — UE also refuses connect-back while its game thread is busy.
+- Spec layer sets `RetryIdempotent` for ReadOnly/idempotent ops; the bridge marks its install/version/perf commands
+  idempotent; envelope maps `ErrChannelStolen` → `EDITOR_BUSY {reason: channel_stolen}`.
+- Fake editor: `SingleSlot` (a new open_connection closes the existing channels, as UE does), `DropReplyIf` (execute,
+  then close without replying), `CloseChannels` (limit `CloseAfterReplies` to the first N channels), `Connections()`.
+- Tests: mutating command with a dropped reply executes **exactly once** and returns `ErrOutcomeUnknown`, then the
+  session recovers; idempotent command is re-sent (runs twice, succeeds); probe detects a peer FIN, consumes trailing
+  whitespace, flags unsolicited data without consuming it; recent-channel skip applies to idempotent only; two clients
+  on a single-slot editor → the victim reports `ErrChannelStolen` on the re-steal, makes **no further connections**
+  until `Reclaim`, which reconnects exactly once; peer closes outside the theft window reconnect normally.
+- `TestCallsSurviveChannelDrops` (P0 baseline) rewritten to a one-off drop: an editor that drops after *every* reply
+  now reads as channel theft and fails fast (visible + recoverable) instead of silently reconnecting on every command.

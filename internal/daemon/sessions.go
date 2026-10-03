@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jdziat/unreal-mcp-server/internal/jobs"
 	"github.com/jdziat/unreal-mcp-server/internal/session"
@@ -18,7 +19,7 @@ var _ session.ProjectManager = (*Daemon)(nil)
 
 // drain is a lease held past its session's end because a project job is running.
 type drain struct {
-	session  string
+	project  string // canonical project key
 	instance string
 }
 
@@ -42,14 +43,18 @@ func (dm *Daemon) Attach(ctx context.Context, sid, project string) (string, erro
 	}
 	key := session.ProjectKey(project)
 	dm.sessMu.Lock()
-	d, draining := dm.draining[key]
-	if draining {
-		delete(dm.draining, key)
+	from, draining := "", false
+	for oldSid, d := range dm.draining {
+		if d.project == key {
+			from, draining = oldSid, true
+			delete(dm.draining, oldSid)
+			break
+		}
 	}
 	dm.sessMu.Unlock()
 	if draining {
-		if id, err := dm.Router.Transfer(d.session, sid); err == nil {
-			dm.logger.Info("adopted draining lease", "project", key, "from", d.session, "to", sid, "instance", id)
+		if id, err := dm.Router.Transfer(from, sid); err == nil {
+			dm.logger.Info("adopted draining lease", "project", key, "from", from, "to", sid, "instance", id)
 			dm.touch(sid)
 			return id, nil
 		}
@@ -99,37 +104,69 @@ func (dm *Daemon) EndSession(sid string) {
 	key := session.ProjectKey(inst.Project)
 	if dm.jobsForProject(key).HasRunning() {
 		dm.sessMu.Lock()
-		dm.draining[key] = drain{session: sid, instance: id}
+		dm.draining[sid] = drain{project: key, instance: id}
 		dm.sessMu.Unlock()
 		dm.logger.Info("session ended with a running job; lease draining", "session", sid, "project", key)
+		go dm.awaitDrain(sid, key)
 		return
 	}
 	dm.Router.Release(sid)
 }
 
+// awaitDrain releases a draining lease as soon as its project's jobs finish (unless
+// it was adopted first). TickDrains on the sweeper loop is the backstop.
+func (dm *Daemon) awaitDrain(sid, key string) {
+	for {
+		time.Sleep(dm.pollEvery())
+		dm.sessMu.Lock()
+		_, still := dm.draining[sid]
+		dm.sessMu.Unlock()
+		if !still {
+			return // adopted, or released by TickDrains
+		}
+		if !dm.jobsForProject(key).HasRunning() {
+			dm.TickDrains()
+			return
+		}
+	}
+}
+
+// pollEvery is how often a draining lease checks for its project's jobs to finish.
+func (dm *Daemon) pollEvery() time.Duration {
+	if dm.drainPoll > 0 {
+		return dm.drainPoll
+	}
+	return 200 * time.Millisecond
+}
+
 // TickDrains releases draining leases whose project jobs have all finished.
 func (dm *Daemon) TickDrains() {
 	dm.sessMu.Lock()
-	var done []drain
-	for key, d := range dm.draining {
-		if !dm.jobsForProject(key).HasRunning() {
-			done = append(done, d)
-			delete(dm.draining, key)
+	var done []string
+	for sid, d := range dm.draining {
+		if !dm.jobsForProject(d.project).HasRunning() {
+			done = append(done, sid)
+			delete(dm.draining, sid)
 		}
 	}
 	dm.sessMu.Unlock()
-	for _, d := range done {
-		dm.Router.Release(d.session)
-		dm.logger.Info("drained lease released", "session", d.session, "instance", d.instance)
+	for _, sid := range done {
+		dm.Router.Release(sid)
+		dm.logger.Info("drained lease released", "session", sid)
 	}
 }
 
 // Draining reports whether a project currently has a draining lease (tests/cockpit).
 func (dm *Daemon) Draining(project string) bool {
+	key := session.ProjectKey(project)
 	dm.sessMu.Lock()
 	defer dm.sessMu.Unlock()
-	_, ok := dm.draining[session.ProjectKey(project)]
-	return ok
+	for _, d := range dm.draining {
+		if d.project == key {
+			return true
+		}
+	}
+	return false
 }
 
 // ProjectJobs returns the project's jobs registry (the one its sessions' tools use).

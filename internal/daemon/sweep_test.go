@@ -176,3 +176,37 @@ func TestPruneProjectJobs(t *testing.T) {
 		t.Fatalf("live=%v dead=%v; want live kept, gone pruned", live, dead)
 	}
 }
+
+func TestTwoDrainsOnOneProjectBothRelease(t *testing.T) {
+	dm := newTestDaemon()
+	dm.Attach(context.Background(), "s1", "/P")
+	dm.Attach(context.Background(), "s2", "/P") // second editor for the same project
+	release := runningJob(t, dm, "/P")
+	dm.EndSession("s1")
+	dm.EndSession("s2")
+	close(release)
+	waitNoJobs(dm, "/P")
+	dm.TickDrains()
+	for _, sid := range []string{"s1", "s2"} {
+		if _, ok := dm.Router.InstanceFor(sid); ok {
+			t.Fatalf("%s's drained lease was never released (overwritten drain entry)", sid)
+		}
+	}
+}
+
+func TestDrainReleasesPromptlyWhenJobFinishes(t *testing.T) {
+	dm := newTestDaemon()
+	dm.drainPoll = 10 * time.Millisecond
+	dm.Attach(context.Background(), "s1", "/Q")
+	release := runningJob(t, dm, "/Q")
+	dm.EndSession("s1")
+	close(release)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := dm.Router.InstanceFor("s1"); !ok {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("drain was not released promptly after the job finished (no sweeper tick)")
+}

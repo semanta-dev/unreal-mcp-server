@@ -3,6 +3,7 @@ package spec
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -279,5 +280,125 @@ func TestToolsetsEnableDisableEmitListChanged(t *testing.T) {
 	}
 	if _, err := tsm.Enable("nonsense"); err == nil {
 		t.Fatal("unknown toolset must error")
+	}
+}
+
+func TestGateApprovedRunSurvivesSessionTeardown(t *testing.T) {
+	var runs int32
+	started, finish := make(chan struct{}), make(chan struct{})
+	s := &Spec{Name: "slow_nuke", Timeout: 5 * time.Second, Max: 5 * time.Second, Ops: []OpSpec{{Tier: Destructive}},
+		Handler: func(ctx context.Context, c *Call) (*Result, error) {
+			close(started)
+			select {
+			case <-finish:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			runs++
+			return &Result{Data: map[string]any{"done": true}}, nil
+		}}
+	reg := jobs.NewRegistry()
+	st := session.NewState("sess-x")
+	g := &fakeGate{after: 200 * time.Millisecond, approve: true}
+	srv := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1"}, nil)
+	srv.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, m string, r mcp.Request) (mcp.Result, error) {
+			return next(session.WithState(ctx, st), m, r)
+		}
+	})
+	Register(srv, []*Spec{s}, Options{Gate: g, GateTimeout: 5 * time.Second, SyncApprovalWait: 50 * time.Millisecond,
+		Fallback: session.Deps{Jobs: reg}})
+	ctx := context.Background()
+	ct, stt := mcp.NewInMemoryTransports()
+	ss, _ := srv.Connect(ctx, stt, nil)
+	defer ss.Close()
+	cs, _ := mcp.NewClient(&mcp.Implementation{Name: "c", Version: "1"}, nil).Connect(ctx, ct, nil)
+	defer cs.Close()
+
+	res, _ := cs.CallTool(ctx, &mcp.CallToolParams{Name: "slow_nuke"})
+	b, _ := json.Marshal(res.StructuredContent)
+	var out map[string]any
+	_ = json.Unmarshal(b, &out)
+	j, ok := reg.Get(fmt.Sprint(out["job_id"]))
+	if !ok {
+		t.Fatalf("expected a pending job: %s", b)
+	}
+	<-started     // approved and running
+	st.Teardown() // the session ends mid-run
+	close(finish) // the op completes
+	if snap := j.Wait(); snap.Status != jobs.Succeeded || runs != 1 {
+		t.Fatalf("an approved, running op must not be cancelled by teardown: %+v runs=%d", snap, runs)
+	}
+}
+
+func TestGateApprovedAsyncSendsNoLateProgress(t *testing.T) {
+	inner := jobs.NewRegistry()
+	s := &Spec{Name: "slow_build", Async: true, Ops: []OpSpec{{Tier: Exec}},
+		Handler: func(ctx context.Context, c *Call) (*Result, error) {
+			return &Result{Job: inner.Start(context.Background(), func(ctx context.Context, p func(string)) (any, error) {
+				p("compiling")
+				time.Sleep(30 * time.Millisecond)
+				p("linking")
+				return "built", nil
+			})}, nil
+		}}
+	reg := jobs.NewRegistry()
+	g := &fakeGate{after: 150 * time.Millisecond, approve: true}
+	srv := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1"}, nil)
+	Register(srv, []*Spec{s}, Options{Gate: g, GateTimeout: 5 * time.Second, SyncApprovalWait: 50 * time.Millisecond,
+		Fallback: session.Deps{Jobs: reg}})
+	var mu sync.Mutex
+	progress := 0
+	ctx := context.Background()
+	ct, stt := mcp.NewInMemoryTransports()
+	ss, _ := srv.Connect(ctx, stt, nil)
+	defer ss.Close()
+	cs, _ := mcp.NewClient(&mcp.Implementation{Name: "c", Version: "1"}, &mcp.ClientOptions{
+		ProgressNotificationHandler: func(context.Context, *mcp.ProgressNotificationClientRequest) { mu.Lock(); progress++; mu.Unlock() },
+	}).Connect(ctx, ct, nil)
+	defer cs.Close()
+
+	params := &mcp.CallToolParams{Name: "slow_build", Arguments: map[string]any{"wait_s": 5}}
+	params.SetProgressToken("tok")
+	res, _ := cs.CallTool(ctx, params)
+	b, _ := json.Marshal(res.StructuredContent)
+	var out map[string]any
+	_ = json.Unmarshal(b, &out)
+	if out["state"] != "pending_approval" {
+		t.Fatalf("expected pending_approval: %s", b)
+	}
+	j, _ := reg.Get(fmt.Sprint(out["job_id"]))
+	snap := j.Wait()
+	time.Sleep(50 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	if progress != 0 {
+		t.Fatalf("%d progress notifications were sent on the original token after its response", progress)
+	}
+	view, _ := snap.Result.(map[string]any)
+	if snap.Status != jobs.Succeeded || view["state"] != "succeeded" || view["result"] != "built" {
+		t.Fatalf("the pending job must carry the async op's final result, got %+v", snap)
+	}
+}
+
+func TestToolsetsApplyKeepsBaseAndIsAtomic(t *testing.T) {
+	mk := func(name string, ts Toolset) *Spec {
+		return &Spec{Name: name, Toolset: ts, Max: time.Second, Ops: []OpSpec{{Tier: ReadOnly}},
+			Handler: func(context.Context, *Call) (*Result, error) { return nil, nil }}
+	}
+	srv := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1"}, nil)
+	tsm := NewToolsets(srv, []*Spec{mk("c", Core), mk("d", Daemon), mk("u", UI), mk("x", Design)}, Options{}, Daemon)
+	if err := tsm.Apply([]Toolset{UI}); err != nil {
+		t.Fatal(err)
+	}
+	got := tsm.Enabled()
+	if len(got) != 3 || got[0] != Core || got[1] != Daemon || got[2] != UI {
+		t.Fatalf("Apply must keep startup toolsets: %v", got)
+	}
+	if err := tsm.Apply([]Toolset{Design, "bogus"}); err == nil {
+		t.Fatal("unknown toolset must be rejected")
+	}
+	if got := tsm.Enabled(); len(got) != 3 || got[2] != UI {
+		t.Fatalf("a rejected Apply must change nothing: %v", got)
 	}
 }

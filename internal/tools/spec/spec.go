@@ -26,6 +26,7 @@ import (
 	"github.com/jdziat/unreal-mcp-server/internal/jobs"
 	"github.com/jdziat/unreal-mcp-server/internal/session"
 	"github.com/jdziat/unreal-mcp-server/internal/tools/envelope"
+	"github.com/jdziat/unreal-mcp-server/internal/uexec"
 )
 
 // Tier is an op's safety class; a tool's tier is its worst op (§2.1).
@@ -304,8 +305,14 @@ func (s *Spec) handler(o Options) mcp.ToolHandler {
 	}
 }
 
-// run executes the handler under the op's declared timing and renders the result.
-func (s *Spec) run(ctx context.Context, c *Call, mutating bool) *mcp.CallToolResult {
+// invoke runs the handler under the op's declared timing and retry policy.
+func (s *Spec) invoke(ctx context.Context, c *Call) (*Result, error) {
+	// A read-only or idempotent op may be transparently re-sent if the editor
+	// connection drops after the command was written; anything else reports
+	// outcome:"unknown" instead of risking a second execution (plan §2.8).
+	if c.Op.Tier == ReadOnly || c.Op.Idempotent {
+		ctx = uexec.WithRetryPolicy(ctx, uexec.RetryIdempotent)
+	}
 	// The spec layer bounds a call only when the spec declares timing. A caller's
 	// timeout_s overrides it, capped at the op's Max; specs without declared timing
 	// (the v1 adapter) leave timeout_s entirely to their handlers.
@@ -318,7 +325,12 @@ func (s *Spec) run(ctx context.Context, c *Call, mutating bool) *mcp.CallToolRes
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	out, herr := s.Handler(ctx, c)
+	return s.Handler(ctx, c)
+}
+
+// run executes the handler and renders the result.
+func (s *Spec) run(ctx context.Context, c *Call, mutating bool) *mcp.CallToolResult {
+	out, herr := s.invoke(ctx, c)
 	if herr != nil {
 		return envelope.ErrorResult(envelope.Classify(herr, mutating))
 	}
@@ -331,6 +343,30 @@ func (s *Spec) run(ctx context.Context, c *Call, mutating bool) *mcp.CallToolRes
 		return awaitJob(ctx, c, out.Job)
 	}
 	return envelope.Result(out.Data, out.Summary, out.Content...)
+}
+
+// detached returns a copy of the call for running after its MCP response was sent
+// (an approved pending job): no progress token and no wait_s, so nothing is ever sent
+// on the original request's token after its response (MCP progress rule).
+func detached(c *Call) *Call {
+	cc := *c
+	if c.Request != nil {
+		req := *c.Request
+		if c.Request.Params != nil {
+			params := *c.Request.Params
+			params.Meta = nil
+			req.Params = &params
+		}
+		cc.Request = &req
+	}
+	cc.Args = make(map[string]any, len(c.Args))
+	for k, v := range c.Args {
+		if k != "wait_s" {
+			cc.Args[k] = v
+		}
+	}
+	cc.Raw, _ = json.Marshal(cc.Args)
+	return &cc
 }
 
 // awaitJob returns an async op's job immediately, or after waiting up to the
@@ -415,7 +451,15 @@ func (s *Spec) gated(ctx context.Context, c *Call, o Options, mutating bool) *mc
 			WithDetail("reason", "approval_timeout"))
 	}
 	remaining := total - syncWait
-	j := c.Deps.Jobs.StartOwned(context.Background(), sessID, func(jctx context.Context, progress func(string)) (any, error) {
+	// The pending job is owned by the session only while it AWAITS approval (teardown
+	// cancels and severs it then). Once approved it is project work like any other job:
+	// ownership is cleared so a session ending mid-run lets it finish (and the lease
+	// drains) instead of cancelling a destructive op half-way.
+	owner := "approval:" + sessID
+	self := make(chan *jobs.Job, 1)
+	dc := detached(c)
+	j := c.Deps.Jobs.StartOwned(context.Background(), owner, func(jctx context.Context, progress func(string)) (any, error) {
+		me := <-self
 		progress("awaiting approval")
 		t := time.NewTimer(remaining)
 		defer t.Stop()
@@ -435,15 +479,32 @@ func (s *Spec) gated(ctx context.Context, c *Call, o Options, mutating bool) *mc
 			sever()
 			return nil, jctx.Err()
 		}
+		me.SetOwner("")
 		progress("approved; running")
-		res := s.run(jctx, c, mutating)
-		if res.IsError {
-			return res.StructuredContent, fmt.Errorf("%s failed after approval", s.Name)
+		out, err := s.invoke(jctx, dc)
+		if err != nil {
+			return nil, err
 		}
-		return res.StructuredContent, nil
+		switch {
+		case out == nil:
+			return map[string]any{}, nil
+		case out.Passthrough != nil:
+			if out.Passthrough.IsError {
+				return out.Passthrough.StructuredContent, fmt.Errorf("%s failed after approval", s.Name)
+			}
+			return out.Passthrough.StructuredContent, nil
+		case out.Job != nil: // an async op: this job finishes when its job does
+			snap := out.Job.Wait()
+			if snap.Status != jobs.Succeeded {
+				return JobView(snap), fmt.Errorf("%s: %s", s.Name, snap.Err)
+			}
+			return JobView(snap), nil
+		}
+		return out.Data, nil
 	})
+	self <- j
 	if haveState {
-		st.OnTeardown(func() { c.Deps.Jobs.CancelOwned(st.ID()) })
+		st.OnTeardown(func() { c.Deps.Jobs.CancelOwned(owner) })
 	}
 	return envelope.Result(map[string]any{"state": "pending_approval", "executed": false, "job_id": j.ID},
 		fmt.Sprintf("NOT executed — awaiting approval (job %s)", j.ID))

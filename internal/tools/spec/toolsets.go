@@ -19,11 +19,13 @@ type Toolsets struct {
 	byTS    map[Toolset][]*Spec
 	toolTS  map[string]Toolset
 	enabled map[Toolset]bool
+	base    map[Toolset]bool // enabled at construction (startup flags); Apply keeps them
 }
 
 // NewToolsets registers the catalog's specs for Core plus the initial toolsets.
 func NewToolsets(srv *mcp.Server, catalog []*Spec, o Options, initial ...Toolset) *Toolsets {
-	t := &Toolsets{srv: srv, opts: o, byTS: map[Toolset][]*Spec{}, toolTS: map[string]Toolset{}, enabled: map[Toolset]bool{}}
+	t := &Toolsets{srv: srv, opts: o, byTS: map[Toolset][]*Spec{}, toolTS: map[string]Toolset{},
+		enabled: map[Toolset]bool{}, base: map[Toolset]bool{Core: true}}
 	for _, s := range catalog {
 		ts := s.Toolset
 		if ts == "" {
@@ -36,6 +38,7 @@ func NewToolsets(srv *mcp.Server, catalog []*Spec, o Options, initial ...Toolset
 	for _, ts := range initial {
 		if _, ok := t.byTS[ts]; ok {
 			t.enableLocked(ts)
+			t.base[ts] = true
 		}
 	}
 	return t
@@ -86,22 +89,42 @@ func (t *Toolsets) Disable(ts Toolset) ([]string, error) {
 	return names, nil
 }
 
-// Apply enables exactly the given toolsets (plus Core), disabling the rest.
+// Apply enables exactly the given toolsets plus the startup ones (Core and the
+// initial set), disabling the rest. Every name is validated before anything
+// changes, so an unknown toolset leaves the session untouched.
 func (t *Toolsets) Apply(want []Toolset) error {
-	set := map[Toolset]bool{Core: true}
-	for _, ts := range want {
+	t.mu.Lock()
+	set := map[Toolset]bool{}
+	for ts := range t.base {
 		set[ts] = true
 	}
-	for _, ts := range t.Known() {
-		var err error
-		if set[ts] {
-			_, err = t.Enable(ts)
-		} else if ts != Core {
-			_, err = t.Disable(ts)
+	var unknown []Toolset
+	for _, ts := range want {
+		if _, ok := t.byTS[ts]; !ok {
+			unknown = append(unknown, ts)
 		}
-		if err != nil {
-			return err
+		set[ts] = true
+	}
+	if len(unknown) > 0 {
+		known := t.knownLocked()
+		t.mu.Unlock()
+		return fmt.Errorf("unknown toolset(s) %v (known: %v)", unknown, known)
+	}
+	var toRemove []string
+	for ts := range t.byTS {
+		switch {
+		case set[ts]:
+			t.enableLocked(ts)
+		case t.enabled[ts]:
+			delete(t.enabled, ts)
+			for _, s := range t.byTS[ts] {
+				toRemove = append(toRemove, s.Name)
+			}
 		}
+	}
+	t.mu.Unlock()
+	if len(toRemove) > 0 {
+		t.srv.RemoveTools(toRemove...)
 	}
 	return nil
 }

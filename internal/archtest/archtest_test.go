@@ -32,7 +32,7 @@ var allowed = map[string][]string{
 	"visual":            {"audit"},
 	// envelope maps bridge.OpError and uexec sentinel errors onto the closed code set.
 	"tools/envelope": {"bridge", "uexec"},
-	"tools/spec":     {"session", "bridge", "jobs", "tools/envelope"}, // jobs: async op results
+	"tools/spec":     {"session", "bridge", "jobs", "tools/envelope", "uexec"}, // jobs: async results; uexec: retry policy
 	"tools": {
 		"tools/spec", "tools/envelope",
 		"session", "bridge", "uexec", "jobs", "lifecycle", "logs", "build", "headless", "desktop",

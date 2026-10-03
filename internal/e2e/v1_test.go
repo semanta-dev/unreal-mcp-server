@@ -124,11 +124,12 @@ func TestCompanionReinstalledAfterEditorRestart(t *testing.T) {
 	}
 }
 
-// TestCallsSurviveChannelDrops: the editor drops the command channel after every
-// reply; each command reconnects transparently and the module is still installed
-// only once (version re-verified, not reinstalled).
+// TestCallsSurviveChannelDrops: the editor drops the command channel once (a
+// hiccup, no second client); calls reconnect and succeed, and the module is
+// re-verified on the new channel but not reinstalled. (An editor that drops after
+// EVERY reply now reads as channel theft — plan §2.8 case 4 — and fails fast.)
 func TestCallsSurviveChannelDrops(t *testing.T) {
-	h := startHarness(t, harnessOpts{fake: func(o *uexectest.Options) { o.CloseAfterReplies = 1 }})
+	h := startHarness(t, harnessOpts{fake: func(o *uexectest.Options) { o.CloseAfterReplies, o.CloseChannels = 2, 1 }})
 	for i := 0; i < 3; i++ {
 		if res := h.call(t, "editor_status", nil); res.IsError {
 			t.Fatalf("call %d failed: %s", i, text(res))
@@ -137,9 +138,9 @@ func TestCallsSurviveChannelDrops(t *testing.T) {
 	if n := h.emu.Installs(); n != 1 {
 		t.Fatalf("installs = %d, want 1", n)
 	}
-	// Every command reconnects (CloseAfterReplies=1), so each call re-verifies the
-	// sentinel once: initial check + post-install confirm, then one per later call.
-	if n := h.emu.VersionChecks(); n < 4 {
-		t.Fatalf("version re-verified %d times, want >= 4 (once per reconnect-bearing call)", n)
+	// The drop forced one reconnect, so the sentinel was re-checked on the new channel:
+	// initial check + post-install confirm + one re-verification.
+	if n := h.emu.VersionChecks(); n < 3 {
+		t.Fatalf("version re-verified %d times, want >= 3", n)
 	}
 }

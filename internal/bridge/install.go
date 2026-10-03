@@ -16,6 +16,9 @@ import (
 // changes (reconnect/editor restart), and is otherwise a no-op after the first
 // successful install (no per-Call round-trip).
 func (b *Bridge) ensureInstalled(ctx context.Context) error {
+	// Version checks, the (re)install and the perf tweak are all idempotent: safe to
+	// re-send if the connection drops after a write.
+	ctx = uexec.WithRetryPolicy(ctx, uexec.RetryIdempotent)
 	gen := b.run.Generation()
 
 	b.mu.Lock()

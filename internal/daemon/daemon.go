@@ -39,9 +39,10 @@ type Daemon struct {
 	jobsMu      sync.Mutex
 	projectJobs map[string]*jobs.Registry // canonical project key -> that project's jobs
 
-	sessMu   sync.Mutex
-	closers  map[string]func() // sessionID -> close the live MCP session
-	draining map[string]drain  // project key -> lease held past its session for a running job
+	sessMu    sync.Mutex
+	closers   map[string]func() // sessionID -> close the live MCP session
+	draining  map[string]drain  // session ID -> lease held past that session for a running project job
+	drainPoll time.Duration     // 0 = default (see pollEvery)
 
 	activityMu sync.Mutex
 	lastSeen   map[string]time.Time // sessionID -> last tool call (idle-sweep reclaim)
@@ -254,7 +255,7 @@ func (dm *Daemon) SweepIdleSessions(ttl time.Duration) {
 	dm.activityMu.Lock()
 	var candidates []string
 	for sid, t := range dm.lastSeen {
-		if t.Before(cutoff) {
+		if !t.After(cutoff) {
 			candidates = append(candidates, sid)
 		}
 	}
@@ -263,7 +264,7 @@ func (dm *Daemon) SweepIdleSessions(ttl time.Duration) {
 	for _, sid := range candidates {
 		dm.activityMu.Lock()
 		t, present := dm.lastSeen[sid]
-		stillStale := present && t.Before(cutoff)
+		stillStale := present && !t.After(cutoff)
 		dm.activityMu.Unlock()
 		if !stillStale {
 			continue

@@ -2,10 +2,12 @@ package uexec
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"strings"
@@ -23,8 +25,10 @@ type commandConn struct {
 	logger *slog.Logger
 
 	conn    net.Conn
+	br      *bufio.Reader // the decoder's buffered reader (the liveness probe peeks it)
 	dec     *json.Decoder
 	tainted bool
+	lastIO  time.Time
 }
 
 // open performs the reverse-connect: listen on the command port, broadcast
@@ -61,7 +65,9 @@ func (c *commandConn) open(ctx context.Context) error {
 		// One long-lived Decoder for the connection's life. JSON values are
 		// self-delimiting, so this is immune to TCP segmentation and to the
 		// exact-multiple-of-8192 hang in the reference recv-until-short-read loop.
-		c.dec = json.NewDecoder(bufio.NewReaderSize(conn, 65536))
+		c.br = newBufReader(conn)
+		c.dec = newDecoder(c.br)
+		c.lastIO = time.Now()
 		ln.Close() // channel is 1:1; stop holding the port once connected
 		c.logger.Info("command channel established", "node_id", c.remote, "local", conn.LocalAddr().String(), "remote", conn.RemoteAddr().String())
 		return nil
@@ -110,8 +116,14 @@ func (c *commandConn) runCommand(ctx context.Context, code string, mode ExecMode
 	resp, err := c.readMessage(ctx, timeout)
 	if err != nil {
 		c.taint()
+		// The command was written, so a lost connection now means the editor may
+		// already have executed it (plan §2.8, case 3).
+		if errors.Is(err, ErrConnectionLost) {
+			return CommandResult{}, fmt.Errorf("%w: %w", ErrOutcomeUnknown, err)
+		}
 		return CommandResult{}, err
 	}
+	c.lastIO = time.Now()
 	// Validate the reply: addressed to us, correct type, AND from the node we
 	// targeted. The source check is the result-spoofing defense (§12.4): a rogue
 	// same-user local process that connected to our listener would have to also
@@ -203,6 +215,46 @@ func (c *commandConn) readMessage(ctx context.Context, timeout time.Duration) (M
 	return m, nil
 }
 
+// probeIdle: an idempotent command skips the probe on a channel used this recently
+// (a lost outcome is simply retried); a non-idempotent command always probes, since
+// a channel the editor closed right after its last reply would otherwise swallow it.
+const probeIdle = 100 * time.Millisecond
+
+// probeWindow is the probe's read deadline. A deadline of "now" never reaches the
+// socket in Go (the poller reports a timeout first), so the probe needs a real window.
+const probeWindow = 3 * time.Millisecond
+
+// alive reports whether an idle channel is still connected, without consuming any
+// protocol bytes (plan §2.8, case 0). Whitespace left over after a reply is consumed;
+// any other unsolicited byte is a protocol desync and reported as dead.
+func (c *commandConn) alive(skipIfRecent bool) bool {
+	if c.tainted || c.conn == nil {
+		return false
+	}
+	if skipIfRecent && time.Since(c.lastIO) < probeIdle {
+		return true
+	}
+	if buffered, err := io.ReadAll(c.dec.Buffered()); err == nil && len(bytes.TrimSpace(buffered)) > 0 {
+		c.logger.Warn("command channel desync: unsolicited buffered data", "bytes", len(buffered))
+		return false
+	}
+	defer func() { _ = c.conn.SetReadDeadline(time.Time{}) }()
+	for {
+		_ = c.conn.SetReadDeadline(time.Now().Add(probeWindow))
+		b, err := c.br.Peek(1)
+		if err != nil {
+			var ne net.Error
+			return errors.As(err, &ne) && ne.Timeout() // timeout = nothing to read = alive
+		}
+		if b[0] == ' ' || b[0] == '\n' || b[0] == '\r' || b[0] == '\t' {
+			_, _ = c.br.ReadByte()
+			continue
+		}
+		c.logger.Warn("command channel desync: unsolicited data on an idle channel")
+		return false
+	}
+}
+
 func (c *commandConn) taint() {
 	c.tainted = true
 	if c.conn != nil {
@@ -217,3 +269,6 @@ func (c *commandConn) close() {
 		c.conn = nil
 	}
 }
+
+func newBufReader(c net.Conn) *bufio.Reader    { return bufio.NewReaderSize(c, 65536) }
+func newDecoder(r *bufio.Reader) *json.Decoder { return json.NewDecoder(r) }

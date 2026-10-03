@@ -155,6 +155,14 @@ func Classify(err error, mutating bool) *Error {
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, uexec.ErrTimeout):
 		return &Error{Code: Timeout, Message: err.Error(), Outcome: unknown, Retryable: !mutating,
 			Hint: "the editor may still be running the request; check state before retrying"}
+	case errors.Is(err, uexec.ErrChannelStolen):
+		outcome := OutcomeNone
+		if errors.Is(err, uexec.ErrOutcomeUnknown) && mutating {
+			outcome = OutcomeUnknown
+		}
+		return &Error{Code: EditorBusy, Message: err.Error(), Outcome: outcome, Retryable: false,
+			Details: map[string]any{"reason": "channel_stolen"},
+			Hint:    "another MCP server is connected to this editor; stop it, or reclaim the channel explicitly"}
 	case errors.Is(err, uexec.ErrConnectionLost):
 		return &Error{Code: EditorUnreachable, Message: err.Error(), Outcome: unknown, Retryable: !mutating}
 	case errors.Is(err, bridge.ErrInstall):

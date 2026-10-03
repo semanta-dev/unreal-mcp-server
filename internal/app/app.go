@@ -9,6 +9,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -63,14 +64,14 @@ func NewServer(o Options, st *session.State) *Server {
 		catalog = tools.Specs
 	}
 	sv := &Server{State: st}
-	initial := o.Toolsets
-	if o.DaemonMode {
-		initial = append(append([]spec.Toolset(nil), initial...), spec.Daemon)
-	}
-	sopts := &mcp.ServerOptions{Logger: logger}
-	if o.OnSessionStart != nil || o.OnSessionEnd != nil {
-		sopts.InitializedHandler = func(ctx context.Context, req *mcp.InitializedRequest) {
-			ss := req.Session
+	// bind attaches the State to its ServerSession exactly once: at initialized, or on
+	// the first request from a client that never sends notifications/initialized.
+	var bindOnce sync.Once
+	bind := func(ss *mcp.ServerSession) {
+		if ss == nil || (o.OnSessionStart == nil && o.OnSessionEnd == nil) {
+			return
+		}
+		bindOnce.Do(func() {
 			id := ss.ID()
 			st.Bind(id)
 			if o.OnSessionEnd != nil {
@@ -84,8 +85,14 @@ func NewServer(o Options, st *session.State) *Server {
 				_ = ss.Wait()
 				st.Teardown()
 			}()
-		}
+		})
 	}
+	initial := o.Toolsets
+	if o.DaemonMode {
+		initial = append(append([]spec.Toolset(nil), initial...), spec.Daemon)
+	}
+	sopts := &mcp.ServerOptions{Logger: logger}
+	sopts.InitializedHandler = func(ctx context.Context, req *mcp.InitializedRequest) { bind(req.Session) }
 	srv := mcp.NewServer(&mcp.Implementation{Name: "unreal", Version: version.Version}, sopts)
 	sv.MCP = srv
 	sv.Toolsets = spec.NewToolsets(srv, catalog(o.Deps),
@@ -98,6 +105,9 @@ func NewServer(o Options, st *session.State) *Server {
 		tools.LoggingMiddleware(logger),
 		func(next mcp.MethodHandler) mcp.MethodHandler {
 			return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+				if ss, ok := req.GetSession().(*mcp.ServerSession); ok && method != "initialize" {
+					bind(ss)
+				}
 				ctx = session.WithState(ctx, st)
 				ctx = spec.WithToolsets(ctx, sv.Toolsets)
 				if o.Resolver != nil {

@@ -71,6 +71,15 @@ type Options struct {
 	SplitWritesAt       int           // write the reply in chunks of this size (segmentation)
 	PadResultToMultiple int           // pad Result so the serialized reply is a multiple of this
 	CloseAfterReplies   int           // close the command channel after replying to N commands (drop-recovery tests)
+	CloseChannels       int           // with CloseAfterReplies: only the first N channels are closed (0 = every channel)
+
+	// DropReplyIf, when it returns true for a command, runs OnCommand (the command
+	// EXECUTES) and then closes the channel without replying — the exactly-once case.
+	DropReplyIf func(CommandRequest) bool
+	// SingleSlot models UE's single command connection: a new open_connection
+	// closes every existing command channel (a different client steals the slot; the
+	// same client reconnecting replaces its own).
+	SingleSlot bool
 }
 
 // Editor is a running fake editor. Close it when done.
@@ -82,6 +91,18 @@ type Editor struct {
 	closeOnce sync.Once
 	closed    chan struct{}
 	wg        sync.WaitGroup
+
+	mu       sync.Mutex
+	conns    map[net.Conn]bool // live command channels (SingleSlot)
+	accepted int               // command channels ever connected back
+}
+
+// Connections reports how many command channels the editor has accepted so far
+// (theft tests assert a victim stops reconnecting).
+func (e *Editor) Connections() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.accepted
 }
 
 // Start binds a unicast loopback UDP socket and serves the discovery + command
@@ -96,6 +117,7 @@ func Start(opts Options) (*Editor, error) {
 		udp:    pc,
 		addr:   pc.LocalAddr().(*net.UDPAddr),
 		closed: make(chan struct{}),
+		conns:  map[net.Conn]bool{},
 	}
 	e.wg.Add(1)
 	go e.serveUDP()
@@ -192,6 +214,22 @@ func (e *Editor) handleCommandChannel(remoteSource, ip string, port int) {
 		return
 	}
 	defer conn.Close()
+	e.mu.Lock()
+	if e.opts.SingleSlot {
+		for old := range e.conns {
+			_ = old.Close() // the slot moves to the newest client
+		}
+		e.conns = map[net.Conn]bool{}
+	}
+	e.conns[conn] = true
+	e.accepted++
+	channel := e.accepted
+	e.mu.Unlock()
+	defer func() {
+		e.mu.Lock()
+		delete(e.conns, conn)
+		e.mu.Unlock()
+	}()
 
 	// Unblock the blocking Decode below when the editor is closed, so Close()'s
 	// wg.Wait() doesn't hang if the client hasn't closed this channel yet.
@@ -222,20 +260,24 @@ func (e *Editor) handleCommandChannel(remoteSource, ip string, port int) {
 				return
 			}
 		}
-		out := e.buildReply(m)
+		out, drop := e.buildReply(m)
+		if drop {
+			return // executed, never replied: the client must not know the outcome
+		}
 		if err := e.writeReply(conn, out); err != nil {
 			return
 		}
 		replies++
-		if e.opts.CloseAfterReplies > 0 && replies >= e.opts.CloseAfterReplies {
+		if e.opts.CloseAfterReplies > 0 && replies >= e.opts.CloseAfterReplies &&
+			(e.opts.CloseChannels == 0 || channel <= e.opts.CloseChannels) {
 			return // drop the channel (deferred conn.Close) — the client must reconnect
 		}
 	}
 }
 
-func (e *Editor) buildReply(cmd message) []byte {
+func (e *Editor) buildReply(cmd message) ([]byte, bool) {
 	if e.opts.RawResponse != nil {
-		return e.opts.RawResponse(cmd.Source)
+		return e.opts.RawResponse(cmd.Source), false
 	}
 	var cd struct {
 		Command    string `json:"command"`
@@ -243,7 +285,9 @@ func (e *Editor) buildReply(cmd message) []byte {
 		Unattended bool   `json:"unattended"`
 	}
 	_ = json.Unmarshal(cmd.Data, &cd)
-	resp := e.opts.OnCommand(CommandRequest{Command: cd.Command, ExecMode: cd.ExecMode, Unattended: cd.Unattended})
+	req := CommandRequest{Command: cd.Command, ExecMode: cd.ExecMode, Unattended: cd.Unattended}
+	resp := e.opts.OnCommand(req)
+	drop := e.opts.DropReplyIf != nil && e.opts.DropReplyIf(req)
 
 	if e.opts.PadResultToMultiple > 0 {
 		resp.Result = padResult(resp, cmd.Source, e.opts.NodeID, e.opts.PadResultToMultiple)
@@ -253,7 +297,7 @@ func (e *Editor) buildReply(cmd message) []byte {
 		Version: protocolVersion, Magic: protocolMagic, Type: "command_result",
 		Source: e.opts.NodeID, Dest: cmd.Source, Data: data,
 	})
-	return raw
+	return raw, drop
 }
 
 // padResult returns a Result padded with 'x' so the fully-serialized command_result

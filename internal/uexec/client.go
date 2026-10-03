@@ -3,8 +3,10 @@ package uexec
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 )
 
 // Session is the high-level remote-execution client: it runs discovery, opens a
@@ -21,14 +23,23 @@ type Session struct {
 	nodeID     string
 	gen        uint64 // increments on each new command channel (reconnect/editor restart)
 	sharedDisc bool   // true => bc is a shared Discovery this Session must not close
+
+	// Theft detection (plan §2.8, case 4).
+	now          func() time.Time
+	peerReconnAt time.Time // when we last reconnected after a peer-initiated close
+	stolen       bool
 }
+
+// theftWindow: a second peer close this soon after reconnecting from one, while the
+// same editor still answers discovery, means another client holds the slot.
+const theftWindow = 10 * time.Second
 
 // New creates a self-contained Session (owns its own discovery). logger may be nil.
 func New(cfg Config, logger *slog.Logger) *Session {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	return &Session{cfg: cfg.withDefaults(), self: newUUID(), logger: logger}
+	return &Session{cfg: cfg.withDefaults(), self: newUUID(), logger: logger, now: time.Now}
 }
 
 // NewOnDiscovery creates a PER-INSTANCE Session that SHARES a Discovery (§2): it
@@ -49,7 +60,7 @@ func NewOnDiscovery(cfg Config, disc *Discovery, logger *slog.Logger) *Session {
 	}
 	return &Session{
 		cfg: cfg.withDefaults(), self: disc.self, logger: logger,
-		bc: disc.bc, sharedDisc: true,
+		bc: disc.bc, sharedDisc: true, now: time.Now,
 	}
 }
 
@@ -127,18 +138,39 @@ func (s *Session) Generation() uint64 {
 }
 
 // RunCommand runs one command, opening/reconnecting the channel as needed.
-// Single-flight (holds the session lock for the whole call). Reconnects once on
-// a lost connection; does NOT auto-retry timeouts (a side-effecting command must
-// not be silently re-run) or missing-editor errors.
+// Single-flight (holds the session lock for the whole call). Connection loss is
+// handled by the ordered decision table of plan §2.8:
+//
+//  0. before sending, probe the channel (idempotent commands skip this on a channel
+//     used in the last 100 ms); a dead channel is replaced first
+//     (nothing was sent, so no outcome uncertainty);
+//  1. our own timeout/cancel taints the channel; the next call reconnects;
+//  2. a failed write reached nothing executable — reconnect and re-send once;
+//  3. a read-side loss after a successful write is ErrOutcomeUnknown — re-sent once
+//     only under RetryIdempotent (see WithRetryPolicy);
+//  4. a peer close repeated within theftWindow after reconnecting from one, while
+//     the same editor still answers discovery, is theft: ErrChannelStolen, and the
+//     session stops reconnecting until Reclaim.
 func (s *Session) RunCommand(ctx context.Context, code string, mode ExecMode) (CommandResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.bc == nil {
 		return CommandResult{}, errors.New("uexec: session not started")
 	}
+	if s.stolen {
+		return CommandResult{}, ErrChannelStolen
+	}
+	policy := retryPolicy(ctx)
 
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
+		// Case 0: replace a channel that died while idle before sending anything.
+		if s.cmd != nil && !s.cmd.tainted && !s.cmd.alive(policy == RetryIdempotent) {
+			s.cmd.taint()
+			if err := s.notePeerCloseLocked(); err != nil {
+				return CommandResult{}, err
+			}
+		}
 		if s.cmd == nil || s.cmd.tainted {
 			if err := s.reconnectLocked(ctx); err != nil {
 				if errors.Is(err, ErrEditorNotFound) {
@@ -156,14 +188,72 @@ func (s *Session) RunCommand(ctx context.Context, code string, mode ExecMode) (C
 		if s.cmd != nil && s.cmd.tainted {
 			s.cmd = nil // force reconnect on any subsequent call
 		}
-		// Only a lost connection is safe to transparently retry once.
-		if errors.Is(err, ErrConnectionLost) && attempt == 0 {
-			s.logger.Warn("command connection lost; reconnecting once", "err", err)
+		switch {
+		case errors.Is(err, ErrOutcomeUnknown): // case 3 (+ case 4 check)
+			if terr := s.notePeerCloseLocked(); terr != nil {
+				return CommandResult{}, fmt.Errorf("%w: %w", terr, ErrOutcomeUnknown)
+			}
+			if policy == RetryIdempotent && attempt == 0 {
+				s.logger.Warn("command connection lost after send; re-sending an idempotent command", "err", err)
+				continue
+			}
+			return res, err
+		case errors.Is(err, ErrConnectionLost) && attempt == 0: // case 2: the write failed
+			s.logger.Warn("command write failed; reconnecting and re-sending", "err", err)
 			continue
 		}
-		return res, err
+		return res, err // case 1 (timeout/cancel) and everything else
 	}
 	return CommandResult{}, lastErr
+}
+
+// notePeerCloseLocked records a peer-initiated close. If it follows a reconnect that
+// was itself caused by a peer close within theftWindow, and the same editor node is
+// still answering discovery, the slot has been taken by another client: mark the
+// session stolen (case 4).
+func (s *Session) notePeerCloseLocked() error {
+	now := time.Now()
+	if s.now != nil {
+		now = s.now()
+	}
+	if !s.peerReconnAt.IsZero() && now.Sub(s.peerReconnAt) <= theftWindow && s.nodeAnsweringLocked() {
+		s.stolen = true
+		s.logger.Warn("command channel stolen by another client; not reconnecting until reclaimed", "node_id", s.nodeID)
+		return ErrChannelStolen
+	}
+	s.peerReconnAt = now // the reconnect that follows is "after a peer close"
+	return nil
+}
+
+func (s *Session) nodeAnsweringLocked() bool {
+	if s.bc == nil || s.nodeID == "" {
+		return false
+	}
+	for _, n := range s.bc.nodes.list() {
+		if n.ID == s.nodeID {
+			return true
+		}
+	}
+	return false
+}
+
+// Stolen reports whether the session gave up its channel to another client.
+func (s *Session) Stolen() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stolen
+}
+
+// Reclaim clears the stolen state so the next command reconnects (taking the slot
+// back from whoever holds it). Explicit and logged by design — never automatic.
+func (s *Session) Reclaim() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stolen {
+		s.logger.Warn("reclaiming the editor command channel", "node_id", s.nodeID)
+	}
+	s.stolen = false
+	s.peerReconnAt = time.Time{}
 }
 
 func (s *Session) reconnectLocked(ctx context.Context) error {

@@ -204,10 +204,10 @@ func TestTimeoutTaintRecover(t *testing.T) {
 	}
 }
 
-// TestReconnectOnEditorDroppedConnection covers the live-editor bug: when the
-// editor drops our command channel (e.g. another client connected), the read
-// error must be classified ErrConnectionLost (not ErrProtocol) so the session
-// reconnects once and the next command still succeeds.
+// TestReconnectOnEditorDroppedConnection (plan §2.8 case 0): the editor dropped
+// our idle channel right after its last reply (no second client). The next
+// command — non-idempotent by default — probes the channel first, sees it dead,
+// reconnects BEFORE sending, and succeeds with a known outcome.
 func TestReconnectOnEditorDroppedConnection(t *testing.T) {
 	e, _ := uexectest.Start(uexectest.Options{
 		CloseAfterReplies: 1, // drop the channel after the first reply

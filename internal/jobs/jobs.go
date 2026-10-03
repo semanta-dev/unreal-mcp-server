@@ -31,14 +31,14 @@ type Func func(ctx context.Context, progress func(string)) (any, error)
 
 // Job is a single async job.
 type Job struct {
-	ID    string
-	Owner string // optional owner tag (e.g. the session that started it)
+	ID string
 
 	mu       sync.Mutex
 	status   Status
 	progress []string
 	result   any
 	err      error
+	owner    string // optional owner tag (see CancelOwned); guarded by mu
 	cancel   context.CancelFunc
 	done     chan struct{}
 	changed  chan struct{} // closed and replaced on every progress line / finish
@@ -94,6 +94,21 @@ func (j *Job) Status() Status {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	return j.status
+}
+
+// Owner returns the job's owner tag.
+func (j *Job) Owner() string {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.owner
+}
+
+// SetOwner changes the owner tag (e.g. "" once a session-scoped wait is over, so the
+// work is no longer cancelled with that session).
+func (j *Job) SetOwner(owner string) {
+	j.mu.Lock()
+	j.owner = owner
+	j.mu.Unlock()
 }
 
 // Cancel requests cancellation; the job's ctx is cancelled and its final status
@@ -156,7 +171,7 @@ func (r *Registry) Start(ctx context.Context, fn Func) *Job {
 func (r *Registry) StartOwned(ctx context.Context, owner string, fn Func) *Job {
 	id := fmt.Sprintf("job-%d", r.seq.Add(1))
 	jctx, cancel := context.WithCancel(ctx)
-	j := &Job{ID: id, Owner: owner, status: Running, cancel: cancel, done: make(chan struct{}), changed: make(chan struct{})}
+	j := &Job{ID: id, owner: owner, status: Running, cancel: cancel, done: make(chan struct{}), changed: make(chan struct{})}
 
 	r.mu.Lock()
 	r.jobs[id] = j
@@ -211,7 +226,7 @@ func (r *Registry) CancelOwned(owner string) int {
 	defer r.mu.RUnlock()
 	n := 0
 	for _, j := range r.jobs {
-		if j.Owner == owner && j.Status() == Running {
+		if j.Owner() == owner && j.Status() == Running {
 			j.Cancel()
 			n++
 		}
