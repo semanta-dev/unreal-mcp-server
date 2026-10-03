@@ -67,7 +67,7 @@ while a dialog is open). A full `build` refuses while the project's editor runs 
 
 **Project binding.** With `-project`, the server only binds an editor of that project — never another project's
 editor, even while its own is relaunching (calls fail with `EDITOR_UNREACHABLE` until it is back). The editor's
-project root must be that directory (or contain it): an editor opened from another checkout, worktree or a
+project root must be that directory, or one must contain the other: an editor opened from another checkout, worktree or a
 `subst`/junction path is not found — point `-project` at the directory the editor opened.
 
 **One Go peer per editor.** The editor's remote-execution node holds a single command connection: two clients on one

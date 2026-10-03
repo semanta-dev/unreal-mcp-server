@@ -1,0 +1,4 @@
+{"tool": "python", "note": "C:\\Users\\jorda\\AppData\\Local\\Temp\\claude\\C--Users-jorda-code-games-unreal-mcp-server\\de8c76ec-2c83-4a87-a5c0-9a34f7bcedbf\\scratchpad\\t4\\dirty.py", "args": {"op": "run", "code": "import unreal\nbp = unreal.load_asset(\"/Game/T4/BP_T4\")\nt = unreal.BlueprintEditorLibrary.get_basic_type_by_name(\"float\")\nprint(unreal.BlueprintEditorLibrary.add_member_variable(bp, \"T4Var%d\" % __import__(\"time\").time_ns(), t))\n"}}
+{"tool":"editor","args":{"op":"status"}}
+{"note":"pie w/ dirty BP","tool":"pie","args":{"op":"start"}}
+{"tool":"pie","args":{"op":"stop"}}

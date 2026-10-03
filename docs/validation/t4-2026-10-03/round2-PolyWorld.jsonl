@@ -1,0 +1,4 @@
+{"is_error": false, "ms": 116, "n": 1, "note": "C:\\Users\\jorda\\AppData\\Local\\Temp\\claude\\C--Users-jorda-code-games-unreal-mcp-server\\de8c76ec-2c83-4a87-a5c0-9a34f7bcedbf\\scratchpad\\t4\\dirty.py", "structured": {"output": "False\r"}, "tool": "python"}
+{"is_error": false, "ms": 22, "n": 2, "note": "", "structured": {"actor_count": 4679, "bridge_version": 1, "current_level": "L_CompanyCity", "editor_pid": 37912, "engine_version": "5.7.4-51494982+++UE5+Release-5.7", "is_in_pie": false, "project_dir": "C:/Users/jorda/code/games/_p7scratch/PolyWorld/", "reachable": true, "recorders": []}, "tool": "editor"}
+{"is_error": false, "ms": 494, "n": 3, "note": "pie w/ dirty BP", "structured": {"blueprint_preflight": "unavailable (UnrealMCP plugin missing or older)", "pie": true, "simulate": false}, "tool": "pie"}
+{"is_error": false, "ms": 249, "n": 4, "note": "", "structured": {"pie": false}, "tool": "pie"}
