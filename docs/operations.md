@@ -28,15 +28,17 @@ integration test and a Windows build, and the release packaging of every target 
    identity; no keys to manage) into `<file>.sigstore.json`, the signatures are verified in the same job, a SLSA
    build-provenance attestation is recorded, and the GitHub release is created with all of it attached.
 
-Verify a download (cosign 2.x):
+Verify a download (cosign 3.x; `[.]` instead of `\.` keeps the regex intact in any shell):
 
 ```bash
-cosign verify-blob --bundle SHA256SUMS.sigstore.json \
-  --certificate-identity-regexp '^https://github.com/semanta-dev/unreal-mcp-server/\.github/workflows/release\.yml@refs/tags/v' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+cosign verify-blob --bundle SHA256SUMS.sigstore.json   --certificate-identity-regexp '^https://github[.]com/semanta-dev/unreal-mcp-server/[.]github/workflows/release[.]yml@refs/tags/v'   --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing          # then check the archive against the signed sums
 gh attestation verify unreal-mcp_<tag>_windows_amd64.zip -R semanta-dev/unreal-mcp-server   # provenance
 ```
+
+Each archive also has its own `<file>.sigstore.json`, verified the same way. Dry run: running the release workflow
+by hand (`workflow_dispatch`) builds, signs and verifies everything but publishes nothing (the signed files are kept
+as a run artifact).
 
 Actions in both workflows are pinned to commit SHAs (the version is in a trailing comment).
 

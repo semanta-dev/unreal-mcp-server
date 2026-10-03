@@ -8,7 +8,6 @@ name: release
 on:
   push:
     tags: ['v*']
-    branches: [ci/release-cosign] # TEMPORARY: dry-run the release from this branch; removed before merge
   workflow_dispatch: # dry run: build, sign and verify for real, but publish nothing
     inputs:
       version:
