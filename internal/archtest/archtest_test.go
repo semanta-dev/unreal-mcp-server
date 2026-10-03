@@ -17,9 +17,12 @@ const mod = "github.com/jdziat/unreal-mcp-server/"
 // packages it may import. Packages absent from the map may import nothing internal.
 var allowed = map[string][]string{
 	// P3 replaces these direct edges with `cmd/unreal-mcp → app, config, version`.
-	"cmd/unreal-mcp": {"bridge", "cockpit/attach", "config", "daemon", "jobs", "session", "supervisor", "tools", "uexec", "version"},
+	"cmd/unreal-mcp": {"app", "bridge", "cockpit/attach", "config", "daemon", "jobs", "session", "supervisor", "tools", "uexec", "version"},
 
-	"session":           {"bridge", "jobs"},
+	// app is the one place both topologies assemble a server.
+	"app": {"session", "tools", "tools/envelope", "tools/spec", "version"},
+
+	"session":           {"bridge", "jobs", "lifecycle"}, // lifecycle: canonical ProjectKey
 	"daemon":            {"supervisor", "session", "lifecycle", "bridge", "uexec", "jobs"},
 	"supervisor":        {"lifecycle", "bridge", "uexec", "config"},
 	"cockpit/attach":    {"cockpit", "bridge"},
@@ -29,7 +32,7 @@ var allowed = map[string][]string{
 	"visual":            {"audit"},
 	// envelope maps bridge.OpError and uexec sentinel errors onto the closed code set.
 	"tools/envelope": {"bridge", "uexec"},
-	"tools/spec":     {"session", "bridge", "tools/envelope"},
+	"tools/spec":     {"session", "bridge", "jobs", "tools/envelope"}, // jobs: async op results
 	"tools": {
 		"tools/spec", "tools/envelope",
 		"session", "bridge", "uexec", "jobs", "lifecycle", "logs", "build", "headless", "desktop",

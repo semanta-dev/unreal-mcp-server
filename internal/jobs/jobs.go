@@ -7,8 +7,12 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Status is a job's lifecycle state.
@@ -27,7 +31,8 @@ type Func func(ctx context.Context, progress func(string)) (any, error)
 
 // Job is a single async job.
 type Job struct {
-	ID string
+	ID    string
+	Owner string // optional owner tag (e.g. the session that started it)
 
 	mu       sync.Mutex
 	status   Status
@@ -36,6 +41,7 @@ type Job struct {
 	err      error
 	cancel   context.CancelFunc
 	done     chan struct{}
+	changed  chan struct{} // closed and replaced on every progress line / finish
 }
 
 // Snapshot is an immutable view of a job's state.
@@ -50,7 +56,14 @@ type Snapshot struct {
 func (j *Job) addProgress(line string) {
 	j.mu.Lock()
 	j.progress = append(j.progress, line)
+	j.signalLocked()
 	j.mu.Unlock()
+}
+
+// signalLocked wakes every WaitFor caller. Callers hold j.mu.
+func (j *Job) signalLocked() {
+	close(j.changed)
+	j.changed = make(chan struct{})
 }
 
 func (j *Job) finish(status Status, result any, err error) {
@@ -58,6 +71,7 @@ func (j *Job) finish(status Status, result any, err error) {
 	j.status = status
 	j.result = result
 	j.err = err
+	j.signalLocked()
 	j.mu.Unlock()
 	close(j.done)
 }
@@ -88,6 +102,31 @@ func (j *Job) Cancel() {
 	j.cancel()
 }
 
+// WaitFor blocks until the job finishes, d elapses, or ctx is done, calling
+// onProgress (if non-nil) with a fresh snapshot each time a progress line arrives.
+// It reports whether the job finished.
+func (j *Job) WaitFor(ctx context.Context, d time.Duration, onProgress func(Snapshot)) (Snapshot, bool) {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	for {
+		j.mu.Lock()
+		ch := j.changed
+		j.mu.Unlock()
+		select {
+		case <-j.done:
+			return j.Snapshot(), true
+		case <-ch:
+			if onProgress != nil {
+				onProgress(j.Snapshot())
+			}
+		case <-timer.C:
+			return j.Snapshot(), false
+		case <-ctx.Done():
+			return j.Snapshot(), false
+		}
+	}
+}
+
 // Wait blocks until the job finishes and returns its final snapshot (for tests
 // and synchronous callers).
 func (j *Job) Wait() Snapshot {
@@ -110,9 +149,14 @@ func NewRegistry() *Registry {
 // Start launches fn as a new job under parent ctx and returns the job. The job's
 // context is derived from ctx and cancellable via Job.Cancel.
 func (r *Registry) Start(ctx context.Context, fn Func) *Job {
+	return r.StartOwned(ctx, "", fn)
+}
+
+// StartOwned is Start with an owner tag (see CancelOwned).
+func (r *Registry) StartOwned(ctx context.Context, owner string, fn Func) *Job {
 	id := fmt.Sprintf("job-%d", r.seq.Add(1))
 	jctx, cancel := context.WithCancel(ctx)
-	j := &Job{ID: id, status: Running, cancel: cancel, done: make(chan struct{})}
+	j := &Job{ID: id, Owner: owner, status: Running, cancel: cancel, done: make(chan struct{}), changed: make(chan struct{})}
 
 	r.mu.Lock()
 	r.jobs[id] = j
@@ -158,4 +202,40 @@ func (r *Registry) HasRunning() bool {
 		}
 	}
 	return false
+}
+
+// CancelOwned cancels every running job with the given owner tag and returns how
+// many it cancelled.
+func (r *Registry) CancelOwned(owner string) int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	n := 0
+	for _, j := range r.jobs {
+		if j.Owner == owner && j.Status() == Running {
+			j.Cancel()
+			n++
+		}
+	}
+	return n
+}
+
+// List returns snapshots of every job, oldest first.
+func (r *Registry) List() []Snapshot {
+	r.mu.RLock()
+	jobs := make([]*Job, 0, len(r.jobs))
+	for _, j := range r.jobs {
+		jobs = append(jobs, j)
+	}
+	r.mu.RUnlock()
+	sort.Slice(jobs, func(a, b int) bool { return jobSeq(jobs[a].ID) < jobSeq(jobs[b].ID) })
+	out := make([]Snapshot, len(jobs))
+	for i, j := range jobs {
+		out[i] = j.Snapshot()
+	}
+	return out
+}
+
+func jobSeq(id string) int {
+	n, _ := strconv.Atoi(strings.TrimPrefix(id, "job-"))
+	return n
 }

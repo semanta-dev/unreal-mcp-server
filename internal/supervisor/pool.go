@@ -18,6 +18,7 @@ package supervisor
 
 import (
 	"errors"
+	"github.com/jdziat/unreal-mcp-server/internal/lifecycle"
 	"sort"
 	"sync"
 	"time"
@@ -155,7 +156,7 @@ func (p *Pool) Lease(project, holder string) (*Instance, error) {
 		if inst.State != Idle {
 			continue
 		}
-		if project != "" && inst.Project != project {
+		if project != "" && lifecycle.ProjectKey(inst.Project) != lifecycle.ProjectKey(project) {
 			continue
 		}
 		candidates = append(candidates, inst)
@@ -170,6 +171,24 @@ func (p *Pool) Lease(project, holder string) (*Instance, error) {
 	inst.LeasedAt = p.now()
 	inst.LastHealthy = p.now()
 	return cloneInstance(inst), nil
+}
+
+// Transfer hands a Leased instance from one holder to another without passing
+// through Idle (draining-lease adoption: a new session for the same project takes
+// over a lease whose session ended while a job was still running).
+func (p *Pool) Transfer(id, from, to string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	inst, ok := p.instances[id]
+	if !ok {
+		return ErrNotFound
+	}
+	if inst.LeasedBy != from {
+		return ErrNotLeased
+	}
+	inst.LeasedBy = to
+	inst.LeasedAt = p.now()
+	return nil
 }
 
 // Release returns a Leased instance to Idle. Only the holder may release it (empty

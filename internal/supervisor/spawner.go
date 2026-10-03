@@ -26,6 +26,11 @@ type EditorHandle struct {
 	br   *bridge.Bridge
 }
 
+// NewEditorHandle wraps an established session + bridge (custom spawners, tests).
+func NewEditorHandle(sess *uexec.Session, br *bridge.Bridge) *EditorHandle {
+	return &EditorHandle{sess: sess, br: br}
+}
+
 func (e *EditorHandle) Close() error           { return e.sess.Close() }
 func (e *EditorHandle) Bridge() *bridge.Bridge { return e.br }
 

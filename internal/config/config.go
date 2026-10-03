@@ -24,7 +24,8 @@ type Config struct {
 	LogFormat        string
 	ShowVersion      bool
 	SelfTest         bool
-	DaemonAddr       string // if set, run the multi-project daemon (StreamableHTTP) on this addr
+	DaemonAddr       string        // if set, run the multi-project daemon (StreamableHTTP) on this addr
+	SessionIdle      time.Duration // daemon: end a session after this long without activity
 }
 
 func boolEnv(key string) bool {
@@ -67,6 +68,7 @@ func Load() Config {
 	flag.BoolVar(&c.ShowVersion, "version", false, "print version and exit")
 	flag.BoolVar(&c.SelfTest, "selftest", false, "connect to the editor, round-trip editor_status, and exit (0 ok, non-zero on failure)")
 	flag.StringVar(&c.DaemonAddr, "daemon-addr", envOr("UMCP_DAEMON_ADDR", ""), "run the multi-project daemon (StreamableHTTP, one editor lease per session) on this addr, e.g. 127.0.0.1:6111")
+	flag.DurationVar(&c.SessionIdle, "session-idle", 30*time.Minute, "daemon: end an MCP session after this long without activity (its lease drains while a project job runs)")
 	flag.Parse()
 	return c
 }

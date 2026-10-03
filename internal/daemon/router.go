@@ -101,6 +101,23 @@ func (r *Router) Attach(ctx context.Context, sessionID, project string) (instanc
 	return lease.ID, nil
 }
 
+// Transfer moves a lease binding from one session to another (draining-lease
+// adoption). The instance never passes through Idle, so no other project can take it.
+func (r *Router) Transfer(from, to string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	id, ok := r.bindings[from]
+	if !ok {
+		return "", ErrNoProjectAttached
+	}
+	if err := r.pool.Transfer(id, from, to); err != nil {
+		return "", err
+	}
+	delete(r.bindings, from)
+	r.bindings[to] = id
+	return id, nil
+}
+
 // Resolve returns the editor bridge for a session's lease, or NO_PROJECT_ATTACHED /
 // LEASE_LOST. It re-checks the lease is still Leased by this session (a reaped lease
 // returns LEASE_LOST so the agent re-attaches).

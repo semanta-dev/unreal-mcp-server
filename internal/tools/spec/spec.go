@@ -23,6 +23,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/jdziat/unreal-mcp-server/internal/jobs"
 	"github.com/jdziat/unreal-mcp-server/internal/session"
 	"github.com/jdziat/unreal-mcp-server/internal/tools/envelope"
 )
@@ -106,6 +107,10 @@ type Result struct {
 	Summary     string
 	Content     []mcp.Content
 	Passthrough *mcp.CallToolResult
+	// Job, set by an async op, is the started job: the spec layer returns
+	// {job_id, state} immediately, or waits up to the caller's wait_s (streaming MCP
+	// progress notifications against that call's progress token).
+	Job *jobs.Job
 }
 
 // Spec is one tool.
@@ -227,6 +232,13 @@ type Options struct {
 	Logger *slog.Logger
 	// Fallback is used when the request context carries no per-session Deps.
 	Fallback session.Deps
+	// Gate is the approval policy for Destructive/Exec ops; nil = off.
+	Gate Gate
+	// GateTimeout bounds the total approval wait (default DefaultGateTimeout).
+	GateTimeout time.Duration
+	// SyncApprovalWait bounds how long a sync call itself waits for approval before
+	// returning a pending_approval job (default and maximum MaxSyncApprovalWait).
+	SyncApprovalWait time.Duration
 }
 
 // Register adds specs to the server.
@@ -236,11 +248,13 @@ func Register(srv *mcp.Server, specs []*Spec, o Options) {
 		logger = slog.New(slog.DiscardHandler)
 	}
 	for _, s := range specs {
-		srv.AddTool(s.Tool(), s.handler(logger, o.Fallback))
+		o.Logger = logger
+		srv.AddTool(s.Tool(), s.handler(o))
 	}
 }
 
-func (s *Spec) handler(logger *slog.Logger, fallback session.Deps) mcp.ToolHandler {
+func (s *Spec) handler(o Options) mcp.ToolHandler {
+	logger, fallback := o.Logger, o.Fallback
 	resolved := s.resolvedSchema()
 	return func(ctx context.Context, req *mcp.CallToolRequest) (res *mcp.CallToolResult, err error) {
 		mutating := s.Tier() > ReadOnly
@@ -278,35 +292,169 @@ func (s *Spec) handler(logger *slog.Logger, fallback session.Deps) mcp.ToolHandl
 		}
 		raw, _ := json.Marshal(args)
 
-		// The spec layer bounds a call only when the spec declares timing. A caller's
-		// timeout_s overrides it, capped at the op's Max; specs without declared timing
-		// (the v1 adapter) leave timeout_s entirely to their handlers.
-		_, timeout, max := s.effective(op)
-		if ts, ok := args["timeout_s"].(float64); ok && ts > 0 && max > 0 {
-			timeout = min(time.Duration(ts*float64(time.Second)), max)
-		}
-		if timeout > 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, timeout)
-			defer cancel()
-		}
-
 		deps, ok := session.From(ctx)
 		if !ok {
 			deps = fallback
 		}
-		out, herr := s.Handler(ctx, &Call{Request: req, Spec: s, Op: op, Args: args, Raw: raw, Deps: deps})
-		if herr != nil {
-			return envelope.ErrorResult(envelope.Classify(herr, mutating)), nil
+		call := &Call{Request: req, Spec: s, Op: op, Args: args, Raw: raw, Deps: deps}
+		if op.Tier.Gated() && o.Gate != nil && o.Gate.Required() {
+			return s.gated(ctx, call, o, mutating), nil
 		}
-		if out == nil {
-			return envelope.Result(nil, "ok"), nil
-		}
-		if out.Passthrough != nil {
-			return out.Passthrough, nil
-		}
-		return envelope.Result(out.Data, out.Summary, out.Content...), nil
+		return s.run(ctx, call, mutating), nil
 	}
+}
+
+// run executes the handler under the op's declared timing and renders the result.
+func (s *Spec) run(ctx context.Context, c *Call, mutating bool) *mcp.CallToolResult {
+	// The spec layer bounds a call only when the spec declares timing. A caller's
+	// timeout_s overrides it, capped at the op's Max; specs without declared timing
+	// (the v1 adapter) leave timeout_s entirely to their handlers.
+	_, timeout, max := s.effective(c.Op)
+	if ts, ok := c.Args["timeout_s"].(float64); ok && ts > 0 && max > 0 {
+		timeout = min(time.Duration(ts*float64(time.Second)), max)
+	}
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	out, herr := s.Handler(ctx, c)
+	if herr != nil {
+		return envelope.ErrorResult(envelope.Classify(herr, mutating))
+	}
+	switch {
+	case out == nil:
+		return envelope.Result(nil, "ok")
+	case out.Passthrough != nil:
+		return out.Passthrough
+	case out.Job != nil:
+		return awaitJob(ctx, c, out.Job)
+	}
+	return envelope.Result(out.Data, out.Summary, out.Content...)
+}
+
+// awaitJob returns an async op's job immediately, or after waiting up to the
+// caller's wait_s (<= MaxWait), forwarding progress lines as MCP progress
+// notifications on this call's progress token. Notifications stop before the
+// response is sent, as the protocol requires.
+func awaitJob(ctx context.Context, c *Call, j *jobs.Job) *mcp.CallToolResult {
+	wait := time.Duration(0)
+	if ws, ok := c.Args["wait_s"].(float64); ok && ws > 0 {
+		wait = min(time.Duration(ws*float64(time.Second)), MaxWait)
+	}
+	snap := j.Snapshot()
+	if wait > 0 {
+		tok := c.Request.Params.GetProgressToken()
+		sent := 0
+		snap, _ = j.WaitFor(ctx, wait, func(sn jobs.Snapshot) {
+			if tok == nil || c.Request.Session == nil {
+				return
+			}
+			for ; sent < len(sn.Progress); sent++ {
+				_ = c.Request.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
+					ProgressToken: tok, Progress: float64(sent + 1), Message: sn.Progress[sent]})
+			}
+		})
+	}
+	return envelope.Result(JobView(snap), fmt.Sprintf("job %s %s", snap.ID, snap.Status))
+}
+
+// JobView is the structured form of a job snapshot in tool results.
+func JobView(sn jobs.Snapshot) map[string]any {
+	v := map[string]any{"job_id": sn.ID, "state": string(sn.Status)}
+	if n := len(sn.Progress); n > 0 {
+		v["last_progress"] = sn.Progress[n-1]
+		v["progress_lines"] = n
+	}
+	if sn.Result != nil {
+		v["result"] = sn.Result
+	}
+	if sn.Err != "" {
+		v["error"] = sn.Err
+	}
+	return v
+}
+
+// gated parks a Destructive/Exec call for approval (plan 2.1). The approval wait
+// runs BEFORE the op's own deadline starts. A sync caller waits at most
+// min(GateTimeout, MaxSyncApprovalWait); if still pending, the call returns a
+// pending_approval job (executed:false) that runs the op once approved, and is
+// cancelled (severing the request) if the session ends first.
+func (s *Spec) gated(ctx context.Context, c *Call, o Options, mutating bool) *mcp.CallToolResult {
+	total := o.GateTimeout
+	if total <= 0 {
+		total = DefaultGateTimeout
+	}
+	sessID := ""
+	st, haveState := session.StateFrom(ctx)
+	if haveState {
+		sessID = st.ID()
+	}
+	decision, sever := o.Gate.Request(GateRequest{Session: sessID, Tool: s.Name, Op: c.Op.Name, Tier: c.Op.Tier, Args: c.Args})
+	syncWait := MaxSyncApprovalWait
+	if o.SyncApprovalWait > 0 && o.SyncApprovalWait < syncWait {
+		syncWait = o.SyncApprovalWait
+	}
+	syncWait = min(total, syncWait)
+	timer := time.NewTimer(syncWait)
+	defer timer.Stop()
+	select {
+	case d := <-decision:
+		if !d.Approved {
+			return deniedResult(s, d)
+		}
+		return s.run(ctx, c, mutating)
+	case <-ctx.Done():
+		sever()
+		return envelope.ErrorResult(envelope.Classify(ctx.Err(), false))
+	case <-timer.C:
+	}
+	if c.Deps.Jobs == nil {
+		sever()
+		return envelope.ErrorResult(envelope.New(envelope.Precondition, "%s is awaiting approval and no job registry is available", s.Name).
+			WithDetail("reason", "approval_timeout"))
+	}
+	remaining := total - syncWait
+	j := c.Deps.Jobs.StartOwned(context.Background(), sessID, func(jctx context.Context, progress func(string)) (any, error) {
+		progress("awaiting approval")
+		t := time.NewTimer(remaining)
+		defer t.Stop()
+		select {
+		case d := <-decision:
+			if !d.Approved {
+				reason := d.Reason
+				if reason == "" {
+					reason = "denied"
+				}
+				return nil, envelope.New(envelope.Precondition, "%s was not approved", s.Name).WithDetail("reason", reason)
+			}
+		case <-t.C:
+			sever()
+			return nil, envelope.New(envelope.Precondition, "%s approval timed out", s.Name).WithDetail("reason", "approval_timeout")
+		case <-jctx.Done():
+			sever()
+			return nil, jctx.Err()
+		}
+		progress("approved; running")
+		res := s.run(jctx, c, mutating)
+		if res.IsError {
+			return res.StructuredContent, fmt.Errorf("%s failed after approval", s.Name)
+		}
+		return res.StructuredContent, nil
+	})
+	if haveState {
+		st.OnTeardown(func() { c.Deps.Jobs.CancelOwned(st.ID()) })
+	}
+	return envelope.Result(map[string]any{"state": "pending_approval", "executed": false, "job_id": j.ID},
+		fmt.Sprintf("NOT executed — awaiting approval (job %s)", j.ID))
+}
+
+func deniedResult(s *Spec, d Decision) *mcp.CallToolResult {
+	reason := d.Reason
+	if reason == "" {
+		reason = "denied"
+	}
+	return envelope.ErrorResult(envelope.New(envelope.Precondition, "%s was not approved", s.Name).WithDetail("reason", reason))
 }
 
 // checkParams enforces the op's Required/Rejects lists.

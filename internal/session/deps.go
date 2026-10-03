@@ -31,6 +31,29 @@ type Deps struct {
 	// CockpitURL, when non-nil, returns the current browser-cockpit URL and whether it
 	// is live. Nil when the cockpit launcher isn't wired.
 	CockpitURL func() (string, bool)
+
+	// Projects, when non-nil (daemon mode), binds sessions to project editors.
+	Projects ProjectManager
+}
+
+// ProjectManager binds an MCP session to a project's editor lease (daemon mode).
+type ProjectManager interface {
+	// Attach binds the session to the project's editor (reusing a warm one, adopting
+	// a draining lease left by an ended session of the same project, or spawning).
+	Attach(ctx context.Context, sessionID, project string) (instance string, err error)
+	// Release ends the session's binding (draining while a project job still runs).
+	Release(sessionID string)
+	// List describes every managed editor instance from this session's viewpoint.
+	List(sessionID string) []ProjectInstance
+}
+
+// ProjectInstance is one managed editor as seen by a session.
+type ProjectInstance struct {
+	Instance string `json:"instance"`
+	Project  string `json:"project"`
+	State    string `json:"state"`
+	Leased   bool   `json:"leased"`
+	Mine     bool   `json:"mine"`
 }
 
 type depsCtxKey struct{}

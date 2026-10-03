@@ -10,17 +10,20 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/jdziat/unreal-mcp-server/internal/app"
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"github.com/jdziat/unreal-mcp-server/internal/bridge/bridgetest"
 	"github.com/jdziat/unreal-mcp-server/internal/jobs"
 	"github.com/jdziat/unreal-mcp-server/internal/tools"
+	"github.com/jdziat/unreal-mcp-server/internal/tools/spec"
 	"github.com/jdziat/unreal-mcp-server/internal/uexec"
 	"github.com/jdziat/unreal-mcp-server/internal/uexec/uexectest"
 )
 
 // harness is one fake editor + emulator + full MCP server + connected client.
 type harness struct {
-	editor *uexectest.Editor // nil when started with noEditor
+	specs  map[string]*spec.Spec // tool name -> spec (dynamic tier lint)
+	editor *uexectest.Editor     // nil when started with noEditor
 	emu    *bridgetest.Emulator
 	world  *bridgetest.World
 	cs     *mcp.ClientSession
@@ -88,8 +91,12 @@ func startHarness(t *testing.T, o harnessOpts) *harness {
 	t.Cleanup(func() { sess.Close() })
 
 	b := bridge.New(sess, bridge.Options{})
-	srv := mcp.NewServer(&mcp.Implementation{Name: "unreal", Version: "e2e"}, nil)
-	tools.RegisterAll(srv, tools.Deps{Bridge: b, Jobs: jobs.NewRegistry()})
+	deps := tools.Deps{Bridge: b, Jobs: jobs.NewRegistry()}
+	srv := app.NewServer(app.Options{Deps: deps}, nil).MCP
+	h.specs = map[string]*spec.Spec{}
+	for _, sp := range tools.Specs(deps) {
+		h.specs[sp.Name] = sp
+	}
 
 	clientT, serverT := mcp.NewInMemoryTransports()
 	ss, err := srv.Connect(ctx, serverT, nil)
@@ -112,11 +119,39 @@ func (h *harness) call(t *testing.T, name string, args map[string]any) *mcp.Call
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	before := len(h.emu.Calls())
 	res, err := h.cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 	if err != nil {
 		t.Fatalf("call %s: protocol error: %v", name, err)
 	}
+	h.checkReaches(t, name, args, h.emu.Calls()[before:])
 	return res
+}
+
+// checkReaches is the dynamic half of the tier lint (plan §2.1): every Python op a
+// call actually dispatched must be declared in its OpSpec.Reaches. Specs that
+// declare no Reaches (the v1 adapter) are not checked.
+func (h *harness) checkReaches(t *testing.T, tool string, args map[string]any, observed []string) {
+	t.Helper()
+	sp, ok := h.specs[tool]
+	if !ok {
+		return
+	}
+	opName, _ := args["op"].(string)
+	for _, op := range sp.Ops {
+		if op.Name != opName || len(op.Reaches) == 0 {
+			continue
+		}
+		declared := map[string]bool{}
+		for _, r := range op.Reaches {
+			declared[r] = true
+		}
+		for _, o := range observed {
+			if !declared[o] {
+				t.Errorf("%s op=%q dispatched python op %q not declared in Reaches %v", tool, opName, o, op.Reaches)
+			}
+		}
+	}
 }
 
 // text concatenates a result's text content.

@@ -99,3 +99,47 @@ func TestJobProgressConcurrentSafe(t *testing.T) {
 		t.Fatalf("snap = %+v", snap)
 	}
 }
+
+func TestWaitForStreamsProgressAndFinishes(t *testing.T) {
+	r := NewRegistry()
+	release := make(chan struct{})
+	j := r.StartOwned(context.Background(), "s1", func(ctx context.Context, progress func(string)) (any, error) {
+		progress("compiling")
+		<-release
+		progress("linking")
+		return "done", nil
+	})
+	var seen []string
+	snap, finished := j.WaitFor(context.Background(), 50*time.Millisecond, func(s Snapshot) { seen = s.Progress })
+	if finished || snap.Status != Running {
+		t.Fatalf("job should still be running: %+v", snap)
+	}
+	close(release)
+	snap, finished = j.WaitFor(context.Background(), 2*time.Second, func(s Snapshot) { seen = s.Progress })
+	if !finished || snap.Status != Succeeded || snap.Result != "done" {
+		t.Fatalf("job should have finished: %+v", snap)
+	}
+	if len(seen) == 0 {
+		t.Fatal("onProgress never called")
+	}
+}
+
+func TestCancelOwnedAndList(t *testing.T) {
+	r := NewRegistry()
+	block := func(ctx context.Context, _ func(string)) (any, error) { <-ctx.Done(); return nil, ctx.Err() }
+	a := r.StartOwned(context.Background(), "gone-session", block)
+	b := r.StartOwned(context.Background(), "live-session", block)
+	if n := r.CancelOwned("gone-session"); n != 1 {
+		t.Fatalf("cancelled %d, want 1", n)
+	}
+	if s := a.Wait(); s.Status != Cancelled {
+		t.Fatalf("a = %s", s.Status)
+	}
+	if b.Status() != Running {
+		t.Fatal("b must keep running")
+	}
+	b.Cancel()
+	if l := r.List(); len(l) != 2 || l[0].ID != a.ID {
+		t.Fatalf("list order wrong: %+v", l)
+	}
+}

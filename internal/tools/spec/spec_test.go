@@ -225,3 +225,17 @@ func TestUndeclaredTimingIgnoresTimeoutS(t *testing.T) {
 		t.Fatalf("%+v", res.Content[0])
 	}
 }
+
+func TestTimeoutSCanShortenDeclaredTimeout(t *testing.T) {
+	s := &Spec{Name: "short", Timeout: 5 * time.Second, Ops: []OpSpec{{Tier: ReadOnly}},
+		Handler: func(ctx context.Context, c *Call) (*Result, error) {
+			dl, ok := ctx.Deadline()
+			if !ok || time.Until(dl) > time.Second {
+				return nil, fmt.Errorf("timeout_s=0.5 should shorten the 5s declared bound (deadline ok=%v in %s)", ok, time.Until(dl))
+			}
+			return &Result{Summary: "ok"}, nil
+		}}
+	if res := callSpec(t, s, map[string]any{"timeout_s": 0.5}); res.IsError {
+		t.Fatalf("%+v", res.Content[0])
+	}
+}

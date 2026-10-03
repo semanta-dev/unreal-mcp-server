@@ -63,6 +63,7 @@ func Specs(d Deps) []*spec.Spec {
 	registerDesktopTools(s, d)
 	registerHUDTools(s, d)
 	registerCockpitTools(s, d)
+	registerProjectTools(s, d)
 	return s.specs
 }
 
@@ -237,7 +238,7 @@ var v1ToolTiers = map[string]spec.Tier{
 	"import_assets": spec.Destructive, "asset_reimport": spec.Destructive,
 	"git_status": spec.ReadOnly, "git_diff": spec.ReadOnly, "git_log": spec.ReadOnly,
 	"logs_tail": spec.ReadOnly, "logs_since": spec.ReadOnly, "logs_mark": spec.ReadOnly, "editor_events": spec.ReadOnly,
-	"job_status": spec.ReadOnly, "project_map": spec.ReadOnly, "perf_parse": spec.ReadOnly, "scenario_list": spec.ReadOnly,
+	"job_status": spec.ReadOnly, "project_map": spec.ReadOnly, "project_list": spec.ReadOnly, "project_attach": spec.Mutating, "project_release": spec.Ephemeral, "perf_parse": spec.ReadOnly, "scenario_list": spec.ReadOnly,
 	"image_compare": spec.ReadOnly, "read_capture": spec.ReadOnly, "affordances": spec.ReadOnly, "cockpit_url": spec.ReadOnly,
 	"list_windows": spec.ReadOnly, "screen_capture": spec.ReadOnly, "window_capture": spec.ReadOnly,
 	"layout_preview": spec.ReadOnly, "playtest_evaluate": spec.ReadOnly, "health_check": spec.ReadOnly,

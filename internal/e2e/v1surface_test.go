@@ -49,15 +49,21 @@ func v1SurfaceRaw(t *testing.T) (names []string, stdioList []byte) {
 		t.Fatal(err)
 	}
 
-	dsrv := mcp.NewServer(&mcp.Implementation{Name: "unreal", Version: "v1"}, nil)
-	(&daemon.Daemon{}).RegisterProjectTools(dsrv)
+	// Daemon mode adds the project_* tools (registered only when a ProjectManager is
+	// wired); everything else is shared with stdio.
 	seen := map[string]bool{}
-	for _, tl := range append(stdio.Tools, listTools(t, dsrv).Tools...) {
+	for _, tl := range stdio.Tools {
 		if seen[tl.Name] {
 			t.Fatalf("duplicate v1 tool %q", tl.Name)
 		}
 		seen[tl.Name] = true
 		names = append(names, tl.Name)
+	}
+	for _, sp := range tools.Specs(tools.Deps{Bridge: bridge.New(noEditor{}, bridge.Options{}), Projects: &daemon.Daemon{}}) {
+		if !seen[sp.Name] {
+			seen[sp.Name] = true
+			names = append(names, sp.Name)
+		}
 	}
 	sort.Strings(names)
 	return names, raw

@@ -4,20 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jdziat/unreal-mcp-server/internal/app"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"github.com/jdziat/unreal-mcp-server/internal/config"
 	"github.com/jdziat/unreal-mcp-server/internal/daemon"
 	"github.com/jdziat/unreal-mcp-server/internal/jobs"
 	"github.com/jdziat/unreal-mcp-server/internal/session"
-	"github.com/jdziat/unreal-mcp-server/internal/tools"
 	"github.com/jdziat/unreal-mcp-server/internal/version"
 )
 
@@ -56,25 +54,27 @@ func runDaemon(ctx context.Context, cfg config.Config, logger *slog.Logger) erro
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				dm.SweepIdleSessions(30 * time.Minute)
-				dm.PruneLeaseJobs()
+				dm.SweepIdleSessions(cfg.SessionIdle)
+				dm.TickDrains()
+				dm.PruneProjectJobs()
 				dm.PruneDeadRecords()
 			}
 		}
 	}()
 
-	// One shared MCP server; the StreamableHTTP handler creates a ServerSession per
-	// HTTP session, and the deps middleware routes each to its lease.
-	srv := mcp.NewServer(&mcp.Implementation{Name: "unreal", Version: version.Version}, &mcp.ServerOptions{Logger: logger})
-	tools.InstallMiddleware(srv, logger)
-	session.InstallMiddleware(srv, dm.DepsResolver())
-	// Fallback Deps (engine dir + a jobs registry so build/lifecycle tools register);
-	// per-session Bridge/ProjectDir/Jobs are supplied by the middleware. An unattached
-	// session's tool calls get NO_PROJECT_ATTACHED (nil bridge) until project_attach.
-	tools.RegisterAll(srv, session.Deps{EngineDir: cfg.EngineDir, Jobs: jobs.NewRegistry()})
-	dm.RegisterProjectTools(srv)
-
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, nil)
+	// A fresh MCP server per HTTP session (per-session toolsets + state). Fallback Deps
+	// (engine dir, a jobs registry so build/lifecycle tools register, the project
+	// manager); per-session Bridge/ProjectDir/Jobs come from the resolver once the
+	// session attaches a project. Session end (DELETE, idle expiry, sweeper) funnels
+	// into dm.EndSession's drain rule.
+	handler := app.Handler(app.Options{
+		Logger:         logger,
+		Deps:           session.Deps{EngineDir: cfg.EngineDir, Jobs: jobs.NewRegistry(), Projects: dm},
+		Resolver:       dm.DepsResolver(),
+		DaemonMode:     true,
+		OnSessionStart: dm.RegisterSession,
+		OnSessionEnd:   dm.EndSession,
+	}, cfg.SessionIdle)
 	httpSrv := &http.Server{Addr: cfg.DaemonAddr, Handler: handler}
 	go func() {
 		<-ctx.Done()

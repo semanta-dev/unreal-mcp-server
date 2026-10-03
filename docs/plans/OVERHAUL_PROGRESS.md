@@ -185,3 +185,50 @@ test `TestV1TimeoutSStaysWithHandler` (+ unit `TestUndeclaredTimingIgnoresTimeou
 non-retryable on timeout/cancel; `IsEnveloped` now requires a structured `error.code` in the closed set. Noted: an
 install-phase timeout is reported `outcome:"unknown"` even though the op was never sent (safe direction). Also
 landed: v1 registration now collects specs (`tools.Specs(d)`), the base for per-session toolsets (P3b).
+
+**Gate P3a, round 2: A (pass)** — MCP/test reviewer verified the fixes; notes folded into P3b (single deps path;
+timeout_s-shortening unit test added).
+
+## P3b — Sessions, jobs, toolsets, gate (2026-10-03)
+
+**Done.**
+- `internal/app` — the single construction path: `app.NewServer` (stdio: one server + `session.State`) and
+  `app.Handler` (daemon: a fresh server per new StreamableHTTP session, `SessionTimeout` = `-session-idle`, default
+  30 m). The session ID is bound at `InitializedHandler`; `ss.Wait()` → `State.Teardown()`. Middleware order:
+  recover → logging → per-request context (state, toolsets, per-session deps) → `envelope.SafetyNet(toolsets.Disabled)`.
+  Both `cmd` entry points now build through `app`.
+- `session.State` (teardown hooks, run once, late hooks run immediately), canonical `ProjectKey` (abs, symlinks,
+  `.uproject`→dir, case-folded on Windows; lives in `lifecycle` so the pool can use it), `.umcp.json` loader
+  (`toolsets`, `gate_policy`, `keep_package_recovery`), `ProjectManager` interface on `session.Deps`.
+- `spec.Toolsets` — per-session enable/disable via `AddTool`/`RemoveTools` (→ `tools/list_changed`), core cannot be
+  disabled, unknown toolset rejected, `Disabled()` feeds the SafetyNet hint. v1 tools are all `core`; the daemon's
+  `project_*` tools moved into `tools` under toolset `daemon` (registered only when a `ProjectManager` is wired);
+  `project_attach` applies the project's `.umcp.json` toolsets.
+- Gate (`spec.Gate`): Destructive/Exec ops under policy `require` wait for approval *before* their deadline starts;
+  sync wait ≤ min(gate_timeout, 25 s) (configurable lower for tests), then a `pending_approval` job
+  (`executed:false`, "NOT executed — awaiting approval") that runs the op on approval, fails `PRECONDITION
+  {reason}` on deny/timeout, and is cancelled + severed at session teardown. Cockpit adapter wiring is P4.
+- Async ops: handlers return `Result.Job`; the spec layer returns `{job_id,state}` or waits ≤ `wait_s` (cap 25 s)
+  streaming `notifications/progress` on the call's own token (stops before the response). `jobs`: `WaitFor`,
+  owner tags + `CancelOwned`, `List`.
+- Daemon: jobs owned by **project** (`ProjectJobs`), not lease; one end-of-session path `EndSession` (DELETE, idle
+  expiry, sweeper via registered closer, `project_release`) with the **drain** rule (lease held while a project job
+  runs; `TickDrains` releases); same-project attach **adopts** a draining lease (`Pool.Transfer`/`Router.Transfer`,
+  never via Idle); pool matches projects by canonical key (fixes a latent double-spawn for differently spelled
+  paths). `daemon.NewWithSpawner` + `supervisor.NewEditorHandle` for custom spawners/tests.
+- Dynamic tier lint hook in the T1 harness (observed Python ops ⊆ `OpSpec.Reaches`; v1 specs declare none).
+
+**Evidence (all green; `-race` ×2 on e2e/daemon/spec/jobs/session/app).**
+- Daemon over real HTTP with fake editors (`internal/e2e/daemon_test.go`): two sessions × two projects, no
+  cross-talk; client **vanishes without DELETE** (dead transport + dropped connections) → lease released only after
+  the 300 ms idle expiry (asserted ≥ 250 ms); sweeper ends a session that holds its SSE stream open; **vanish
+  mid-job** → lease drains, another project cannot lease it, a new session with a differently-spelled path adopts
+  the same instance without spawning and sees the job via `job_status`; `project_attach` with `.umcp.json
+  {"toolsets":["design"]}` → `list_changed`, the disabled tool becomes callable; **200-session churn** → goroutines
+  back to baseline.
+- Unit: gate approve-in-window / denied / pending→approved (job runs once) / pending→denied / pending→timeout (never
+  runs) / teardown severs; async `wait_s` with progress notifications; toolsets enable/disable/list_changed/core
+  protection/unknown; session state/teardown/project key/project file; daemon drain/adopt (case-folded)/sweeper
+  closer/warm release/prune; jobs WaitFor/CancelOwned/List.
+- v1 surface unchanged (`TestV1SurfaceFrozen` 155 names, `TestV1EnvelopeGolden` byte-identical); archtest updated
+  for `app`, `session → lifecycle`, `tools/spec → jobs`.

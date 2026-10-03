@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jdziat/unreal-mcp-server/internal/app"
+	"github.com/jdziat/unreal-mcp-server/internal/session"
 	"log"
 	"log/slog"
 	"os"
@@ -21,7 +23,6 @@ import (
 	"github.com/jdziat/unreal-mcp-server/internal/config"
 	"github.com/jdziat/unreal-mcp-server/internal/jobs"
 	"github.com/jdziat/unreal-mcp-server/internal/supervisor"
-	"github.com/jdziat/unreal-mcp-server/internal/tools"
 	"github.com/jdziat/unreal-mcp-server/internal/uexec"
 	"github.com/jdziat/unreal-mcp-server/internal/version"
 )
@@ -89,15 +90,18 @@ func main() {
 	launcher := attach.NewLauncher()
 	go launcher.Run(ctx, b, attach.LaunchConfig{Project: cfg.ProjectDir, ProjectDir: cfg.ProjectDir}, logger)
 
-	srv := mcp.NewServer(&mcp.Implementation{Name: "unreal", Version: version.Version}, &mcp.ServerOptions{Logger: logger})
-	tools.InstallMiddleware(srv, logger)
-	tools.RegisterAll(srv, tools.Deps{
-		Bridge:     b,
-		Jobs:       jobs.NewRegistry(),
-		ProjectDir: cfg.ProjectDir,
-		EngineDir:  cfg.EngineDir,
-		CockpitURL: launcher.URL,
-	})
+	st := session.NewState("stdio")
+	defer st.Teardown()
+	srv := app.NewServer(app.Options{
+		Logger: logger,
+		Deps: session.Deps{
+			Bridge:     b,
+			Jobs:       jobs.NewRegistry(),
+			ProjectDir: cfg.ProjectDir,
+			EngineDir:  cfg.EngineDir,
+			CockpitURL: launcher.URL,
+		},
+	}, st).MCP
 
 	logger.Info("unreal-mcp starting",
 		"version", version.String(), "snippet_mode", cfg.SnippetMode,

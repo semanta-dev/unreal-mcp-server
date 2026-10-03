@@ -36,8 +36,12 @@ type Daemon struct {
 	records         *supervisor.RecordStore
 	logger          *slog.Logger
 
-	jobsMu    sync.Mutex
-	leaseJobs map[string]*jobs.Registry // instanceID -> per-lease jobs registry
+	jobsMu      sync.Mutex
+	projectJobs map[string]*jobs.Registry // canonical project key -> that project's jobs
+
+	sessMu   sync.Mutex
+	closers  map[string]func() // sessionID -> close the live MCP session
+	draining map[string]drain  // project key -> lease held past its session for a running job
 
 	activityMu sync.Mutex
 	lastSeen   map[string]time.Time // sessionID -> last tool call (idle-sweep reclaim)
@@ -65,10 +69,28 @@ func NewDaemon(ctx context.Context, cfg uexec.Config, engineDir, intentDir strin
 	dm := &Daemon{
 		Disc: disc, Pool: pool, Router: router, EngineDir: engineDir, spawner: sp,
 		isAlive: lifecycle.IsAlive, records: records,
-		logger: logger, leaseJobs: map[string]*jobs.Registry{}, lastSeen: map[string]time.Time{},
+		logger: logger, projectJobs: map[string]*jobs.Registry{}, lastSeen: map[string]time.Time{},
+		closers: map[string]func(){}, draining: map[string]drain{},
 	}
 	dm.Runtime = NewRuntime(router, poolLiveness{}, 3*time.Second, 120*time.Second, dm.onLeaseLost)
 	return dm, nil
+}
+
+// NewWithSpawner builds a Daemon over a caller-supplied Spawner with no shared
+// discovery (custom deployments and end-to-end tests drive editors themselves).
+func NewWithSpawner(engineDir string, sp supervisor.Spawner, logger *slog.Logger) *Daemon {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+	pool := supervisor.NewPool(nil)
+	router := NewRouter(pool, sp, newToken)
+	dm := &Daemon{
+		Pool: pool, Router: router, EngineDir: engineDir, spawner: sp, isAlive: lifecycle.IsAlive,
+		logger: logger, projectJobs: map[string]*jobs.Registry{}, lastSeen: map[string]time.Time{},
+		closers: map[string]func(){}, draining: map[string]drain{},
+	}
+	dm.Runtime = NewRuntime(router, poolLiveness{}, 3*time.Second, 120*time.Second, dm.onLeaseLost)
+	return dm
 }
 
 // poolLiveness is supervisor.OSLiveness (aliased so this package doesn't re-export).
@@ -77,7 +99,9 @@ type poolLiveness = supervisor.OSLiveness
 // Run starts the liveness loop; it returns when ctx is cancelled. Also closes the
 // shared discovery on exit.
 func (dm *Daemon) Run(ctx context.Context) {
-	defer dm.Disc.Close()
+	if dm.Disc != nil {
+		defer dm.Disc.Close()
+	}
 	dm.Runtime.Run(ctx)
 }
 
@@ -87,15 +111,16 @@ func (dm *Daemon) onLeaseLost(sessionID string) {
 	// here without a server-push channel (future: notify the session).
 }
 
-// jobsFor returns (creating if needed) the per-lease jobs registry for an instance,
-// so build/lifecycle jobs are scoped per editor and don't leak across projects.
-func (dm *Daemon) jobsFor(instanceID string) *jobs.Registry {
+// jobsForProject returns (creating if needed) a project's jobs registry. Jobs are
+// owned by the PROJECT, not the session or lease, so a later session attaching the
+// same project (after a disconnect or an editor restart) still sees them.
+func (dm *Daemon) jobsForProject(key string) *jobs.Registry {
 	dm.jobsMu.Lock()
 	defer dm.jobsMu.Unlock()
-	r, ok := dm.leaseJobs[instanceID]
+	r, ok := dm.projectJobs[key]
 	if !ok {
 		r = jobs.NewRegistry()
-		dm.leaseJobs[instanceID] = r
+		dm.projectJobs[key] = r
 	}
 	return r
 }
@@ -165,18 +190,18 @@ func (dm *Daemon) confirmDead(pid int, wait time.Duration) bool {
 	}
 }
 
-// PruneLeaseJobs drops the per-lease jobs registry for any instance no longer in the
-// pool (torn down / reaped), so leaseJobs can't grow unboundedly over a long-lived
-// daemon's attach/crash/respawn cycles.
-func (dm *Daemon) PruneLeaseJobs() {
+// PruneProjectJobs drops a project's jobs registry once no editor for the project
+// remains in the pool and none of its jobs is running, so the map stays bounded over
+// a long-lived daemon's attach/crash/respawn cycles.
+func (dm *Daemon) PruneProjectJobs() {
 	live := map[string]bool{}
 	for _, inst := range dm.Pool.List() {
-		live[inst.ID] = true
+		live[session.ProjectKey(inst.Project)] = true
 	}
 	dm.jobsMu.Lock()
-	for id := range dm.leaseJobs {
-		if !live[id] {
-			delete(dm.leaseJobs, id)
+	for key, r := range dm.projectJobs {
+		if !live[key] && !r.HasRunning() {
+			delete(dm.projectJobs, key)
 		}
 	}
 	dm.jobsMu.Unlock()
@@ -201,9 +226,9 @@ func (dm *Daemon) DepsResolver() func(ctx context.Context, req mcp.Request) (ses
 		if !ok {
 			return session.Deps{}, false
 		}
-		id, _ := dm.Router.InstanceFor(sid)
 		return session.Deps{
-			Bridge: eh.Bridge(), ProjectDir: project, EngineDir: dm.EngineDir, Jobs: dm.jobsFor(id),
+			Bridge: eh.Bridge(), ProjectDir: project, EngineDir: dm.EngineDir,
+			Jobs: dm.jobsForProject(session.ProjectKey(project)), Projects: dm,
 			Restart: func(rctx context.Context, buildStep func(context.Context) error) error {
 				return dm.RestartLease(rctx, sid, buildStep)
 			},
@@ -217,17 +242,13 @@ func (dm *Daemon) touch(sid string) {
 	dm.activityMu.Unlock()
 }
 
-// SweepIdleSessions releases the lease of any session with no tool call in the last
-// ttl — a BACKSTOP for an agent that vanished without project_release (network drop,
-// crashed client). Explicit project_release and the crash reaper are the primary
-// reclaimers; ttl should be generous (a live agent may legitimately idle while
-// thinking). The released editor is kept warm (Idle) for reuse unless mid-restart.
-//
-// Two guards make it safe: (1) it REFUSES to reclaim a lease whose holder has a
-// running job (§0 — a long async build_compile produces no tool calls, so an
-// idle-TTL alone would yank the editor mid-build); (2) it re-verifies staleness
-// under the lock immediately before releasing, so a concurrent touch (the holder's
-// call landing in the gap) rescues the session instead of losing its lease.
+// SweepIdleSessions ends any session with no tool call in the last ttl — the
+// PRIMARY liveness backstop (the SDK's idle SessionTimeout is ref-counted and never
+// fires while a half-open SSE stream is held). It closes the MCP session when the app
+// registered a closer, so teardown runs the same path as a client DELETE (cancelling
+// pending approvals, then EndSession's drain rule); otherwise it calls EndSession
+// directly. Staleness is re-checked under the lock so a concurrent call rescues the
+// session.
 func (dm *Daemon) SweepIdleSessions(ttl time.Duration) {
 	cutoff := time.Now().Add(-ttl)
 	dm.activityMu.Lock()
@@ -237,34 +258,24 @@ func (dm *Daemon) SweepIdleSessions(ttl time.Duration) {
 			candidates = append(candidates, sid)
 		}
 	}
-	dm.activityMu.Unlock() // do NOT pre-delete: a concurrent touch must be able to rescue
+	dm.activityMu.Unlock()
 
 	for _, sid := range candidates {
-		id, leased := dm.Router.InstanceFor(sid)
-		if !leased {
-			dm.forgetIfStale(sid, cutoff) // no lease; just drop the stale activity entry
-			continue
-		}
-		// Never reclaim while the holder has async work in flight.
-		if dm.jobsFor(id).HasRunning() {
-			continue
-		}
-		// Atomically re-check staleness AND release under the same lock, so a
-		// concurrent touch (the holder's call landing in the gap) either wins the
-		// lock first — rescuing the session — or blocks until after the release
-		// (its next call then re-attaches). This fully closes the touch/sweep TOCTOU.
-		// Deadlock-safe: Router.Release takes only the pool lock, and nothing under
-		// the pool lock re-enters activityMu.
 		dm.activityMu.Lock()
 		t, present := dm.lastSeen[sid]
 		stillStale := present && t.Before(cutoff)
-		if stillStale {
-			delete(dm.lastSeen, sid)
-			dm.Router.Release(sid)
-		}
 		dm.activityMu.Unlock()
-		if stillStale {
-			dm.logger.Info("reclaimed idle session lease", "session", sid, "idle_ttl", ttl.String())
+		if !stillStale {
+			continue
+		}
+		dm.sessMu.Lock()
+		closeFn := dm.closers[sid]
+		dm.sessMu.Unlock()
+		dm.logger.Info("ending idle session", "session", sid, "idle_ttl", ttl.String())
+		if closeFn != nil {
+			closeFn() // teardown → EndSession
+		} else {
+			dm.EndSession(sid)
 		}
 	}
 }
