@@ -858,3 +858,58 @@ How the budget was met:
 **Not run: the §3.5 tool-selection eval.** It needs `ANTHROPIC_API_KEY` and real API spend, and the user asked to
 approve that before it runs. The harness design is in the plan; it is the first item to take up with the user, along
 with P7.
+
+**Gate P5e, round 1: B+.** Blocking: *`polyworld`'s description was a copy of `build`'s.* The description-trim
+script matched the op name `build` inside polyworld's op list. Restored. A new lint rule (descriptions must be
+non-empty and unique) would have caught it, and pins it now.
+
+Non-blocking findings, fixed:
+- *The every-op sweep tolerated any non-INTERNAL error.* It now pins its 8 expected error cells:
+  - build/headless need an engine (PRECONDITION);
+  - job lookups of a fake id and an unknown UFUNCTION (NOT_FOUND).
+
+  Every other cell must succeed, and every async cell's job must reach its expected final state. It runs over
+  **both backends** (2 × 121 cells).
+- *Strict schemas reject `null`.* Top-level `null` arguments are now treated as omitted before validation, for
+  clients that send null for omitted optionals.
+- Class syntax (Module.Class, short names, CONFLICT) is back on `actor_edit class`.
+- *Coverage margin.* Helper unit tests raise tools to 72.6 % (repo 78.3 %).
+
+The §3.5 tool-selection eval still needs: the user's spend approval after a 5-task pilot, the `cmd/tooleval` harness
+with a stateful world model, the mined task corpus, and a v1 arm served from `v1-final`. The free fallback (replaying
+transcript tool calls against the v2 schemas, metric (b)) needs the aesir/poly-world session transcripts. Both go to
+the user together with P7.
+
+## P6 — docs
+
+- **Generated** (`go generate ./internal/tools` → `internal/tools/gendocs`; `TestGeneratedDocsAreCurrent` fails CI on
+  drift):
+  - `docs/tools.md`: every tool, its ops with tier, async, required params and needs, and its params; plus tiers,
+    needs and the rollback ladder;
+  - `docs/migration-v2.md`: what changed everywhere, then all 155 v1 names → their exact v2 call, from
+    `internal/tools/migration.go` `V1Calls`. `TestMigrationAccounting` checks each call's tool against `Replaces`.
+- **Written:**
+  - `README.md`: quick start, tool map, configuration, `.umcp.json`, developing;
+  - `docs/architecture.md`: request flow, spec table, companion sections, command channel, topologies, safety
+    mechanisms, package map;
+  - `docs/operations.md`: build, deploy, package recovery, run modes, one Go peer per editor, validation, the
+    **T4 live checklist**, the plugin rebuild drill, the **rollback runbook**;
+  - `CHANGELOG.md` (v2.0.0);
+  - `CLAUDE.md`: commands, rules for tools/companion ops/tests, UE 5.7 Python gotchas;
+  - `plugin/UnrealMCP/README.md`: v2 tool names. Writing it surfaced that `capture camera_mode=player` (the plugin's
+    `game_scene` POV) was missing from the enum; restored.
+- `deploy/mcp.json.tmpl` is unchanged: stdio with project and engine env. The daemon is documented in operations.md.
+
+**Evidence.**
+- `go vet ./...` (+ `-tags live`) clean; gofmt clean.
+- `go test ./...` all pass; `-race ./internal/...` passes.
+- Coverage gates: repo 78.3, tools 72.6, app 100, config 95.1.
+- pytest: 50 passed. ruff in the CI form: clean.
+- Budgets: core 44,882 B, all 58,688 B. Docs and golden regenerated.
+
+**Autonomous scope complete (P0–P6).** Stopping here, as agreed with the user, before:
+- **P7**: live T4 on aesir-wave-defense and poly-world, deploy, consumer-repo `.mcp.json`/prompt updates, the
+  rollback drill;
+- **the paid §3.5 eval**.
+
+Both need the user.

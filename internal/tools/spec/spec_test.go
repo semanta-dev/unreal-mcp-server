@@ -149,7 +149,7 @@ func TestAnnotationsFromWorstOp(t *testing.T) {
 }
 
 func TestLintRules(t *testing.T) {
-	good := &Spec{Name: "ok_tool", Timeout: time.Second, Max: 10 * time.Second,
+	good := &Spec{Name: "ok_tool", Description: "does ok things", Timeout: time.Second, Max: 10 * time.Second,
 		Ops: []OpSpec{{Name: "a", Tier: Mutating, Reaches: []string{"actor_spawn"}}, {Name: "b", Tier: Destructive, Reaches: []string{"actor_delete"}}}}
 	if v := Lint([]*Spec{good}); len(v) != 0 {
 		t.Fatalf("unexpected violations: %v", v)
@@ -160,17 +160,19 @@ func TestLintRules(t *testing.T) {
 		{Name: "mixed", Max: time.Second, Ops: []OpSpec{{Name: "r", Tier: ReadOnly}, {Name: "d", Tier: Destructive}}},
 		{Name: "under", Max: time.Second, Ops: []OpSpec{{Tier: Mutating, Reaches: []string{"widget_compose"}}}}, // prune escalates
 		{Name: "unk", Max: time.Second, Ops: []OpSpec{{Tier: Mutating, Reaches: []string{"no_such_op"}}}},
+		{Name: "dup_a", Description: "same words", Max: time.Second, Ops: []OpSpec{{Tier: ReadOnly}}},
+		{Name: "dup_b", Description: "same words", Max: time.Second, Ops: []OpSpec{{Tier: ReadOnly}}},
 		{Name: "autowrite", Max: time.Second, Ops: []OpSpec{{Tier: Mutating}},
 			Schema: &jsonschema.Schema{Type: "object", Properties: map[string]*jsonschema.Schema{"world": {Type: "string", Enum: []any{"editor", "auto"}}}}},
 	}
 	v := strings.Join(Lint(bad), "\n")
-	for _, want := range []string{"BadName: tool name", "slow op=\"\": sync op", "mixed: destructive/exec op mixed", "under op=\"\": declared mutating but reaches widget_compose", "unclassified python op", "autowrite: world=auto on a mutating tool"} {
+	for _, want := range []string{"BadName: tool name", "slow op=\"\": sync op", "mixed: destructive/exec op mixed", "under op=\"\": declared mutating but reaches widget_compose", "unclassified python op", "autowrite: world=auto on a mutating tool", "dup_b: same description as dup_a", "slow: empty description"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("lint missed %q in:\n%s", want, v)
 		}
 	}
 	// Rejecting the escalating args makes a Mutating op that reaches widget_compose legal.
-	fixed := &Spec{Name: "fixed", Max: time.Second, Ops: []OpSpec{{Tier: Mutating, Reaches: []string{"widget_compose"}, Rejects: []string{"prune", "remove"}}}}
+	fixed := &Spec{Name: "fixed", Description: "fixed", Max: time.Second, Ops: []OpSpec{{Tier: Mutating, Reaches: []string{"widget_compose"}, Rejects: []string{"prune", "remove"}}}}
 	if v := Lint([]*Spec{fixed}); len(v) != 0 {
 		t.Fatalf("rejecting prune should satisfy the lint: %v", v)
 	}

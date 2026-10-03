@@ -28,7 +28,7 @@ func toolBytes(t *testing.T, s *spec.Spec) int {
 // TestToolListBudgets pins the plan's counts and byte budgets: 45 tools (36 core),
 // core tools/list ≤ 45 KB, everything ≤ 75 KB.
 func TestToolListBudgets(t *testing.T) {
-	specs := Specs(Deps{Bridge: bridge.New(noEditorRunner{}, bridge.Options{}), Jobs: jobs.NewRegistry(), Projects: fakeProjects{}})
+	specs := Specs(Deps{Bridge: bridge.New(noEditorRunner{}, bridge.Options{}), Jobs: jobs.NewRegistry(), Projects: docsProjects{}})
 	core, all, nCore := 0, 0, 0
 	type row struct {
 		name string

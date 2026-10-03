@@ -18,36 +18,62 @@ import (
 // (never INTERNAL — a recovered panic), must not dispatch an op the companion lacks
 // (UNKNOWN_OP), and — via the harness — must only dispatch the Python ops its OpSpec
 // declares in Reaches.
+// expectedErrors are the only cells allowed to fail, with the code they must fail with
+// (they need an engine install, or a job/UFUNCTION that does not exist): anything
+// else that errors is a regression.
+var expectedErrors = map[string]string{
+	"build/": "PRECONDITION", "headless/commandlet": "PRECONDITION", "headless/exec": "PRECONDITION",
+	"headless/tests": "PRECONDITION", "job/status": "NOT_FOUND", "job/wait": "NOT_FOUND", "job/cancel": "NOT_FOUND",
+	"actor_call/": "NOT_FOUND",
+}
+
+// expectedJobState is the final state of an async cell's job (default succeeded).
+var expectedJobState = map[string]string{
+	"editor_lifecycle/restart": "failed", // no engine directory to relaunch with; nothing is closed (PRECONDITION)
+}
+
 func TestEveryOpIsWired(t *testing.T) {
+	for _, backend := range []struct {
+		name   string
+		native bool
+	}{{"uexec", false}, {"native", true}} {
+		t.Run(backend.name, func(t *testing.T) { everyOp(t, backend.native) })
+	}
+}
+
+func everyOp(t *testing.T, native bool) {
 	dir := t.TempDir()
 	png := filepath.Join(dir, "frame.png")
 	if err := bridgetest.WritePNG(png, 128); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "Game.uproject"), []byte(`{"Modules":[{"Name":"Game"}]}`), 0o644); err != nil {
-		t.Fatal(err)
+	for p, body := range map[string]string{
+		"Game.uproject":          `{"Modules":[{"Name":"Game"}]}`,
+		"Saved/Logs/Game.log":    "LogTemp: Warning: hello\n",
+		"Config/DefaultGame.ini": "",
+	} {
+		full := filepath.Join(dir, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "Config"), 0o755); err != nil {
-		t.Fatal(err)
+	if !build.Available() {
+		t.Skip("git not on PATH")
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "Saved", "Logs"), 0o755); err != nil {
-		t.Fatal(err)
+	// A real repo with checkpoint umcp/cp/1 for git / git_revert.
+	gitRun(t, dir, "init", "-q")
+	for _, kv := range [][2]string{{"commit.gpgsign", "false"}, {"tag.gpgsign", "false"}, {"user.email", "t@t"},
+		{"user.name", "t"}, {"core.autocrlf", "false"}} {
+		gitRun(t, dir, "config", kv[0], kv[1])
 	}
-	if err := os.WriteFile(filepath.Join(dir, "Saved", "Logs", "Game.log"), []byte("LogTemp: Warning: hello\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if build.Available() { // a real repo with checkpoint umcp/cp/1 for git / git_revert
-		gitRun(t, dir, "init", "-q")
-		gitRun(t, dir, "config", "commit.gpgsign", "false")
-		gitRun(t, dir, "config", "tag.gpgsign", "false")
-		gitRun(t, dir, "config", "user.email", "t@t")
-		gitRun(t, dir, "config", "user.name", "t")
-		gitRun(t, dir, "config", "core.autocrlf", "false")
-		gitRun(t, dir, "add", "Game.uproject")
-		gitRun(t, dir, "commit", "-q", "-m", "seed")
-		gitRun(t, dir, "tag", "-a", "umcp/cp/1", "-m", "seed")
-	}
-	h := startHarness(t, harnessOpts{project: dir, toolsets: []spec.Toolset{spec.Design, spec.UI, spec.PolyWorld, spec.Headless}})
+	gitRun(t, dir, "add", "Game.uproject")
+	gitRun(t, dir, "commit", "-q", "-m", "seed")
+	gitRun(t, dir, "tag", "-a", "umcp/cp/1", "-m", "seed")
+
+	h := startHarness(t, harnessOpts{project: dir, native: native, toolsets: []spec.Toolset{spec.Design, spec.UI, spec.PolyWorld, spec.Headless}})
 	installPermissiveOps(h, dir, png)
 	h.call(t, "actor_edit", map[string]any{"op": "spawn", "world": "editor", "class": "/Script/Engine.Actor", "label": "Cube"})
 
@@ -64,7 +90,8 @@ func TestEveryOpIsWired(t *testing.T) {
 		}
 		for _, op := range sp.Ops {
 			op := op
-			t.Run(name+"/"+op.Name, func(t *testing.T) {
+			cell := name + "/" + op.Name
+			t.Run(cell, func(t *testing.T) {
 				if needsPIE(name, op) {
 					h.world.StartPIE()
 					defer h.world.StopPIE()
@@ -72,13 +99,24 @@ func TestEveryOpIsWired(t *testing.T) {
 				args := opArgs(sp, op, dir, png)
 				res := h.call(t, name, args)
 				cells++
-				if !res.IsError {
+				if want, ok := expectedErrors[cell]; ok {
+					if e := errorOf(t, res); e["code"] != want {
+						t.Fatalf("%s: want %s, got %v", cell, want, e)
+					}
 					return
 				}
-				e := errorOf(t, res)
-				t.Logf("%s op=%s → %v: %v", name, op.Name, e["code"], e["message"])
-				if e["code"] == "INTERNAL" || e["code"] == "UNKNOWN_OP" {
-					t.Fatalf("%s op=%s args=%v → %v", name, op.Name, args, e)
+				if res.IsError {
+					t.Fatalf("%s args=%v → %v", cell, args, structured(t, res)["error"])
+				}
+				if _, async := args["wait_s"]; async {
+					out := structured(t, res)
+					want := expectedJobState[cell]
+					if want == "" {
+						want = "succeeded"
+					}
+					if out["state"] != want {
+						t.Fatalf("%s: job %v, want %s: %v", cell, out["state"], want, out)
+					}
 				}
 			})
 		}

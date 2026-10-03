@@ -281,6 +281,11 @@ func (s *Spec) handler(o Options) mcp.ToolHandler {
 			if args == nil { // "arguments": null
 				args = map[string]any{}
 			}
+			for k, v := range args { // a null optional means "not given" (schemas are non-nullable)
+				if v == nil {
+					delete(args, k)
+				}
+			}
 		}
 		if err := resolved.ApplyDefaults(&args); err != nil {
 			return envelope.ErrorResult(envelope.New(envelope.InvalidArgument, "applying defaults: %v", err)), nil

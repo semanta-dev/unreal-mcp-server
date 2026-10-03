@@ -1,157 +1,92 @@
-# Unreal MCP Server (Go)
+# Unreal MCP Server (v2)
 
-MCP (Model Context Protocol) server that exposes a live Unreal Editor session as
-tools, letting Claude Code (or any MCP client) drive the editor: run Python,
-inspect and edit levels, take screenshots, control play sessions, orchestrate
-C++ builds, observe PIE, and checkpoint with git.
-
-> **v2 overhaul in progress** on branch `overhaul/v2` — see
-> [`docs/plans/OVERHAUL_PLAN.md`](docs/plans/OVERHAUL_PLAN.md). This README is rewritten in phase P6;
-> historical design docs live in [`docs/archive/`](docs/archive/INDEX.md). The legacy Python server
-> was removed (recoverable from tag `v1-final`).
-
-## How it works
+An MCP server that lets Claude Code (or any MCP client) drive a live **Unreal Editor 5.7**: read and edit levels
+and assets, play the game and watch it, film and score playtests, build C++, and roll mistakes back — through 45
+tools generated from one spec table.
 
 ```
-Claude Code ── stdio ──> unreal-mcp.exe ── UDP/TCP (loopback) ──> Unreal Editor
-                           │                                       (PythonScriptPlugin
-  internal/uexec  protocol port  ─────────┘                        remote execution)
-  internal/bridge companion-module dispatch (mcp_bridge.py, hot-loaded)
-  internal/tools  65 MCP tools
-  internal/desktop OS-level screen capture + mouse/keyboard (raw Win32; no editor round-trip)
+MCP client ── stdio ─────────▶ unreal-mcp ── UDP/TCP (loopback) ──▶ Unreal Editor (PythonScriptPlugin
+           └─ HTTP (daemon) ─▶  (Go, one       remote execution  ──▶  remote execution) + v2 companion module
+                                 static binary)  [native channel] ──▶  UnrealMCP plugin (optional, MCPCore)
 ```
 
-- `internal/uexec` — Go port of Epic's remote-execution wire protocol (UDP-multicast
-  discovery + TCP reverse-connect command channel).
-- `internal/bridge` + `internal/snippets` — hot-loads a companion Python module
-  (`mcp_bridge.py`) into the editor's `__main__` and dispatches structured ops with
-  base64-JSON args (Go ships data, never hand-built Python — injection-safe).
-- `internal/tools` — the MCP tools over the official `modelcontextprotocol/go-sdk`.
+- **Tools**: [`docs/tools.md`](docs/tools.md) (generated) — 36 core tools plus optional toolsets (`daemon`,
+  `headless`, `design`, `ui`, `desktop`, `polyworld`).
+- **Coming from v1?** [`docs/migration-v2.md`](docs/migration-v2.md) maps all 155 v1 tool names to their v2 calls.
+- **How it works**: [`docs/architecture.md`](docs/architecture.md). **Running it**: [`docs/operations.md`](docs/operations.md).
 
-Remote execution must be enabled in the project's `Config/DefaultEngine.ini` under
-`[/Script/PythonScriptPlugin.PythonScriptPluginSettings]` (`bRemoteExecution=True`),
-and the editor must be running with the project open for tools (other than listing) to work.
+## Quick start
 
-## Build
+1. Enable Python remote execution in the game project's `Config/DefaultEngine.ini`:
+   ```ini
+   [/Script/PythonScriptPlugin.PythonScriptPluginSettings]
+   bRemoteExecution=True
+   ```
+2. Build (Windows):
+   ```powershell
+   .\scripts\bootstrap.ps1   # pinned Go toolchain, once
+   .\scripts\build.ps1       # -> dist\unreal-mcp.exe
+   ```
+3. Register it in the game project's `.mcp.json`:
+   ```powershell
+   .\scripts\render-mcp-config.ps1 -ProjectDir <game project> -EngineDir <UE_5.7>
+   ```
+4. Open the project in the editor and start your MCP client. `editor op=status` should answer.
 
-```powershell
-.\scripts\bootstrap.ps1     # installs a pinned Go toolchain (once)
-.\scripts\build.ps1         # -> dist/unreal-mcp.exe (static, no runtime/venv)
-```
+## What an agent gets
 
-## Run / configure
+| Area | Tools |
+|---|---|
+| Editor & code | `editor`, `python`, `console`, `level`, `editor_lifecycle`, `build`, `logs` |
+| Actors & world | `actor_query`, `actor_edit`, `actor_call`, `reflect`, `world_query`, `viewport` |
+| Assets & UI | `asset_query`, `asset_create`, `asset_edit`, `asset_import`, `widget_query` (+ `widget_edit`, toolset `ui`) |
+| Play & see | `pie`, `pie_observe`, `pie_wait`, `screenshot`, `capture`, `audio`, `playtest`, `analyze` |
+| Build levels | `scene`, `scene_clear`, `snapshot`, `snapshot_restore` |
+| Project | `project_map`, `project_config`, `git`, `git_revert`, `job`, `toolsets` |
 
-Registered in the consuming project's `.mcp.json` (see `deploy/`). Key flags/env:
+Every call returns a structured object; every failure is `{"error": {code, message, hint, retryable, outcome,
+details}}` with a closed code set. Ops are tiered `readonly` → `ephemeral` → `mutating` → `destructive` → `exec`;
+with `gate_policy: "require"` destructive and exec ops wait for a human's approval in the cockpit.
 
-| Env | Flag | Default | Purpose |
+**Rollback ladder:** `snapshot_restore` (actor transforms) → `scene_clear` (a scene's actors) → `git_revert` (files, to
+a `git op=checkpoint`; closes and relaunches the editor safely when the assets are loaded).
+
+## Configuration
+
+| Flag | Env | Default | Purpose |
 |---|---|---|---|
-| `UMCP_PROJECT_DIR` | `-project` | (req. for screenshots/logs/git/build) | project dir + node selection |
-| `UMCP_ENGINE_DIR` | `-engine` | `D:/Unreal/Engine/UE_5.7` | Build.bat / editor launch |
-| `UMCP_COMMAND_ADDR` | `-command-addr` | `127.0.0.1:6776` | TCP reverse-connect port (unique per concurrent client) |
-| `UMCP_SNIPPET_MODE` | `-snippet-mode` | `hotload` | companion delivery: `hotload`\|`ondisk` |
-| `UMCP_AUTO_RELAUNCH` | `-auto-relaunch` | `false` | relaunch the editor if it disappears |
-| | `-selftest` | | connect + editor_status round-trip, exit non-zero on failure |
-| | `-version` | | print version and exit |
+| `-project` | `UMCP_PROJECT_DIR` | — | the project directory: editor selection, logs, git, snapshots, project config |
+| `-engine` | `UMCP_ENGINE_DIR` | `UE_ENGINE_DIR`, else the Epic-launcher install for the project | editor launch, Build.bat, headless |
+| `-daemon-addr` | `UMCP_DAEMON_ADDR` | — (stdio) | run the multi-project daemon (StreamableHTTP) on e.g. `127.0.0.1:6111` |
+| `-cockpit` | `UMCP_COCKPIT` | `off` | attach the MCPCore cockpit (native channel + browser control panel) |
+| `-command-addr` | `UMCP_COMMAND_ADDR` | `127.0.0.1:6776` | TCP reverse-connect port (unique per concurrent client) |
+| `-snippet-mode` | `UMCP_SNIPPET_MODE` | `hotload` | companion delivery: `hotload` \| `ondisk` |
+| `-auto-relaunch` | `UMCP_AUTO_RELAUNCH` | `false` | relaunch the editor if it disappears (needs `-project` + engine) |
+| `-discovery-timeout`, `-command-timeout` | `UMCP_DISCOVERY_TIMEOUT`, `UMCP_COMMAND_TIMEOUT` | | protocol timeouts |
+| `-log-level`, `-log-format` | `UMCP_LOG_LEVEL`, `UMCP_LOG_FORMAT` | `info`, `json` | logs (stderr only — stdout is the MCP stream) |
+| `-session-idle` | | `30m` | daemon: end an idle MCP session |
+| `-selftest`, `-version` | | | connect + `editor_status`, exit / print the version |
 
-## Tools (65)
+Per project, `<project>/.umcp.json`:
 
-**Parity (16, frozen names):** `editor_status`, `execute_python`, `execute_console_command`,
-`open_level`, `list_actors`, `get_actor`, `spawn_actor`, `delete_actor`, `set_actor_transform`,
-`list_assets`, `import_assets`, `save_all`, `take_screenshot`, `start_play`, `stop_play`,
-`live_coding_compile`.
-
-**Build/lifecycle:** `build_compile` (auto livecoding-vs-full + diagnostics, async job),
-`job_status`, `job_cancel`, `project_ensure_open`, `editor_restart`.
-
-**PIE/verify:** `pie_observe` (reflection-driven, game-agnostic), `pie_wait_until` (deterministic
-predicate wait), `pie_exec`, `pie_screenshot`.
-
-**Logs:** `logs_mark`, `logs_tail`, `logs_since`.
-
-**Git:** `git_status`, `git_diff`, `git_checkpoint`, `git_revert_to`, `git_log`.
-
-**Authoring:** `apply_level_recipe`, `level_snapshot`, `level_diff`, `asset_info`, `asset_reimport`,
-`create_material_instance`.
-
-### v7 additions (19) — playtest capture, high-level design, tighter editor integration
-
-**Playtest capture (goal A):** `playtest_capture` — the capstone: open→play→record a synchronized
-filmstrip of frames+state→run deterministic beats→return **one contact-sheet montage + a per-frame
-timeline + a PASS/WARN/FAIL rubric verdict + a log summary** (failed checks red-border their evidence
-frame). `playtest_evaluate` re-scores a recorded timeline against a rubric with no editor.
-
-**Multi-frame capture:** `capture_start`/`capture_status`/`capture_stop` — an in-editor slate-tick
-recorder buffers frames+state to disk (no per-frame round-trip); `capture_stop` returns a montage +
-timeline. `scene_contact_sheet` renders a target/level from N orbit angles into one image.
-
-**High-level design (goal B):** `scene_apply` (realize a declarative `unreal.scene/v1` spec —
-blockout, prefabs, grid/ring/line/scatter layouts, lighting — idempotently in one transaction, with
-tag-scoped prune), `scene_plan` (dry-run diff), `scene_clear`, `env_preset_apply` (lit sky/exposure
-presets, sun always pitched down), `design_check` (lint lighting/missing-meshes/player-start/nav
-invariants), `layout_preview` (offline).
-
-**Tighter editor integration (goal C):** `reflect_object` (discover any object's exposed
-properties — no hardcoded allowlist), `viewport_set`/`viewport_get`, `focus_actors`, `select_actors`,
-`get_selection`, `editor_state` (rich superset of `editor_status`).
-
-Pure algorithmic cores are separate, unit-tested Go packages: `internal/{montage,scenespec,framing,
-predicate,rubric}`. See `docs/archive/PLAYTEST_UPGRADE_PLAN.md` for the full design.
-
-### OS-level screen capture & computer control (7) — see the *actual* editor, drive it like a human
-
-These are **OS-level**, not routed through the editor. They capture what is genuinely on screen (the
-Slate UI, panels, the Content Browser, modal dialogs, crash popups, the composited D3D viewport) and
-inject real mouse/keyboard — complementing the in-editor path (`take_screenshot`/`capture_start`/
-`pie_input`), which renders via Python remote exec and only ever sees the 3D scene, never the editor UI.
-
-- `list_windows` — enumerate visible top-level windows (title, pid, handle, on-screen bounds,
-  foreground/minimized) with an optional title filter; use it to find the editor or a dialog.
-- `screen_capture` — PNG of the whole virtual desktop, one monitor, or a region (downscaled to
-  `max_width` for token economy).
-- `window_capture` — PNG of a specific window (auto-detects the Unreal Editor). `method=print`
-  (default) renders it even when **backgrounded/occluded** and never steals focus; `method=screen`
-  blits its on-screen rectangle. Returns the window's screen bounds + a scale factor so image pixels
-  map to `mouse_control` coordinates.
-- `focus_window` — bring a window to the foreground (restoring if minimized).
-- `mouse_control` — real mouse: `move|click|double_click|down|up|drag|scroll`. Coordinates are screen
-  px, or set `window=<title>` to make them relative to that window's top-left (the same origin as
-  `window_capture`'s image), so you can click exactly what you saw.
-- `key_press` — real keyboard shortcuts: a chord (`ctrl+s`, `F5`, `alt+f4`, `escape`) or a sequence.
-- `type_text` — type a literal Unicode string (layout-independent) into the focused control.
-
-Backed by `internal/desktop` (raw Win32 — GDI `BitBlt`/`PrintWindow`, `SendInput`, `EnumWindows`;
-Windows-only, per-monitor-DPI-aware). Pure logic (keymap, downscale, window selection) is unit-tested
-on every platform; the syscall backend is stubbed on non-Windows so the linux CI still builds.
-
-## Testing
-
-```powershell
-go test ./...                                   # unit + in-memory MCP + git-vs-temp-repo
-go test -tags integration ./internal/uexec/     # real loopback multicast (Windows)
-.\dist\unreal-mcp.exe -selftest -project <dir>  # live gate: discovery, __main__ persistence, editor_status
+```json
+{ "toolsets": ["design", "ui"], "gate_policy": "require", "keep_package_recovery": false }
 ```
 
-`go test -race` needs a C toolchain (mingw locally, or the Linux CI job runs it).
+`keep_package_recovery: true` stops the server from passing `-AutoDeclinePackageRecovery` when it launches the
+editor (keep it for projects also edited by hand; see operations.md).
 
-## Deploy
+## Developing
 
-`scripts/render-mcp-config.ps1 -ProjectDir <game> -EngineDir <UE>` renders `deploy/mcp.json.tmpl` into the
-game project's `.mcp.json`.
+```powershell
+go test ./...                   # unit, in-memory MCP e2e (T1), binary smoke (T3)
+go test -race ./...             # needs a C toolchain (or the Linux CI job)
+bash scripts/coverage.sh        # merged coverage gates (repo 75, tools 70, app 80, config 90)
+go generate ./internal/tools    # regenerate docs/tools.md + docs/migration-v2.md
+.venv\Scripts\python -m pytest internal/bridge/py/tests   # companion contract tests (T2)
+```
 
-## Gotchas learned the hard way (encoded in the companion module `internal/bridge/py/`)
-
-- `unreal.Rotator(a, b, c)` is **(roll, pitch, yaw)**, not (pitch, yaw, roll). A sun with positive
-  pitch points *up* and the level renders pitch-black.
-- The editor throttles when backgrounded; the server disables `bThrottleCPUWhenNotForeground` via the
-  `EditorPerformanceSettings` CDO on connect (UE 5.7 hides the settings type from Python).
-- `take_screenshot` uses an on-demand SceneCapture2D so it renders even when backgrounded (editor world
-  only, NOT during PIE — use `pie_screenshot`/HighResShot during play).
-- UENUM properties (e.g. wave state) are read as their enumerator **name** (UPPER_SNAKE_CASE) so
-  `pie_wait_until` string predicates match.
-- A `SceneCapture2D` spawned via `EditorActorSubsystem` renders the **editor** world, not the
-  possessed-PIE game world. So `capture_start`/`playtest_capture` default to `scene_capture` for
-  editor/**simulate** worlds (backgrounded-safe) and to `pie_highres` (HighResShot) for possessed
-  PIE — `mode: "pie"` uses HighResShot, `mode: "simulate"`/`"editor"` uses SceneCapture2D.
-- `pie_observe`/`reflect_object` discover properties by reflection, so default field keys are the
-  reflected (snake_case) names, e.g. `gamestate.wave_number`. Pass `properties:["WaveNumber"]` to pin
-  a specific key for a predicate path.
+Tools are added as a `spec.Spec` in `internal/tools/v2_*.go` (ops with tiers, timing, required/rejected params and
+the companion ops they reach) plus, when they need the editor, an op in `internal/bridge/py/`. The lint
+(`TestV2SpecsLint`), the every-op sweep (`TestEveryOpIsWired`), the byte budget (`TestToolListBudgets`) and the
+generated docs check keep the surface honest. See [`CLAUDE.md`](CLAUDE.md).

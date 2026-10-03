@@ -66,7 +66,7 @@
             "type": "string"
           },
           "class": {
-            "description": "spawn: /Script path, /Game Blueprint path, or short class name",
+            "description": "spawn: /Script/Module.Class, a /Game Blueprint, Module.Class, or a short name (CONFLICT if ambiguous)",
             "type": "string"
           },
           "label": {
@@ -630,11 +630,12 @@
             "type": "number"
           },
           "camera_mode": {
-            "description": "start: viewport (default; follow the editor camera) | fixed | actor",
+            "description": "start: viewport (default; the editor camera) | fixed | actor | player (game_scene: the player POV)",
             "enum": [
               "viewport",
               "fixed",
-              "actor"
+              "actor",
+              "player"
             ],
             "type": "string"
           },
@@ -1832,7 +1833,7 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Compile the project's C++ (async job). strategy=auto picks from the git diff: header/reflection/new files → ubt (save, safe editor shutdown, Build.bat, relaunch on the same map); body-only → livecoding (escalates to ubt if it cannot patch). Result: success, strategy, reason, diagnostics.",
+      "description": "Play the PolyWorld Company-MVP in the running game (PIE only; PIE_NOT_RUNNING otherwise, never the editor level).\n- status: capital and each building's supplier, market, last-cycle profit.\n- build: place catalog `option` at `location`.\n- select: a `building`'s supplier and/or market.\n- road: grid cell `start` to `end` (X first, then Y).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

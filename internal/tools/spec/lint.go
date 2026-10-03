@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -22,7 +23,15 @@ func Lint(specs []*Spec) []string {
 	var v []string
 	add := func(format string, a ...any) { v = append(v, fmt.Sprintf(format, a...)) }
 	seen := map[string]bool{}
+	descOf := map[string]string{}
 	for _, s := range specs {
+		if strings.TrimSpace(s.Description) == "" {
+			add("%s: empty description", s.Name)
+		} else if other, dup := descOf[s.Description]; dup {
+			add("%s: same description as %s", s.Name, other)
+		} else {
+			descOf[s.Description] = s.Name
+		}
 		if seen[s.Name] {
 			add("%s: duplicate tool name", s.Name)
 		}

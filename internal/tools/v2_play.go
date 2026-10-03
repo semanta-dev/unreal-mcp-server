@@ -698,7 +698,7 @@ type captureIn struct {
 	IntervalS   float64   `json:"interval_s,omitempty" jsonschema:"start: seconds between frames (default 0.25)"`
 	CellWidth   int       `json:"cell_width,omitempty" jsonschema:"start: frame width (default 480)"`
 	CellHeight  int       `json:"cell_height,omitempty" jsonschema:"start: frame height (default 270)"`
-	CameraMode  string    `json:"camera_mode,omitempty" jsonschema:"start: viewport (default; follow the editor camera) | fixed | actor"`
+	CameraMode  string    `json:"camera_mode,omitempty" jsonschema:"start: viewport (default; the editor camera) | fixed | actor | player (game_scene: the player POV)"`
 	CameraActor string    `json:"camera_actor,omitempty" jsonschema:"start camera_mode=actor: the actor label to ride"`
 	CameraFov   float64   `json:"camera_fov,omitempty" jsonschema:"start source=game_scene: field of view (default 90)"`
 	Location    []float64 `json:"location,omitempty" jsonschema:"start camera_mode=fixed: [x, y, z]"`
@@ -731,7 +731,7 @@ func captureSpec() *spec.Spec {
 		Name: "capture", Title: "Record frames", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
 		Description: "Film the world: an in-editor recorder saves a frame + state every interval_s.\n- start → session.\n- status.\n- stop: ONE contact sheet + a timeline (world time, state, cell).\n- read: a past session or a `path` of frames.\n- clear: a session, or all=true (Saved/MCP/capture only).",
 		Schema: spec.SchemaFor[captureIn](map[string][]any{"op": spec.OpEnum(ops...), "world": {"editor", "pie"},
-			"source": {"scene_capture", "pie_highres", "game_scene"}, "camera_mode": {"viewport", "fixed", "actor"}}, "op"),
+			"source": {"scene_capture", "pie_highres", "game_scene"}, "camera_mode": {"viewport", "fixed", "actor", "player"}}, "op"),
 		Replaces: []string{"capture_start", "capture_status", "capture_stop", "capture_clear", "read_capture"},
 		Handler:  captureHandler,
 	}

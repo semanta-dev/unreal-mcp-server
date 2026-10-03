@@ -597,7 +597,7 @@ func polyworldSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "polyworld", Title: "PolyWorld company game", Toolset: spec.PolyWorld, Timeout: sync15, Max: sync28, Ops: ops,
-		Description: "Compile the project's C++ (async job). strategy=auto picks from the git diff: header/reflection/new files → ubt (save, safe editor shutdown, Build.bat, relaunch on the same map); body-only → livecoding (escalates to ubt if it cannot patch). Result: success, strategy, reason, diagnostics.",
+		Description: "Play the PolyWorld Company-MVP in the running game (PIE only; PIE_NOT_RUNNING otherwise, never the editor level).\n- status: capital and each building's supplier, market, last-cycle profit.\n- build: place catalog `option` at `location`.\n- select: a `building`'s supplier and/or market.\n- road: grid cell `start` to `end` (X first, then Y).",
 		Schema:      spec.SchemaFor[polyworldIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces:    []string{"company_status", "company_build", "company_select", "company_road"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {

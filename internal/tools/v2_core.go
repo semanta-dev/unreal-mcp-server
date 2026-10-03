@@ -375,7 +375,7 @@ type actorEditIn struct {
 	Op         string         `json:"op" jsonschema:"spawn | delete | transform | set_properties"`
 	World      string         `json:"world" jsonschema:"REQUIRED: editor (the level) or pie (the running game)"`
 	Actor      string         `json:"actor,omitempty" jsonschema:"delete/transform/set_properties: a label, an object path, @gamestate or @pawn"`
-	Class      string         `json:"class,omitempty" jsonschema:"spawn: /Script path, /Game Blueprint path, or short class name"`
+	Class      string         `json:"class,omitempty" jsonschema:"spawn: /Script/Module.Class, a /Game Blueprint, Module.Class, or a short name (CONFLICT if ambiguous)"`
 	Label      string         `json:"label,omitempty" jsonschema:"spawn: the new actor's label"`
 	Location   []float64      `json:"location,omitempty" jsonschema:"[x, y, z]"`
 	Rotation   []float64      `json:"rotation,omitempty" jsonschema:"[pitch, yaw, roll] in degrees"`
