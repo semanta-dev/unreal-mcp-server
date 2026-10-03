@@ -1,4 +1,4 @@
-package snippets
+package bridge
 
 import (
 	"crypto/sha256"
@@ -7,7 +7,7 @@ import (
 )
 
 func TestOpNamesExtractsAll(t *testing.T) {
-	names := OpNames()
+	names := CompanionOps()
 	if len(names) < 60 {
 		t.Fatalf("OpNames extracted only %d ops; expected ~70 (regex likely broke)", len(names))
 	}
@@ -41,19 +41,19 @@ func TestOpNamesExtractsAll(t *testing.T) {
 const splitSourceSHA256 = "40fc6ba8df3f1186d36a5aceca55f52fa32a209a4af651dd2589d2044b659190"
 
 func TestSplitIsByteIdentical(t *testing.T) {
-	sum := sha256.Sum256([]byte(Source()))
+	sum := sha256.Sum256([]byte(CompanionSource()))
 	if got := hex.EncodeToString(sum[:]); got != splitSourceSHA256 {
 		t.Fatalf("concatenated section files differ from the pre-split module: sha256 %s", got)
 	}
 }
 
 func TestSectionFilesOrderedAndNewlineTerminated(t *testing.T) {
-	files := SectionFiles()
+	files := CompanionFiles()
 	if len(files) < 2 || files[0] != "py/00_prelude.py" || files[len(files)-1] != "py/99_dispatch.py" {
 		t.Fatalf("unexpected section order: %v", files)
 	}
 	for _, f := range files {
-		b, _ := pyFS.ReadFile(f)
+		b, _ := companionFS.ReadFile(f)
 		if len(b) == 0 || b[len(b)-1] != '\n' {
 			t.Errorf("%s must end with a newline (concatenation would merge lines)", f)
 		}

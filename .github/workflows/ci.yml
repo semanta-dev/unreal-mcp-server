@@ -66,7 +66,7 @@ jobs:
           python-version: '3.11'
       - name: py_compile
         run: |
-          for f in internal/snippets/py/[0-9]*.py; do python -m py_compile "$f"; done
-          cat internal/snippets/py/[0-9]*.py > /tmp/mcp_bridge.py && python -m py_compile /tmp/mcp_bridge.py
+          for f in internal/bridge/py/[0-9]*.py; do python -m py_compile "$f"; done
+          cat internal/bridge/py/[0-9]*.py > /tmp/mcp_bridge.py && python -m py_compile /tmp/mcp_bridge.py
       - name: ruff (best-effort)
-        run: pip install ruff && ruff check internal/snippets/py/ || true
+        run: pip install ruff && ruff check internal/bridge/py/ || true

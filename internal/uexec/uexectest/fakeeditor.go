@@ -1,4 +1,4 @@
-// Package fakeeditor is an in-repo protocol double for the Unreal editor's
+// Package uexectest is an in-repo protocol double for the Unreal editor's
 // PythonScriptPlugin remote-execution server. It lets the uexec protocol port be
 // tested end-to-end (discovery + reverse-connect + command/result) over loopback
 // with NO live editor, and deliberately uses its own independent message
@@ -9,7 +9,7 @@
 // multicast group. Behaviors (slow, large, exact-8192, malformed, refuse
 // connect-back) are scriptable via Options to exercise the framing and
 // timeout/taint/recovery paths.
-package fakeeditor
+package uexectest
 
 import (
 	"bufio"

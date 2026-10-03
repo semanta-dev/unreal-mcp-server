@@ -138,7 +138,7 @@ go test -tags integration ./internal/uexec/     # real loopback multicast (Windo
 `scripts/render-mcp-config.ps1 -ProjectDir <game> -EngineDir <UE>` renders `deploy/mcp.json.tmpl` into the
 game project's `.mcp.json`.
 
-## Gotchas learned the hard way (encoded in the companion module `internal/snippets/py/`)
+## Gotchas learned the hard way (encoded in the companion module `internal/bridge/py/`)
 
 - `unreal.Rotator(a, b, c)` is **(roll, pitch, yaw)**, not (pitch, yaw, roll). A sun with positive
   pitch points *up* and the level renders pitch-black.

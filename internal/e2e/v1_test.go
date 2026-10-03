@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jdziat/unreal-mcp-server/internal/fakeeditor"
-	"github.com/jdziat/unreal-mcp-server/internal/snippets"
+	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"github.com/jdziat/unreal-mcp-server/internal/uexec"
+	"github.com/jdziat/unreal-mcp-server/internal/uexec/uexectest"
 )
 
 // P0 baseline scenarios: they drive the v1 tool surface end-to-end so the
@@ -26,7 +26,7 @@ func TestEditorStatusInstallsCompanionOnce(t *testing.T) {
 	if n := h.emu.Installs(); n != 1 {
 		t.Fatalf("companion installed %d times, want 1", n)
 	}
-	if h.emu.InstalledSource() != snippets.Source() {
+	if h.emu.InstalledSource() != bridge.CompanionSource() {
 		t.Fatal("editor received a module that differs from the embedded companion source")
 	}
 }
@@ -70,9 +70,9 @@ func TestOpErrorSurfacesCode(t *testing.T) {
 
 func TestExecutePythonReachesEditor(t *testing.T) {
 	h := startHarness(t, harnessOpts{})
-	h.emu.HandlePython(func(req fakeeditor.CommandRequest) fakeeditor.CommandResponse {
-		return fakeeditor.CommandResponse{Success: true, Result: "None",
-			Output: []fakeeditor.OutputEntry{{Type: "Info", Output: "hello from editor"}}}
+	h.emu.HandlePython(func(req uexectest.CommandRequest) uexectest.CommandResponse {
+		return uexectest.CommandResponse{Success: true, Result: "None",
+			Output: []uexectest.OutputEntry{{Type: "Info", Output: "hello from editor"}}}
 	})
 	res := h.call(t, "execute_python", map[string]any{"code": "print('hello from editor')"})
 	if res.IsError {
@@ -121,7 +121,7 @@ func TestCompanionReinstalledAfterEditorRestart(t *testing.T) {
 // reply; each command reconnects transparently and the module is still installed
 // only once (version re-verified, not reinstalled).
 func TestCallsSurviveChannelDrops(t *testing.T) {
-	h := startHarness(t, harnessOpts{fake: func(o *fakeeditor.Options) { o.CloseAfterReplies = 1 }})
+	h := startHarness(t, harnessOpts{fake: func(o *uexectest.Options) { o.CloseAfterReplies = 1 }})
 	for i := 0; i < 3; i++ {
 		if res := h.call(t, "editor_status", nil); res.IsError {
 			t.Fatalf("call %d failed: %s", i, text(res))

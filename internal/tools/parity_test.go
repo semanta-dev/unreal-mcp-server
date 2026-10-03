@@ -11,7 +11,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
-	"github.com/jdziat/unreal-mcp-server/internal/snippets"
 	"github.com/jdziat/unreal-mcp-server/internal/uexec"
 )
 
@@ -39,7 +38,7 @@ func (r *scriptedRunner) RunCommand(_ context.Context, code string, mode uexec.E
 	body := strings.TrimPrefix(code, "# mcp\n")
 	if mode == uexec.ModeExecFile && strings.Contains(code, "exec(compile(base64.b64decode") {
 		r.loaded = true
-		r.version = snippets.Version()
+		r.version = bridge.CompanionVersion()
 		return uexec.CommandResult{Success: true}, nil
 	}
 	if mode == uexec.ModeExecFile && strings.HasPrefix(body, "_mcp_dispatch(") {

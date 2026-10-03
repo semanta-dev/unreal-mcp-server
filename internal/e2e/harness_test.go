@@ -12,23 +12,23 @@ import (
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"github.com/jdziat/unreal-mcp-server/internal/bridge/bridgetest"
-	"github.com/jdziat/unreal-mcp-server/internal/fakeeditor"
 	"github.com/jdziat/unreal-mcp-server/internal/jobs"
 	"github.com/jdziat/unreal-mcp-server/internal/tools"
 	"github.com/jdziat/unreal-mcp-server/internal/uexec"
+	"github.com/jdziat/unreal-mcp-server/internal/uexec/uexectest"
 )
 
 // harness is one fake editor + emulator + full MCP server + connected client.
 type harness struct {
-	editor *fakeeditor.Editor // nil when started with noEditor
+	editor *uexectest.Editor // nil when started with noEditor
 	emu    *bridgetest.Emulator
 	world  *bridgetest.World
 	cs     *mcp.ClientSession
 }
 
 type harnessOpts struct {
-	noEditor bool                      // discovery targets a dead port: no editor answers
-	fake     func(*fakeeditor.Options) // fault-injection tweaks on the wire fake
+	noEditor bool                     // discovery targets a dead port: no editor answers
+	fake     func(*uexectest.Options) // fault-injection tweaks on the wire fake
 	cfg      func(*uexec.Config)
 }
 
@@ -66,7 +66,7 @@ func startHarness(t *testing.T, o harnessOpts) *harness {
 		if o.fake != nil {
 			o.fake(&fo)
 		}
-		ed, err := fakeeditor.Start(fo)
+		ed, err := uexectest.Start(fo)
 		if err != nil {
 			t.Fatal(err)
 		}

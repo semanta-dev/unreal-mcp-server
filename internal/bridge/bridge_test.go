@@ -6,13 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jdziat/unreal-mcp-server/internal/uexec"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/jdziat/unreal-mcp-server/internal/snippets"
-	"github.com/jdziat/unreal-mcp-server/internal/uexec"
 )
 
 // fakeEditorRunner simulates the editor as seen through the protocol layer: it
@@ -63,7 +61,7 @@ func (f *fakeEditorRunner) RunCommand(_ context.Context, code string, mode uexec
 	if mode == uexec.ModeExecFile && strings.Contains(code, "exec(compile(base64.b64decode") {
 		f.installs++
 		f.moduleLoaded = true
-		f.moduleVer = snippets.Version()
+		f.moduleVer = CompanionVersion()
 		return uexec.CommandResult{Success: true}, nil
 	}
 	// A dispatch call.
@@ -310,10 +308,10 @@ func TestExtractMarkerMidLineAndMissing(t *testing.T) {
 }
 
 func TestSnippetVersionParsed(t *testing.T) {
-	if snippets.Version() < 1 {
-		t.Fatalf("snippet version should be >= 1, got %d", snippets.Version())
+	if CompanionVersion() < 1 {
+		t.Fatalf("snippet version should be >= 1, got %d", CompanionVersion())
 	}
-	if !strings.Contains(snippets.Source(), "def _mcp_dispatch") {
+	if !strings.Contains(CompanionSource(), "def _mcp_dispatch") {
 		t.Fatal("embedded module missing _mcp_dispatch")
 	}
 }

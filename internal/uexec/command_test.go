@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jdziat/unreal-mcp-server/internal/fakeeditor"
+	"github.com/jdziat/unreal-mcp-server/internal/uexec/uexectest"
 )
 
 func testCfg() Config {
@@ -27,7 +27,7 @@ func testCfg() Config {
 
 // dialFake wires a Session's discovery at a fake editor over unicast loopback
 // (no multicast), exercising the real socket IO, reverse-connect, and framing.
-func dialFake(t *testing.T, e *fakeeditor.Editor, cfg Config) *Session {
+func dialFake(t *testing.T, e *uexectest.Editor, cfg Config) *Session {
 	t.Helper()
 	cfg = cfg.withDefaults()
 	pc, err := net.ListenPacket("udp4", "127.0.0.1:0")
@@ -44,7 +44,7 @@ func dialFake(t *testing.T, e *fakeeditor.Editor, cfg Config) *Session {
 }
 
 func TestCommandRoundTrip(t *testing.T) {
-	e, err := fakeeditor.Start(fakeeditor.Options{})
+	e, err := uexectest.Start(uexectest.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,10 +62,10 @@ func TestCommandRoundTrip(t *testing.T) {
 
 func TestCommandExecFileGuardPrefix(t *testing.T) {
 	var seen string
-	e, _ := fakeeditor.Start(fakeeditor.Options{
-		OnCommand: func(req fakeeditor.CommandRequest) fakeeditor.CommandResponse {
+	e, _ := uexectest.Start(uexectest.Options{
+		OnCommand: func(req uexectest.CommandRequest) uexectest.CommandResponse {
 			seen = req.Command
-			return fakeeditor.CommandResponse{Success: true, Result: "ok"}
+			return uexectest.CommandResponse{Success: true, Result: "ok"}
 		},
 	})
 	defer e.Close()
@@ -80,9 +80,9 @@ func TestCommandExecFileGuardPrefix(t *testing.T) {
 
 func TestCommandLargeResult(t *testing.T) {
 	big := strings.Repeat("A", 200_000) // >> 64 KiB, spans many reads
-	e, _ := fakeeditor.Start(fakeeditor.Options{
-		OnCommand: func(fakeeditor.CommandRequest) fakeeditor.CommandResponse {
-			return fakeeditor.CommandResponse{Success: true, Result: big}
+	e, _ := uexectest.Start(uexectest.Options{
+		OnCommand: func(uexectest.CommandRequest) uexectest.CommandResponse {
+			return uexectest.CommandResponse{Success: true, Result: big}
 		},
 	})
 	defer e.Close()
@@ -100,10 +100,10 @@ func TestCommandSegmentedWrites(t *testing.T) {
 	// Editor writes the reply in 8192-byte TCP segments: the reference
 	// recv-until-short-read heuristic would mis-frame; our json.Decoder must not.
 	payload := strings.Repeat("S", 40_000)
-	e, _ := fakeeditor.Start(fakeeditor.Options{
+	e, _ := uexectest.Start(uexectest.Options{
 		SplitWritesAt: 8192,
-		OnCommand: func(fakeeditor.CommandRequest) fakeeditor.CommandResponse {
-			return fakeeditor.CommandResponse{Success: true, Result: payload}
+		OnCommand: func(uexectest.CommandRequest) uexectest.CommandResponse {
+			return uexectest.CommandResponse{Success: true, Result: payload}
 		},
 	})
 	defer e.Close()
@@ -121,10 +121,10 @@ func TestCommandExactMultipleOf8192(t *testing.T) {
 	// The exact bug: a reply whose length is an exact multiple of 8192 deadlocks
 	// the recv<8192 heuristic. json.Decoder is immune. Guard with a timeout so a
 	// regression hangs the test rather than passing.
-	e, _ := fakeeditor.Start(fakeeditor.Options{
+	e, _ := uexectest.Start(uexectest.Options{
 		PadResultToMultiple: 8192,
-		OnCommand: func(fakeeditor.CommandRequest) fakeeditor.CommandResponse {
-			return fakeeditor.CommandResponse{Success: true, Result: "exact"}
+		OnCommand: func(uexectest.CommandRequest) uexectest.CommandResponse {
+			return uexectest.CommandResponse{Success: true, Result: "exact"}
 		},
 	})
 	defer e.Close()
@@ -148,10 +148,10 @@ func TestCommandExactMultipleOf8192(t *testing.T) {
 }
 
 func TestCommandFailureSurfacesResult(t *testing.T) {
-	e, _ := fakeeditor.Start(fakeeditor.Options{
-		OnCommand: func(fakeeditor.CommandRequest) fakeeditor.CommandResponse {
-			return fakeeditor.CommandResponse{Success: false, Result: "Traceback: boom",
-				Output: []fakeeditor.OutputEntry{{Type: "Error", Output: "boom"}}}
+	e, _ := uexectest.Start(uexectest.Options{
+		OnCommand: func(uexectest.CommandRequest) uexectest.CommandResponse {
+			return uexectest.CommandResponse{Success: false, Result: "Traceback: boom",
+				Output: []uexectest.OutputEntry{{Type: "Error", Output: "boom"}}}
 		},
 	})
 	defer e.Close()
@@ -172,12 +172,12 @@ func TestCommandFailureSurfacesResult(t *testing.T) {
 // out and taints the connection; the editor completes it late on a now-closed
 // socket; the NEXT call reconnects cleanly and returns its own correct result.
 func TestTimeoutTaintRecover(t *testing.T) {
-	e, _ := fakeeditor.Start(fakeeditor.Options{
-		OnCommand: func(req fakeeditor.CommandRequest) fakeeditor.CommandResponse {
+	e, _ := uexectest.Start(uexectest.Options{
+		OnCommand: func(req uexectest.CommandRequest) uexectest.CommandResponse {
 			if strings.Contains(req.Command, "SLOWCMD") {
 				time.Sleep(1500 * time.Millisecond) // >> CommandTimeout
 			}
-			return fakeeditor.CommandResponse{Success: true, Result: trimGuard(req.Command)}
+			return uexectest.CommandResponse{Success: true, Result: trimGuard(req.Command)}
 		},
 	})
 	defer e.Close()
@@ -209,10 +209,10 @@ func TestTimeoutTaintRecover(t *testing.T) {
 // error must be classified ErrConnectionLost (not ErrProtocol) so the session
 // reconnects once and the next command still succeeds.
 func TestReconnectOnEditorDroppedConnection(t *testing.T) {
-	e, _ := fakeeditor.Start(fakeeditor.Options{
+	e, _ := uexectest.Start(uexectest.Options{
 		CloseAfterReplies: 1, // drop the channel after the first reply
-		OnCommand: func(req fakeeditor.CommandRequest) fakeeditor.CommandResponse {
-			return fakeeditor.CommandResponse{Success: true, Result: trimGuard(req.Command)}
+		OnCommand: func(req uexectest.CommandRequest) uexectest.CommandResponse {
+			return uexectest.CommandResponse{Success: true, Result: trimGuard(req.Command)}
 		},
 	})
 	defer e.Close()
@@ -233,7 +233,7 @@ func TestReconnectOnEditorDroppedConnection(t *testing.T) {
 
 func TestBusyAcceptExhaustion(t *testing.T) {
 	// Editor never dials back -> reverse-connect accept exhausts -> actionable ErrConnectionLost.
-	e, _ := fakeeditor.Start(fakeeditor.Options{RefuseConnectBack: true})
+	e, _ := uexectest.Start(uexectest.Options{RefuseConnectBack: true})
 	defer e.Close()
 	cfg := testCfg()
 	cfg.AcceptAttempts = 3
@@ -256,7 +256,7 @@ func TestBusyAcceptExhaustion(t *testing.T) {
 func TestSpoofedSourceRejected(t *testing.T) {
 	// A reply from a different source (or bad magic) must be rejected + tainted,
 	// never returned as a result (§12.4 result-spoofing defense).
-	e, _ := fakeeditor.Start(fakeeditor.Options{
+	e, _ := uexectest.Start(uexectest.Options{
 		RawResponse: func(dest string) []byte {
 			b, _ := json.Marshal(map[string]any{
 				"version": 1, "magic": "ue_py", "type": "command_result",

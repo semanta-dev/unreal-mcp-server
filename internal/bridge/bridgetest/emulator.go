@@ -1,5 +1,5 @@
 // Package bridgetest is an op-level emulator of the editor-side companion module
-// (mcp_bridge.py) that plugs into the wire-level fake editor (fakeeditor.OnCommand).
+// (mcp_bridge.py) that plugs into the wire-level fake editor (uexectest.OnCommand).
 //
 // It understands exactly the commands the real Bridge sends — the version-sentinel
 // eval, the hotload bootstrap, the editor-perf snippet, and `_mcp_dispatch(op, b64)`
@@ -17,7 +17,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/jdziat/unreal-mcp-server/internal/fakeeditor"
+	"github.com/jdziat/unreal-mcp-server/internal/uexec/uexectest"
 )
 
 const jsonMarker = "__MCP_JSON__"
@@ -38,7 +38,7 @@ type OpFunc func(args map[string]any) (any, *OpError)
 type Emulator struct {
 	mu        sync.Mutex
 	ops       map[string]OpFunc
-	python    func(fakeeditor.CommandRequest) fakeeditor.CommandResponse
+	python    func(uexectest.CommandRequest) uexectest.CommandResponse
 	version   int // installed _MCP_BRIDGE_VERSION (0 = not installed)
 	installs  int
 	versionQs int    // version-sentinel evals received
@@ -59,7 +59,7 @@ func (e *Emulator) Handle(op string, fn OpFunc) {
 
 // HandlePython sets the handler for raw Python commands (execute_python, console
 // snippets) that are not part of the bridge protocol. Default: success echo.
-func (e *Emulator) HandlePython(fn func(fakeeditor.CommandRequest) fakeeditor.CommandResponse) {
+func (e *Emulator) HandlePython(fn func(uexectest.CommandRequest) uexectest.CommandResponse) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.python = fn
@@ -109,8 +109,8 @@ func (e *Emulator) PythonScripts() []string {
 
 // Options returns fakeeditor options wired to this emulator (callers may set
 // further fault-injection fields on the result before Start).
-func (e *Emulator) Options() fakeeditor.Options {
-	return fakeeditor.Options{OnCommand: e.OnCommand}
+func (e *Emulator) Options() uexectest.Options {
+	return uexectest.Options{OnCommand: e.OnCommand}
 }
 
 var (
@@ -120,7 +120,7 @@ var (
 )
 
 // OnCommand is the fakeeditor command handler.
-func (e *Emulator) OnCommand(req fakeeditor.CommandRequest) fakeeditor.CommandResponse {
+func (e *Emulator) OnCommand(req uexectest.CommandRequest) uexectest.CommandResponse {
 	code := strings.TrimPrefix(req.Command, "# mcp\n")
 	switch {
 	case req.ExecMode == "EvaluateStatement" && strings.Contains(code, "_MCP_BRIDGE_VERSION"):
@@ -128,11 +128,11 @@ func (e *Emulator) OnCommand(req fakeeditor.CommandRequest) fakeeditor.CommandRe
 		v := e.version
 		e.versionQs++
 		e.mu.Unlock()
-		return fakeeditor.CommandResponse{Success: true, Result: strconv.Itoa(v)}
+		return uexectest.CommandResponse{Success: true, Result: strconv.Itoa(v)}
 	case strings.Contains(code, "exec(compile(base64.b64decode("):
 		return e.install(code)
 	case strings.Contains(code, "EditorPerformanceSettings"):
-		return fakeeditor.CommandResponse{Success: true, Result: "None"}
+		return uexectest.CommandResponse{Success: true, Result: "None"}
 	}
 	if m := dispatchRe.FindStringSubmatch(code); m != nil {
 		return e.dispatch(m[1], m[2])
@@ -144,16 +144,16 @@ func (e *Emulator) OnCommand(req fakeeditor.CommandRequest) fakeeditor.CommandRe
 	if py != nil {
 		return py(req)
 	}
-	return fakeeditor.CommandResponse{Success: true, Result: "None"}
+	return uexectest.CommandResponse{Success: true, Result: "None"}
 }
 
 // install decodes the hotload payload and installs it only if it is a plausible
 // companion module (defines the dispatcher and a version sentinel), so a broken
 // embed/concat is caught here rather than silently "installed".
-func (e *Emulator) install(code string) fakeeditor.CommandResponse {
-	fail := func(msg string) fakeeditor.CommandResponse {
-		return fakeeditor.CommandResponse{Success: false, Result: "None",
-			Output: []fakeeditor.OutputEntry{{Type: "Error", Output: msg}}}
+func (e *Emulator) install(code string) uexectest.CommandResponse {
+	fail := func(msg string) uexectest.CommandResponse {
+		return uexectest.CommandResponse{Success: false, Result: "None",
+			Output: []uexectest.OutputEntry{{Type: "Error", Output: msg}}}
 	}
 	m := hotloadRe.FindStringSubmatch(code)
 	if m == nil {
@@ -174,10 +174,10 @@ func (e *Emulator) install(code string) fakeeditor.CommandResponse {
 	e.installs++
 	e.installed = src
 	e.mu.Unlock()
-	return fakeeditor.CommandResponse{Success: true, Result: "None"}
+	return uexectest.CommandResponse{Success: true, Result: "None"}
 }
 
-func (e *Emulator) dispatch(op, b64 string) fakeeditor.CommandResponse {
+func (e *Emulator) dispatch(op, b64 string) uexectest.CommandResponse {
 	e.mu.Lock()
 	installed := e.version != 0
 	fn := e.ops[op]
@@ -188,8 +188,8 @@ func (e *Emulator) dispatch(op, b64 string) fakeeditor.CommandResponse {
 	if !installed {
 		// What the editor reports when the module was lost (restart): the bridge
 		// detects this and reinstalls.
-		return fakeeditor.CommandResponse{Success: false, Result: "None",
-			Output: []fakeeditor.OutputEntry{{Type: "Error", Output: "NameError: name '_mcp_dispatch' is not defined"}}}
+		return uexectest.CommandResponse{Success: false, Result: "None",
+			Output: []uexectest.OutputEntry{{Type: "Error", Output: "NameError: name '_mcp_dispatch' is not defined"}}}
 	}
 	args := map[string]any{}
 	if b64 != "" {
@@ -208,11 +208,11 @@ func (e *Emulator) dispatch(op, b64 string) fakeeditor.CommandResponse {
 	return emit(map[string]any{"ok": true, "result": res})
 }
 
-func emit(env map[string]any) fakeeditor.CommandResponse {
+func emit(env map[string]any) uexectest.CommandResponse {
 	b, err := json.Marshal(env)
 	if err != nil {
 		panic(fmt.Sprintf("bridgetest: unmarshalable envelope: %v", err))
 	}
-	return fakeeditor.CommandResponse{Success: true, Result: "None",
-		Output: []fakeeditor.OutputEntry{{Type: "Info", Output: jsonMarker + string(b) + "\n"}}}
+	return uexectest.CommandResponse{Success: true, Result: "None",
+		Output: []uexectest.OutputEntry{{Type: "Info", Output: jsonMarker + string(b) + "\n"}}}
 }

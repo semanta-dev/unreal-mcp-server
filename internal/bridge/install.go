@@ -4,16 +4,14 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"github.com/jdziat/unreal-mcp-server/internal/uexec"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	"github.com/jdziat/unreal-mcp-server/internal/snippets"
-	"github.com/jdziat/unreal-mcp-server/internal/uexec"
 )
 
-// ensureInstalled makes sure the companion module (matching snippets.Version) is
+// ensureInstalled makes sure the companion module (matching CompanionVersion) is
 // resident in the editor. It re-verifies whenever the command channel generation
 // changes (reconnect/editor restart), and is otherwise a no-op after the first
 // successful install (no per-Call round-trip).
@@ -31,15 +29,15 @@ func (b *Bridge) ensureInstalled(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if cur != snippets.Version() {
+	if cur != CompanionVersion() {
 		if err := b.installModule(ctx); err != nil {
 			return err
 		}
 		// Confirm the sentinel now reads the expected version.
-		if got, verr := b.installedVersion(ctx); verr == nil && got != snippets.Version() {
-			return fmt.Errorf("%w: after install, editor reports version %d (want %d)", ErrInstall, got, snippets.Version())
+		if got, verr := b.installedVersion(ctx); verr == nil && got != CompanionVersion() {
+			return fmt.Errorf("%w: after install, editor reports version %d (want %d)", ErrInstall, got, CompanionVersion())
 		}
-		b.logger.Info("installed companion module", "version", snippets.Version(), "was", cur, "mode", b.mode)
+		b.logger.Info("installed companion module", "version", CompanionVersion(), "was", cur, "mode", b.mode)
 		// Best-effort: disable foreground-throttle so backgrounded builds/PIE/
 		// screenshots don't stall (README gotcha; UE 5.7 hides the settings type
 		// from Python, hence the load_class CDO trick).
@@ -102,7 +100,7 @@ func (b *Bridge) installModule(ctx context.Context) error {
 // file ..."). base64 output can never contain "." , so the bootstrap is
 // guaranteed free of that trigger; it decodes and execs the source into globals.
 func (b *Bridge) installHotload(ctx context.Context) error {
-	b64 := base64.StdEncoding.EncodeToString([]byte(snippets.Source()))
+	b64 := base64.StdEncoding.EncodeToString([]byte(CompanionSource()))
 	boot := fmt.Sprintf("import base64\n"+
 		"exec(compile(base64.b64decode(%q).decode(\"utf-8\"), \"mcp_bridge\", \"exec\"), globals())", b64)
 	res, err := b.run.RunCommand(ctx, boot, uexec.ModeExecFile)
@@ -127,7 +125,7 @@ func (b *Bridge) installOnDisk(ctx context.Context) error {
 		return fmt.Errorf("%w: mkdir %s: %v", ErrInstall, dir, err)
 	}
 	path := filepath.Join(dir, "mcp_bridge.py")
-	if err := os.WriteFile(path, []byte(snippets.Source()), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(CompanionSource()), 0o644); err != nil {
 		return fmt.Errorf("%w: write %s: %v", ErrInstall, path, err)
 	}
 	// Import fresh and rebind dispatch + version into __main__ so the sentinel

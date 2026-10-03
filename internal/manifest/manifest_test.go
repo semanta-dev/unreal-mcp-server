@@ -1,9 +1,8 @@
 package manifest
 
 import (
+	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"testing"
-
-	"github.com/jdziat/unreal-mcp-server/internal/snippets"
 )
 
 // TestManifestBijection is the §5.3 conformance gate: every op in the editor's _OPS table
@@ -11,7 +10,7 @@ import (
 // CI if a new op is added without classifying it (so it can't silently bypass the gate) or
 // if a classification is left behind for a removed op.
 func TestManifestBijection(t *testing.T) {
-	missing, extra := Verify(snippets.OpNames())
+	missing, extra := Verify(bridge.CompanionOps())
 	if len(missing) > 0 {
 		t.Fatalf("%d op(s) have NO classification (fail-closed boundary — classify them in table): %v", len(missing), missing)
 	}
