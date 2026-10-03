@@ -49,9 +49,9 @@ comes up warm and unleased, and the next session of that project adopts it). Col
 time, and a spawn binds only the editor it launched. A project already open in an editor the daemon did not launch
 is refused (`PRECONDITION`; Windows, where process command lines are readable): close it first, or drive it with a
 stdio server. While a lease restarts, editor calls get a retryable `EDITOR_BUSY`, as do `build`, `git_revert`,
-`editor_lifecycle` and `headless`; `job` and read-only offline tools keep working. A session idle for `-session-idle` (30 min) is ended;
-its editor drains while a project job still runs. On start, the daemon reconciles its records and kills editors an
-earlier daemon left behind.
+`editor_lifecycle` and `headless`; `job` and read-only offline tools keep working. A session idle for
+`-session-idle` (30 min) is ended; its editor drains while a project job still runs. On start, the daemon
+reconciles its records and kills editors an earlier daemon left behind.
 
 **cockpit**: `-cockpit on` attaches to the plugin's MCPCore channel and opens the browser control panel (its URL,
 with the access token, is printed by the launcher — tools never return it); once it is ready, ops dispatch over the
@@ -67,8 +67,8 @@ while a dialog is open). A full `build` refuses while the project's editor runs 
 
 **Project binding.** With `-project`, the server only binds an editor of that project — never another project's
 editor, even while its own is relaunching (calls fail with `EDITOR_UNREACHABLE` until it is back). The editor's
-project root must be that directory, or one must contain the other: an editor opened from another checkout, worktree or a
-`subst`/junction path is not found — point `-project` at the directory the editor opened.
+project root must be that directory, or one must contain the other: an editor opened from another checkout,
+worktree or a `subst`/junction path is not found — point `-project` at the directory the editor opened.
 
 **One Go peer per editor.** The editor's remote-execution node holds a single command connection: two clients on one
 editor steal it from each other (`EDITOR_BUSY`; `editor_lifecycle op=reclaim` takes it back explicitly). Give each
@@ -76,8 +76,9 @@ concurrent client its own `-command-addr` port, and never point a v1 and a v2 se
 
 ## Validate
 
-Last live run: [`validation/T4-2026-10-03.md`](validation/T4-2026-10-03.md). Script a run with `cmd/mcpcall`: one line
-per call on stdin — `{"tool": "...", "args": {...}, "note": "..."}`, or `{"sleep_s": N}`; `#` lines are comments — and
+Last live run: [`validation/T4-2026-10-03.md`](validation/T4-2026-10-03.md). Script a run with `cmd/mcpcall`: one
+line per call on stdin — `{"tool": "...", "args": {...}, "note": "..."}`, or `{"sleep_s": N}`; `#` lines are
+comments — and
 one JSON result per line on stdout (`-images <dir>` saves returned images; `-url` targets a daemon). Run on scratch
 copies with their own multicast group (see `CLAUDE.md`).
 

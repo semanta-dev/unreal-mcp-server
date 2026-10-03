@@ -174,10 +174,11 @@ func TestFinishedAbandonedStartIsNotAdopted(t *testing.T) {
 func TestWaitingLaunchIsCancellable(t *testing.T) {
 	dm := newTestDaemon()
 	sp := dm.spawner.(*wireFakeSpawner)
-	sp.gate = make(chan struct{})
-	defer close(sp.gate)
+	release, entered := make(chan struct{}), make(chan struct{})
+	defer close(release)
+	sp.during = func() { close(entered); <-release } // the first launch holds the slot
 	go func() { _, _, _, _ = dm.Router.SpawnSerialized(context.Background(), "/A", "t1") }()
-	time.Sleep(20 * time.Millisecond) // the first launch holds the project's slot
+	<-entered
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	if _, _, _, err := dm.Router.SpawnSerialized(ctx, "/A", "t2"); !errors.Is(err, context.DeadlineExceeded) {
