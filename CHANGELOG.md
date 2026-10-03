@@ -42,6 +42,26 @@ see [`docs/migration-v2.md`](docs/migration-v2.md) for all 155 v1 names.
 - The cockpit's access token was returned to the agent; it never is.
 - A non-idempotent op could run twice after a reconnect; dispatch is exactly-once with `outcome: unknown`.
 
+### Live validation (P7) — defects only a real editor exposed, fixed
+See [`docs/validation/T4-2026-10-03.md`](docs/validation/T4-2026-10-03.md).
+- After any timed-out command the server could never reconnect until restarted (the editor ignored `open_connection`
+  while it still believed the old channel was up); the client now sends `close_connection` first.
+- A rebuilt server kept running the previous companion in a live editor when the version number was unchanged; the
+  install sentinel now includes a source digest.
+- `pie op=start` froze the editor (and every later call) behind Unreal's modal "Blueprint Compilation Errors" dialog:
+  a plugin pre-flight refuses with the Blueprint list (or `ignore_blueprint_errors=true` plays anyway), and a modal
+  guard cancels that dialog and names any other dialog holding the game thread.
+- `build` ran UBT beside an editor that was running but not answering (locked DLLs); it now refuses.
+- `git op=checkpoint` failed when `.gitignore` already ignored `Saved/`/`Intermediate/`/`DerivedDataCache/`.
+- A class-filtered snapshot diff reported a World Partition actor in an unloaded cell as removed.
+- Daemon: a cold start longer than the attach call was cancelled and its editor killed (now detached, attach is
+  retryable); attaching a project already open in another editor launched a second one and bound the wrong editor
+  (now refused, and spawns bind only the editor they launched); during a lease restart the session lost its project and
+  jobs.
+- Also: PIE transforms of Static actors, asset search (`ARFilter`), registry tags by package path, HighResShot's real
+  output folder, stale PIE screenshots, the `game_scene` capture enum, thumbnail lighting, widget render class
+  resolution, PIE console commands, null op arguments in playtest beats.
+
 ### Architecture & reliability
 - 48 → 29 top-level packages (plan target 28) with an enforced import DAG; one supervisor for stdio and daemon; per-session servers in the
   daemon with lease adoption and draining.

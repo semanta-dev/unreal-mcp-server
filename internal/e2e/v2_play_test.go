@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,6 +27,21 @@ func TestPieStartStopWaitForTheState(t *testing.T) {
 	}
 	if e := errorOf(t, h.call(t, "pie", map[string]any{"op": "input"})); e["code"] != "INVALID_ARGUMENT" {
 		t.Fatalf("input without key = %v", e["code"])
+	}
+}
+
+// Found live (P7): the pre-flight's PRECONDITION reached the agent without the hint
+// naming ignore_blueprint_errors (the handler looked for an envelope error the bridge
+// does not return).
+func TestPieStartBlueprintErrorsCarryTheHint(t *testing.T) {
+	h := startHarness(t, harnessOpts{})
+	h.emu.Handle("pie_start", func(args map[string]any) (any, *bridgetest.OpError) {
+		return nil, &bridgetest.OpError{Code: "PRECONDITION", Message: "1 Blueprint(s) have compile errors",
+			Details: map[string]any{"blueprints": []any{"/Game/BP_Bad.BP_Bad"}}}
+	})
+	e := errorOf(t, h.call(t, "pie", map[string]any{"op": "start"}))
+	if e["code"] != "PRECONDITION" || !strings.Contains(fmt.Sprint(e["hint"]), "ignore_blueprint_errors") {
+		t.Fatalf("want PRECONDITION with the ignore_blueprint_errors hint, got %v", e)
 	}
 }
 

@@ -942,3 +942,16 @@ Non-blocking notes, also fixed:
 is a PRECONDITION. No editor is spawned or adopted, the session's bookkeeping is untouched, and the check no longer
 depends on the toolsets context. T1 covers all three files and asserts nothing was spawned. The README states that
 the daemon takes toolsets only from `.umcp.json`.
+
+## P7 — deploy and live validation (2026-10-03)
+
+- `overhaul/v2` merged into `main`; the main tree's `dist/unreal-mcp.exe` is v2 (the v1 binary is kept as
+  `dist/unreal-mcp-v1.exe` for the rollback drill). Consumers: `aesir-wave-defense/.mcp.json` lost its legacy
+  `unreal-py` entry (uncommitted: that repo has no commits); poly-world's agent doc moved to v2 calls and its
+  `.umcp.json` enables `polyworld`, `ui`, `desktop` (committed on its branch, path-limited).
+- T4 ran on scratch copies of both projects with their own multicast group; report:
+  [`../validation/T4-2026-10-03.md`](../validation/T4-2026-10-03.md). Every checklist item passes. Fourteen defects
+  that the emulator could not show were fixed, each with a regression test (several model engine behaviour in the
+  fakes: the editor's sticky command channel, `ARFilter`'s constructor-only fields, Python's enum names, Static
+  mobility in game worlds, `Paths.screen_shot_dir`).
+- Not done in P7: the cockpit approval UI wiring (`require` still fails closed), the paid eval (needs approval).

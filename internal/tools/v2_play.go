@@ -488,7 +488,7 @@ func snapshotHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &spec.Result{Data: map[string]any{"name": name, "file": p, "actors": len(f.Actors), "world_partition": f.WorldPartition},
+		return &spec.Result{Data: map[string]any{"name": name, "file": filepath.ToSlash(p), "actors": len(f.Actors), "world_partition": f.WorldPartition},
 			Summary: fmt.Sprintf("snapshot %s: %d actors", name, len(f.Actors))}, nil
 	}
 	// diff

@@ -159,7 +159,7 @@ def _op_widget_render_v2(args):
     if not unreal.MathLibrary.class_is_child_of(cls, unreal.UserWidget):
         raise _V2Error("BAD_VALUE", "%s is not a UserWidget class" % cls.get_path_name())
     wc = cls.get_path_name()
-    out = _op_widget_render({"widget_class": wc, "out_path": os.path.join(out_dir, stem + ".png"),
+    out = _op_widget_render({"widget_class": wc, "out_path": out_dir + "/" + stem + ".png",
                              "width": int(args.get("width", 1280)), "height": int(args.get("height", 720))})
     if "error" in out:
         raise _V2Error("PLUGIN_MISSING", out["error"])

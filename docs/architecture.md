@@ -77,6 +77,12 @@ A Go implementation of Epic's remote-execution protocol: UDP-multicast discovery
 TCP. The node holds **one** command connection, so the session guards it: exactly-once dispatch for non-idempotent
 ops, a liveness probe before sending, and a connection-loss decision table (write failure → resend; read loss after
 a write → `outcome: unknown`; another client taking the slot → `EDITOR_BUSY` until `editor_lifecycle op=reclaim`).
+A timed-out or cancelled command taints the channel; reconnecting to the same editor sends `close_connection` first,
+because the editor ignores `open_connection` from a node it still believes is connected. A session can exclude nodes
+(the daemon's spawner excludes every node known before its launch, and any that answers with another pid).
+
+The companion's install sentinel is its version **and** a digest of its source, so a rebuilt server replaces the
+module in an editor that outlived the previous server.
 
 ## Topologies
 
@@ -103,6 +109,10 @@ access token in its fragment; tools never return it.
 - **Editor-aware `git_revert`**: checkpoints only (`umcp/cp/<n>` tags from `git op=checkpoint`), editor closed
   safely when reverted assets are loaded, file revert all-or-nothing from a backup.
 - **Undo**: editor actor edits and scene/snapshot changes run inside a named `ScopedEditorTransaction`.
+- **Modal dialogs**: `pie op=start` pre-flights Blueprint compile errors through the plugin
+  (`PrepareBlueprintsForPIE`), and its wait polls with short pings; if the editor stops answering, a guard inspects
+  the editor process's windows (Windows), cancels PIE's Blueprint-errors dialog (`WM_CLOSE`) and reports any other
+  dialog that persists. A full build refuses while the project's editor runs but does not answer.
 - **Server-owned outputs**: screenshots, captures, renders, thumbnails and audio go under `Saved/MCP` or
   `Saved/Screenshots`; caller-supplied names are validated.
 

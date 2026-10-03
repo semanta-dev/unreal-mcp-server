@@ -242,7 +242,7 @@ func analyze(_ context.Context, c *spec.Call) (*spec.Result, error) {
 		matches, _ := filepath.Glob(filepath.Join(dir, "*.json"))
 		out := []map[string]any{}
 		for _, p := range matches {
-			item := map[string]any{"file": p, "valid": false}
+			item := map[string]any{"file": filepath.ToSlash(p), "valid": false}
 			if data, err := os.ReadFile(p); err == nil {
 				if sc, diags, err := eval.ParseScenario(data); err == nil {
 					item["name"], item["valid"] = sc.Name, !eval.HasErrors(diags)
@@ -253,7 +253,7 @@ func analyze(_ context.Context, c *spec.Call) (*spec.Result, error) {
 			}
 			out = append(out, item)
 		}
-		return &spec.Result{Data: map[string]any{"dir": dir, "scenarios": out}, Summary: fmt.Sprintf("%d scenarios", len(out))}, nil
+		return &spec.Result{Data: map[string]any{"dir": filepath.ToSlash(dir), "scenarios": out}, Summary: fmt.Sprintf("%d scenarios", len(out))}, nil
 	case "rubric":
 		var ls eval.LogSummary
 		if in.Logs != nil {
@@ -732,7 +732,7 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 	}
 	imgPath := filepath.Join(cr.Dir, "montage.png")
 	if werr := os.WriteFile(imgPath, png, 0o644); werr == nil {
-		result["image_path"] = imgPath // job status/wait attach it as image content
+		result["image_path"] = filepath.ToSlash(imgPath) // job status/wait attach it as image content
 	}
 	for k, v := range sidecar {
 		result[k] = v
