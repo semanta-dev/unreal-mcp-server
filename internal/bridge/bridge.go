@@ -172,6 +172,7 @@ func (b *Bridge) dispatch(ctx context.Context, op string, args any) (dispatchEnv
 			return env, res, err
 		}
 		nr, err := native.RPCNative(ctx, op, j, "", "")
+		b.logger.Debug("dispatch", "op", op, "backend", "native", "ok", err == nil && nr.OK)
 		if err != nil {
 			return env, res, err
 		}

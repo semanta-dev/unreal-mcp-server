@@ -91,9 +91,11 @@ func pieHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	want := c.Op.Name == "start"
 	py := map[bool]string{true: "pie_start", false: "pie_stop"}[want]
 	out, err := v2Op(ctx, c, py, pick(c.Args, "simulate", "ignore_blueprint_errors"))
-	var ee *envelope.Error
-	if errors.As(err, &ee) && ee.Details["blueprints"] != nil {
-		ee.WithHint("fix them (the editor log names the errors), or pass ignore_blueprint_errors=true to play anyway")
+	if err != nil {
+		// v2Op returns the bridge's error; the envelope is built here so the hint lands.
+		if e := envelope.Classify(err, c.Op.Tier > spec.ReadOnly); e.Details["blueprints"] != nil {
+			return nil, e.WithHint("fix them (the editor log names the errors), or pass ignore_blueprint_errors=true to play anyway")
+		}
 	}
 	if err != nil || (in.Wait != nil && !*in.Wait) {
 		return &spec.Result{Data: out, Summary: "PIE " + c.Op.Name + " requested"}, err
