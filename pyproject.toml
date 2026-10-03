@@ -1,0 +1,16 @@
+# Lint config for the in-editor companion module (internal/bridge/py). The module is
+# kept as ordered section files that Go concatenates into one module, so it is linted
+# as that concatenation (CI: cat internal/bridge/py/[0-9]*.py > mcp2_bridge.py).
+[tool.ruff]
+line-length = 160
+target-version = "py311"
+# The frozen v1 companion is a byte-exact fixture (handover tests), not maintained code.
+extend-exclude = ["internal/bridge/py/tests/fixtures"]
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "I"]
+# Section files place their imports where the section starts (one module, many files).
+ignore = ["E402"]
+
+[tool.ruff.lint.isort]
+known-third-party = ["unreal"]

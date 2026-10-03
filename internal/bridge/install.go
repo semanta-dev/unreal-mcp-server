@@ -127,11 +127,14 @@ func (b *Bridge) installOnDisk(ctx context.Context) error {
 	if b.projDir == "" {
 		return fmt.Errorf("%w: ondisk mode requires ProjectDir", ErrInstall)
 	}
-	dir := filepath.Join(b.projDir, "Intermediate", "PyMCP")
+	// v2 has its own directory and module name: v1 used Intermediate/PyMCP/mcp_bridge.py
+	// imported as mcp_bridge, and sharing it would let a handover reload one module
+	// object under the other server (plan §2.8).
+	dir := filepath.Join(b.projDir, "Intermediate", "PyMCP2")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("%w: mkdir %s: %v", ErrInstall, dir, err)
 	}
-	path := filepath.Join(dir, "mcp_bridge.py")
+	path := filepath.Join(dir, "mcp2_bridge.py")
 	if err := os.WriteFile(path, []byte(CompanionSource()), 0o644); err != nil {
 		return fmt.Errorf("%w: write %s: %v", ErrInstall, path, err)
 	}
@@ -141,7 +144,7 @@ func (b *Bridge) installOnDisk(ctx context.Context) error {
 	boot := fmt.Sprintf(`import sys, importlib
 if %q not in sys.path:
     sys.path.insert(0, %q)
-import mcp_bridge as _mcpb
+import mcp2_bridge as _mcpb
 importlib.reload(_mcpb)
 globals()['_mcp2'] = _mcpb
 globals()['_mcp2_dispatch'] = _mcpb._mcp2_dispatch

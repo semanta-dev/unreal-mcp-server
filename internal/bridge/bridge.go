@@ -122,6 +122,7 @@ type OpError struct {
 	Code      string
 	Retryable bool
 	Traceback string
+	Details   map[string]any // structured context from the editor (e.g. CONFLICT candidates)
 }
 
 func (e *OpError) Error() string {
@@ -145,6 +146,7 @@ type dispatchEnvelope struct {
 	Code      string          `json:"code"`
 	Retryable bool            `json:"retryable"`
 	Traceback string          `json:"traceback"`
+	Details   map[string]any  `json:"details"`
 }
 
 // dispatch runs an op in the companion module, ensuring the module is installed
@@ -214,7 +216,7 @@ func (b *Bridge) Call(ctx context.Context, op string, args any) (json.RawMessage
 		return nil, err
 	}
 	if !env.OK {
-		return nil, &OpError{Op: op, Message: env.Error, Code: env.Code, Retryable: env.Retryable, Traceback: env.Traceback}
+		return nil, &OpError{Op: op, Message: env.Error, Code: env.Code, Retryable: env.Retryable, Traceback: env.Traceback, Details: env.Details}
 	}
 	return env.Result, nil
 }
@@ -229,7 +231,7 @@ func (b *Bridge) CallText(ctx context.Context, op string, args any) (string, err
 		return "", err
 	}
 	if !env.OK {
-		return "", &OpError{Op: op, Message: env.Error, Code: env.Code, Retryable: env.Retryable, Traceback: env.Traceback}
+		return "", &OpError{Op: op, Message: env.Error, Code: env.Code, Retryable: env.Retryable, Traceback: env.Traceback, Details: env.Details}
 	}
 	var m struct {
 		Message string `json:"message"`

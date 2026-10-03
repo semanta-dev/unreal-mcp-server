@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"sync"
 
 	"github.com/jdziat/unreal-mcp-server/internal/supervisor"
@@ -99,6 +100,16 @@ func (r *Router) Attach(ctx context.Context, sessionID, project string) (instanc
 	}
 	r.bindings[sessionID] = lease.ID
 	return lease.ID, nil
+}
+
+// editorBridge returns the bridge of an instance's current editor (nil if gone).
+func (r *Router) editorBridge(id string) *bridge.Bridge {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if eh, ok := r.editors[id].(*supervisor.EditorHandle); ok {
+		return eh.Bridge()
+	}
+	return nil
 }
 
 // Transfer moves a lease binding from one session to another (draining-lease

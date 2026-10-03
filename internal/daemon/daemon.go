@@ -41,7 +41,7 @@ type Daemon struct {
 	// the pool.
 	OnEditorReady func(ctx context.Context, project string, b *bridge.Bridge)
 	readyMu       sync.Mutex
-	readyStarted  map[string]bool // instanceID -> OnEditorReady started
+	readyStarted  map[*bridge.Bridge]bool // editor bridges whose OnEditorReady is running
 
 	jobsMu      sync.Mutex
 	projectJobs map[string]*jobs.Registry // canonical project key -> that project's jobs

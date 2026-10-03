@@ -77,7 +77,7 @@ def _op_select_actors(args):
     labels = set(args.get("labels") or [])
     mode = args.get("mode", "replace")
     by_label = {a.get_actor_label(): a for a in sub.get_all_level_actors() if a}
-    picked = [by_label[l] for l in labels if l in by_label]
+    picked = [by_label[lbl] for lbl in labels if lbl in by_label]
     if mode == "none":
         sub.set_selected_level_actors([])
     elif mode == "add":

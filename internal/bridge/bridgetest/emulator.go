@@ -137,7 +137,7 @@ func (e *Emulator) OnCommand(req uexectest.CommandRequest) uexectest.CommandResp
 		return uexectest.CommandResponse{Success: true, Result: strconv.Itoa(v)}
 	case strings.Contains(code, "exec(compile(base64.b64decode("):
 		return e.install(code)
-	case strings.Contains(code, "import mcp_bridge as _mcpb"):
+	case strings.Contains(code, "import mcp2_bridge as _mcpb"):
 		return e.installOnDisk(code)
 	case strings.Contains(code, "_mcp_dispatch_native'] = _mcp2._mcp2_dispatch_native"):
 		e.mu.Lock()
@@ -185,13 +185,13 @@ func (e *Emulator) NativeClaims() int {
 }
 
 // installOnDisk emulates the on-disk mode: the server wrote mcp_bridge.py into the
-// project's Intermediate dir and asks the editor to import it.
+// project's Intermediate/PyMCP2 dir and asks the editor to import it.
 func (e *Emulator) installOnDisk(code string) uexectest.CommandResponse {
 	m := ondiskRe.FindStringSubmatch(code)
 	if m == nil {
 		return uexectest.CommandResponse{Success: false, Output: []uexectest.OutputEntry{{Type: "Error", Output: "bridgetest: ondisk boot lacks sys.path"}}}
 	}
-	raw, err := os.ReadFile(filepath.Join(filepath.FromSlash(m[1]), "mcp_bridge.py"))
+	raw, err := os.ReadFile(filepath.Join(filepath.FromSlash(m[1]), "mcp2_bridge.py"))
 	if err != nil {
 		return uexectest.CommandResponse{Success: false, Output: []uexectest.OutputEntry{{Type: "Error", Output: "ModuleNotFoundError: " + err.Error()}}}
 	}

@@ -320,3 +320,20 @@ relaunch, orphan reaping, liveness, record store — is shared in `supervisor`/`
 
 **Evidence.** `go vet ./...` clean; gofmt clean; `go test ./...` all ok; `-race -short ./internal/...` all ok;
 uexec theft/probe/exactly-once tests stable at `-count=10`; refs exit 0.
+
+**Gate P4, round 1: A- (CTO).** Fixed:
+1. *On-disk install shared v1's file + module name* (`Intermediate/PyMCP/mcp_bridge.py`, `import mcp_bridge`), so a
+   handover would reload one module object under the other server. v2 now uses `Intermediate/PyMCP2/mcp2_bridge.py`
+   imported as `mcp2_bridge`; T2 `test_ondisk_modules_are_distinct` imports both and reloads v2 — distinct objects.
+2. *Rollback only half tested* → **T2 python contract suite** (`internal/bridge/py/tests`, pytest + stub `unreal`) runs
+   the **real v1 companion** (frozen byte-exact from `v1-final` as a fixture) and the v2 companion in one `__main__`:
+   v2 install leaves v1's dispatch, native entry, `_OPS` and sentinel identical, both answer; after `ClaimNative` the
+   plugin entry reaches v2 and v1's sentinel is 0; a v1 rollback reinstalls, reclaims its names, serves — and v2 still
+   serves. Plus dispatch contract tests: unknown op, the §2.7 item-6 error-key rule (a coded in-band error is now
+   `ok:false`; v1 passed it as `ok:true`), coded `_V2Error` with details and no traceback, Python exceptions keep a
+   traceback, every `_OPS` entry defined once, and the conftest bootstrap pinned to `install.go`'s.
+NB fixes: `OnEditorReady` is keyed by editor **bridge** (a controlled restart's new bridge gets its own hook, the old
+one's context ends) and is retried if the first resolve fails. Accepted NB for later: end-to-end crash→relaunch T1
+(before P7); T3 `toolsets enable` → list_changed lands with the `toolsets` tool (P5e).
+Also landed: **ruff is blocking in CI** (companion linted as the concatenated module per `pyproject.toml`; baseline of
+19 findings fixed — `E402` ignored by design for the sectioned module) and pytest runs in CI.

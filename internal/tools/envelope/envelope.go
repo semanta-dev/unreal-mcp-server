@@ -104,6 +104,14 @@ var editorCodes = map[string]Code{
 	"CAPTURE_START_FAILED": OperationFailed,
 	"EDITOR_ERROR":         OperationFailed,
 	"UNKNOWN_OP":           UnknownOp,
+	"CONFLICT":             Conflict,
+	"UNSUPPORTED":          Unsupported,
+	"MISSING_ARG":          InvalidArgument,
+	"BAD_ARGS":             InvalidArgument,
+	"FILE_NOT_FOUND":       NotFound,
+	"NO_SESSION":           NotFound,
+	"SAVE_BLOCKED":         OperationFailed,
+	"BAD_ATTRIBUTE":        PythonError,
 	"TIMEOUT":              Timeout,
 	"EDITOR_BUSY":          EditorBusy,
 }
@@ -145,6 +153,9 @@ func Classify(err error, mutating bool) *Error {
 		}
 		if op.Traceback != "" {
 			out.Details["traceback"] = op.Traceback
+		}
+		for k, v := range op.Details {
+			out.Details[k] = v
 		}
 		return out
 	case errors.Is(err, uexec.ErrEditorNotFound):

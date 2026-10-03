@@ -32,9 +32,9 @@ def _coerce_prop(v, max_str):
     if isinstance(v, unreal.Rotator):
         return [v.pitch, v.yaw, v.roll]
     if hasattr(v, "x") and hasattr(v, "y"):
-        out = [getattr(v, "x"), getattr(v, "y")]
+        out = [v.x, v.y]
         if hasattr(v, "z"):
-            out.append(getattr(v, "z"))
+            out.append(v.z)
         return out
     name = getattr(v, "name", None)  # UENUM -> enumerator name
     if isinstance(name, str):

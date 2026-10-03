@@ -75,5 +75,11 @@ jobs:
         run: |
           for f in internal/bridge/py/[0-9]*.py; do python -m py_compile "$f"; done
           cat internal/bridge/py/[0-9]*.py > /tmp/mcp_bridge.py && python -m py_compile /tmp/mcp_bridge.py
-      - name: ruff (best-effort)
-        run: pip install ruff && ruff check internal/bridge/py/ || true
+      - name: ruff (blocking; the module is linted as Go concatenates it)
+        run: |
+          pip install ruff pytest
+          cat internal/bridge/py/[0-9]*.py > /tmp/mcp2_bridge.py
+          ruff check --config pyproject.toml /tmp/mcp2_bridge.py
+          ruff check internal/bridge/py/tests
+      - name: pytest (companion contract + v1/v2 handover)
+        run: python -m pytest internal/bridge/py/tests -q

@@ -149,16 +149,19 @@ def _mcp2_dispatch(op, b64args):
                    "retryable": False, "traceback": ""})
             return
         result = fn(args)
-        # Promote an in-band failure ({"error": "..."} — the common way ops signal
-        # NOT_IN_PIE / CLASS_UNRESOLVED / ASSET_NOT_FOUND / SPAWN_FAILED, etc.) to a
-        # coded envelope failure, so every op is machine-branchable, not just ones
-        # that raise. (A partial-result "errors"/"warnings" list is NOT this.)
-        if isinstance(result, dict) and result.get("error") and "code" not in result:
-            code = _classify_error_message(result["error"])
+        # Any in-band failure ({"error": "..."} at the top level — the common way ops
+        # signal NOT_IN_PIE / CLASS_UNRESOLVED / ASSET_NOT_FOUND, etc.) is a failure,
+        # using the op's own "code" when it gives one. (v1 passed an error that carried
+        # a code as ok:true.) A partial-result "errors"/"warnings" list is NOT this.
+        if isinstance(result, dict) and result.get("error"):
+            code = result.get("code") or _classify_error_message(result["error"])
             _emit({"ok": False, "error": str(result["error"]), "code": code,
-                   "retryable": code in _RETRYABLE_CODES})
+                   "retryable": code in _RETRYABLE_CODES, "details": result.get("details")})
             return
         _emit({"ok": True, "result": result})
+    except _V2Error as e:  # a coded failure: no traceback (not a Python bug)
+        _emit({"ok": False, "error": str(e), "code": e.code,
+               "retryable": e.code in _RETRYABLE_CODES, "details": e.details})
     except Exception as e:
         code = _classify_error(e)
         _emit({"ok": False, "error": str(e), "code": code,

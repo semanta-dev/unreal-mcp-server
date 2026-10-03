@@ -286,7 +286,9 @@ def _widget_reconcile_node(wt, parent, node, index, built, issues):
         # Composite construction is the C++ ConstructWidget path (Phase 0b).
         auth = _mcp_authoring()
         parent_name = str(parent.get_name()) if parent is not None else ""
-        if auth is None or parent is None or not auth.add_child_widget(wt.get_outer(), unreal.Name(parent_name), cls, unreal.Name(name), bool(node.get("is_variable"))):
+        added = auth is not None and parent is not None and auth.add_child_widget(
+            wt.get_outer(), unreal.Name(parent_name), cls, unreal.Name(name), bool(node.get("is_variable")))
+        if not added:
             issues.append(_issue("COMPOSITE_NEEDS_PLUGIN", name, "composite child needs the MCPAuthoring C++ module (Phase 0b) loaded + compiled"))
             return None
         widget = _widget_index_find(wt, name)

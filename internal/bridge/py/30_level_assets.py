@@ -302,7 +302,8 @@ def _op_company_road(args):
     world = _pick_world(args.get("world", "auto"))
     if not world:
         return {"error": "no world (start PIE)"}
-    s = args.get("start", [0, 0]); e = args.get("end", [0, 0])
+    s = args.get("start", [0, 0])
+    e = args.get("end", [0, 0])
     for a in unreal.GameplayStatics.get_all_actors_of_class(world, unreal.CompanyManager):
         placed = a.place_road_line(unreal.IntPoint(int(s[0]), int(s[1])), unreal.IntPoint(int(e[0]), int(e[1])))
         return {"placed": int(placed), "capital": int(a.get_editor_property("capital")),
@@ -326,7 +327,8 @@ def _op_company_demolish(args):
             bd, best = d, b
     n = len(list(unreal.GameplayStatics.get_all_actors_of_class(world, unreal.ProductionBuilding)))
     if not best or bd > 2400:
-        bl = [[round(b.get_actor_location().x), round(b.get_actor_location().y)] for b in unreal.GameplayStatics.get_all_actors_of_class(world, unreal.ProductionBuilding)]
+        buildings = unreal.GameplayStatics.get_all_actors_of_class(world, unreal.ProductionBuilding)
+        bl = [[round(b.get_actor_location().x), round(b.get_actor_location().y)] for b in buildings]
         return {"demolished": False, "count": n, "nearest": round(bd, 1), "target": [round(target.x), round(target.y)], "locs": bl}
     name = str(best.get_editor_property("building_name"))
     refund = int(best.get_editor_property("build_cost")) // 2  # stored on the building

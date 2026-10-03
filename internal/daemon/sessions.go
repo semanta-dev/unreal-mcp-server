@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"github.com/jdziat/unreal-mcp-server/internal/supervisor"
 	"time"
 
@@ -69,45 +70,49 @@ func (dm *Daemon) Attach(ctx context.Context, sid, project string) (string, erro
 	return id, err
 }
 
-// editorReady starts OnEditorReady once per instance, with a context that ends when
-// the instance leaves the pool.
+// editorReady starts OnEditorReady once per editor BRIDGE (a controlled restart keeps
+// the instance ID but brings up a new bridge, which gets its own hook), with a
+// context that ends when that bridge is no longer the instance's editor.
 func (dm *Daemon) editorReady(sid, id, project string) {
 	if dm.OnEditorReady == nil {
 		return
 	}
-	dm.readyMu.Lock()
-	if dm.readyStarted == nil {
-		dm.readyStarted = map[string]bool{}
-	}
-	if dm.readyStarted[id] {
-		dm.readyMu.Unlock()
-		return
-	}
-	dm.readyStarted[id] = true
-	dm.readyMu.Unlock()
 	ed, _, err := dm.Router.Resolve(sid)
 	if err != nil {
-		return
+		return // not ready yet; the next attach retries
 	}
 	eh, ok := ed.(*supervisor.EditorHandle)
 	if !ok {
 		return
 	}
+	b := eh.Bridge()
+	dm.readyMu.Lock()
+	if dm.readyStarted == nil {
+		dm.readyStarted = map[*bridge.Bridge]bool{}
+	}
+	if dm.readyStarted[b] {
+		dm.readyMu.Unlock()
+		return
+	}
+	dm.readyStarted[b] = true
+	dm.readyMu.Unlock()
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() { // end the hook when the instance is gone
+	go func() { // end the hook when this bridge is no longer the instance's editor
 		defer cancel()
+		defer func() {
+			dm.readyMu.Lock()
+			delete(dm.readyStarted, b)
+			dm.readyMu.Unlock()
+		}()
 		t := time.NewTicker(5 * time.Second)
 		defer t.Stop()
 		for range t.C {
-			if _, ok := dm.Pool.Get(id); !ok {
-				dm.readyMu.Lock()
-				delete(dm.readyStarted, id)
-				dm.readyMu.Unlock()
+			if dm.Router.editorBridge(id) != b {
 				return
 			}
 		}
 	}()
-	go dm.OnEditorReady(ctx, project, eh.Bridge())
+	go dm.OnEditorReady(ctx, project, b)
 }
 
 // Release implements session.ProjectManager (explicit project_release).
