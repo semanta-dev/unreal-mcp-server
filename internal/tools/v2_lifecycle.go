@@ -443,6 +443,13 @@ func runBuild(ctx context.Context, c *spec.Call, dir, requested string, progress
 		return err // infra failure only; compile errors travel in res
 	}
 	if _, err := v2Op(ctx, c, "editor_ping", nil); err != nil {
+		// Not answering is not the same as not running: an editor stuck in a modal
+		// dialog still holds the project's DLLs, and UBT would fail to link (LNK1104).
+		if pids := editorPIDsForProject(uproject); len(pids) > 0 {
+			return res, envelope.New(envelope.EditorUnreachable,
+				"an editor for this project is running (pid %v) but not answering; a full build would fail on its locked binaries", pids).
+				WithHint("it may be waiting on a dialog: look with desktop_capture op=window, answer it, then build again")
+		}
 		progress("no editor running: building directly")
 		if err := step(ctx); err != nil {
 			return res, err
@@ -617,7 +624,7 @@ func gitRevert(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		}
 	}
 	plan := map[string]any{"checkpoint": tag, "changes": len(changes), "rebuild_required": rebuild,
-		"untracked_kept": untracked}
+		"untracked_kept": slashAll(untracked)}
 	deletedPkgs := map[string]bool{} // packages the revert removes (added since the checkpoint)
 	for _, ch := range changes {
 		if pkg, ok := contentPackage(ch.Path); ok && ch.Status == "A" {
@@ -658,7 +665,7 @@ func gitRevert(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	plan["editor_restart"] = restart
 	files := make([]string, len(changes))
 	for i, ch := range changes {
-		files[i] = ch.Status + " " + ch.Path
+		files[i] = ch.Status + " " + filepath.ToSlash(ch.Path)
 	}
 	if in.DryRun {
 		plan["files"], plan["dry_run"] = files, true
@@ -677,7 +684,7 @@ func gitRevert(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			return err
 		}
 		res := map[string]any{"checkpoint": tag, "rebuild_required": rebuild, "untracked_kept": plan["untracked_kept"],
-			"backup_dir": backup, "editor_restarted": restart}
+			"backup_dir": filepath.ToSlash(backup), "editor_restarted": restart}
 		if v, ok := plan["possibly_stale"]; ok {
 			res["possibly_stale"] = v
 		}
@@ -698,7 +705,7 @@ func gitRevert(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		} else if err := step(jctx); err != nil {
 			return nil, err
 		}
-		res["reverted_files"], res["deleted_files"] = reverted, deleted
+		res["reverted_files"], res["deleted_files"] = slashAll(reverted), slashAll(deleted)
 		if rebuild {
 			res["hint"] = "C++ changed: run build"
 		}
@@ -778,4 +785,16 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// editorPIDsForProject finds running editors of a project (a var for tests).
+var editorPIDsForProject = lifecycle.EditorPIDsForProject
+
+// slashAll reports paths with forward slashes (as git and the rest of the API do), never nil.
+func slashAll(paths []string) []string {
+	out := make([]string, len(paths))
+	for i, p := range paths {
+		out[i] = filepath.ToSlash(p)
+	}
+	return out
 }

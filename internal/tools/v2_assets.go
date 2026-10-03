@@ -137,9 +137,11 @@ func assetQuerySpec() *spec.Spec {
 			case "search":
 				py = "asset_query"
 				rename(args, a, "classes", "class_paths", "blueprints", "blueprints", "recursive", "recursive", "limit", "limit")
-				if f, ok := a["folder"]; ok {
-					args["package_paths"] = []any{f}
+				folder, ok := a["folder"]
+				if !ok {
+					folder = "/Game" // the documented default (the registry alone would include /Engine and plugins)
 				}
+				args["package_paths"] = []any{folder}
 			case "info", "thumbnail":
 				py = "asset_" + c.Op.Name
 				rename(args, a, "asset", "asset_path", "size", "size")

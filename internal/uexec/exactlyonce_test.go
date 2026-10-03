@@ -245,3 +245,37 @@ func TestDesyncIsNotCountedAsPeerClose(t *testing.T) {
 		t.Fatalf("probe = %v, want desync (not a peer close)", got)
 	}
 }
+
+// A command abandoned on our deadline taints the channel; UE still believes it is
+// connected to us and ignores a plain open_connection, so the reconnect must send
+// close_connection first (found live, P7).
+func TestReconnectAfterTimeoutReleasesTheEditorsStaleChannel(t *testing.T) {
+	e, _ := uexectest.Start(uexectest.Options{StickyConnection: true,
+		OnCommand: func(req uexectest.CommandRequest) uexectest.CommandResponse {
+			if trimGuard(req.Command) == "SLOW" {
+				time.Sleep(700 * time.Millisecond)
+			}
+			return uexectest.CommandResponse{Success: true, Result: trimGuard(req.Command)}
+		}})
+	defer e.Close()
+	cfg := testCfg()
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.CommandAddr = ln.Addr().String() // a fixed port, as deployed: the same endpoint on reconnect
+	ln.Close()
+	s := dialFake(t, e, cfg)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	_, err = s.RunCommand(ctx, "SLOW", ModeEval)
+	cancel()
+	if !errors.Is(err, ErrTimeout) {
+		t.Fatalf("want ErrTimeout, got %v", err)
+	}
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if res, err := s.RunCommand(ctx, "NEXT", ModeEval); err != nil || res.Result != "NEXT" {
+		t.Fatalf("the session must recover after a timeout: %v %+v", err, res)
+	}
+}

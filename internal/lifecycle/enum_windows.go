@@ -44,6 +44,35 @@ func EnumerateTokenProcesses(exeSubstr, flag string) []TokenProc {
 	return out
 }
 
+// EditorPIDsForProject returns the running UnrealEditor processes whose command line
+// opens uproject — the editors holding this project's binaries, whether or not they
+// answer remote execution.
+func EditorPIDsForProject(uproject string) []int {
+	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return nil
+	}
+	defer windows.CloseHandle(snap)
+	var e windows.ProcessEntry32
+	e.Size = uint32(unsafe.Sizeof(e))
+	if windows.Process32First(snap, &e) != nil {
+		return nil
+	}
+	var out []int
+	for {
+		pid := int(e.ProcessID)
+		exe := strings.ToLower(windows.UTF16ToString(e.ExeFile[:]))
+		if pid > 4 && strings.HasPrefix(exe, "unrealeditor") && !strings.Contains(exe, "-cmd") &&
+			namesProject(readCommandLine(pid), uproject) {
+			out = append(out, pid)
+		}
+		if windows.Process32Next(snap, &e) != nil {
+			break
+		}
+	}
+	return out
+}
+
 // ProcessCommandLine returns a process's full command line from its PEB (empty on any
 // failure). Used to tell a deliberately-configured sibling server (a custom -command-addr)
 // apart from a same-port orphan, so killOrphanSiblings doesn't nuke a concurrent project.

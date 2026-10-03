@@ -144,6 +144,21 @@ func TestGitToolsAgainstTempRepo(t *testing.T) {
 			t.Fatalf("keep.txt should have been committed: %+v", st)
 		}
 	}
+
+	// The usual UE .gitignore already ignores the generated trees: naming them in an
+	// exclude pathspec would make `git add` fail (found live, P7).
+	os.WriteFile(filepath.Join(repo, ".gitignore"), []byte("Saved/\nIntermediate/\nDerivedDataCache/\n"), 0o644)
+	os.MkdirAll(filepath.Join(repo, "Intermediate"), 0o755)
+	os.WriteFile(filepath.Join(repo, "Intermediate", "x.obj"), []byte("o\n"), 0o644)
+	os.WriteFile(filepath.Join(repo, "level.umap"), []byte("map\n"), 0o644)
+	call(map[string]any{"op": "checkpoint", "message": "with gitignore"}, &cp)
+	if !cp.Committed {
+		t.Fatalf("checkpoint with an ignoring .gitignore = %+v", cp)
+	}
+	call(map[string]any{"op": "status"}, &st)
+	if len(st.Staged)+len(st.Unstaged)+len(st.Untracked) != 0 {
+		t.Fatalf("everything not ignored should be committed: %+v", st)
+	}
 }
 
 func decodeStructured(t *testing.T, res *mcp.CallToolResult, out any) {

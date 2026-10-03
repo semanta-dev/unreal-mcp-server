@@ -47,6 +47,23 @@ class ActorComponent(Object):
     pass
 
 
+class ComponentMobility:
+    STATIC, STATIONARY, MOVABLE = "Static", "Stationary", "Movable"
+
+
+class SceneComponent(ActorComponent):
+    def __init__(self, mobility=ComponentMobility.MOVABLE):
+        self.mobility = mobility
+
+    def get_editor_property(self, k):
+        if k != "mobility":
+            raise Exception("no property %s" % k)
+        return self.mobility
+
+    def set_mobility(self, m):
+        self.mobility = m
+
+
 class StaticMeshComponent(ActorComponent):
     def __init__(self):
         self.mesh = None
@@ -69,6 +86,8 @@ class Actor(Object):
         self.tags, self.modified, self.destroyed = [], 0, False
         self.functions = functions or {}
         self.comp = StaticMeshComponent() if cls.get_name() == "StaticMeshActor" else None
+        self.root = SceneComponent()
+        self.game = False  # a PIE copy: a Static root ignores moves, like the engine
 
     def get_actor_label(self):
         return self._label
@@ -95,7 +114,10 @@ class Actor(Object):
         return self.scale
 
     def set_actor_location(self, v, sweep, teleport):
+        if self.game and self.root.mobility == ComponentMobility.STATIC:
+            return False
         self.loc = v
+        return True
 
     def set_actor_rotation(self, r, teleport):
         self.rot = r
@@ -112,6 +134,8 @@ class Actor(Object):
     def get_editor_property(self, k):
         if k == "tags":
             return list(self.tags)
+        if k == "root_component":
+            return self.root
         if k not in self.props:
             raise Exception("no property %s" % k)
         return self.props[k]
@@ -178,6 +202,25 @@ class AssetData:
     def __init__(self, name, package):
         self.asset_name, self.package_name = name, package
 
+    def get_editor_property(self, k):
+        return {"asset_name": self.asset_name, "package_name": self.package_name}[k]
+
+    def is_valid(self):
+        return True
+
+    def get_tag_value(self, key):
+        return "/Script/Engine.Actor" if key == "ParentClass" else None
+
+
+class _ARFilter:
+    """5.7: the fields are settable only through the constructor."""
+
+    def __init__(self, **kw):
+        self.kw = kw
+
+    def set_editor_property(self, k, v):
+        raise Exception("ARFilter: Property '%s' cannot be edited on instances" % k)
+
 
 class Fake:
     """The `unreal` module. Build one per test; mutate its state directly."""
@@ -186,6 +229,7 @@ class Fake:
         self.Vector, self.Rotator, self.Object, self.Class = Vector, Rotator, Object, Class
         self.Actor, self.Blueprint, self.WidgetBlueprint = Actor, Blueprint, WidgetBlueprint
         self.ActorComponent, self.StaticMeshComponent = ActorComponent, StaticMeshComponent
+        self.SceneComponent, self.ComponentMobility = SceneComponent, ComponentMobility
         self.ScopedEditorTransaction = _Tx
         _Tx.log = []
         self.tx = _Tx.log
@@ -225,8 +269,14 @@ class Fake:
             does_asset_exist=lambda p: p in self.assets,
             delete_asset=self._delete_asset,
             save_asset=lambda p: True,
-            load_asset=lambda p: self.assets.get(p))
-        self.AssetRegistryHelpers = _NS(get_asset_registry=lambda: _NS(get_assets=self._registry_assets))
+            load_asset=lambda p: self.assets.get(p),
+            find_asset_data=lambda p: AssetData(p.rsplit(".", 1)[-1], p.rsplit(".", 1)[0])
+            if p.rsplit(".", 1)[0] in self.assets and "." in p else None)
+        self.AssetRegistryHelpers = _NS(get_asset_registry=lambda: _NS(
+            get_assets=self._registry_assets,
+            get_asset_by_object_path=lambda p: AssetData(p.rsplit(".", 1)[-1], p.rsplit(".", 1)[0])
+            if p.rsplit(".", 1)[0] in self.assets and "." in p else None))
+        self.SoftObjectPath = str
 
     def _save(self, maps, content):
         self.saves += 1
@@ -277,7 +327,7 @@ class Fake:
         return self.classes.get(path) or self.assets.get(path)
 
     def ARFilter(self, **kw):
-        return kw
+        return _ARFilter(**kw)
 
     def TopLevelAssetPath(self, pkg, name):
         return (pkg, name)

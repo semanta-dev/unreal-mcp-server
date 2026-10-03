@@ -243,3 +243,30 @@ func TestCancelledShutdownNeverKills(t *testing.T) {
 		t.Fatalf("a cancelled shutdown must not kill or relaunch: killed=%v launched=%v (job %s %s)", sim.killed, sim.launched, snap.Status, snap.Err)
 	}
 }
+
+// Found live (P7): with the editor stuck in a modal dialog, one failed ping made the
+// full build run UBT next to the running editor, which failed on its locked DLLs.
+func TestFullBuildRefusesWhileTheProjectsEditorRunsUnanswering(t *testing.T) {
+	sim := &editorSim{dirty: [][]string{{}}}
+	withProcessStubs(t, sim)
+	old := editorPIDsForProject
+	editorPIDsForProject = func(string) []int { return []int{777} }
+	t.Cleanup(func() { editorPIDsForProject = old })
+	d := lifecycleDepsFail(t, sim, func(op string) (string, string, map[string]any) {
+		if op == "editor_ping" {
+			return "EDITOR_ERROR", "no answer", nil
+		}
+		return "", "", nil
+	})
+	res, err := callToolDeps(t, d, "build", map[string]any{"strategy": "ubt", "wait_s": 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := structuredMap(t, res)
+	if out["state"] != "failed" || !strings.Contains(fmt.Sprint(out["error"]), "not answering") {
+		t.Fatalf("the build must refuse, not run UBT: %v", out)
+	}
+	if len(sim.killed) != 0 || len(sim.launched) != 0 {
+		t.Fatalf("nothing may be killed or launched: killed=%v launched=%v", sim.killed, sim.launched)
+	}
+}

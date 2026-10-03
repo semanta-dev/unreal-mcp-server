@@ -7,7 +7,9 @@
 package bridge
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"io/fs"
 	"regexp"
 	"sort"
@@ -63,6 +65,15 @@ func mustParseVersion(src string) int {
 
 // CompanionVersion is the companion module's companionVersion (the install sentinel).
 func CompanionVersion() int { return companionVersion }
+
+// companionDigest identifies the exact embedded source (the install sentinel's second half).
+var companionDigest = func() string {
+	sum := sha256.Sum256([]byte(companionSource))
+	return hex.EncodeToString(sum[:8])
+}()
+
+// CompanionDigest is a short SHA-256 of the companion source.
+func CompanionDigest() string { return companionDigest }
 
 // CompanionSource is the full companion module Python companionSource.
 func CompanionSource() string { return companionSource }

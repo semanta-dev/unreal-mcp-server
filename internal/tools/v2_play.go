@@ -17,6 +17,7 @@ import (
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"github.com/jdziat/unreal-mcp-server/internal/crash"
+	"github.com/jdziat/unreal-mcp-server/internal/desktop"
 	"github.com/jdziat/unreal-mcp-server/internal/eval"
 	"github.com/jdziat/unreal-mcp-server/internal/scenespec"
 	"github.com/jdziat/unreal-mcp-server/internal/snapshot"
@@ -55,6 +56,7 @@ func pollTimeout(ctx context.Context, requestedS float64, def time.Duration) tim
 type pieIn struct {
 	Op        string  `json:"op" jsonschema:"start | stop | input"`
 	Simulate  bool    `json:"simulate,omitempty" jsonschema:"start: Simulate In Editor (the world runs, no player is possessed)"`
+	IgnoreBP  bool    `json:"ignore_blueprint_errors,omitempty" jsonschema:"start: play despite Blueprint compile errors"`
 	Wait      *bool   `json:"wait,omitempty" jsonschema:"start/stop: wait until PIE is actually running/stopped (default true)"`
 	Key       string  `json:"key,omitempty" jsonschema:"input: UE key name, e.g. W, SpaceBar, LeftMouseButton"`
 	Action    string  `json:"action,omitempty" jsonschema:"input: tap (default) | press | release | hold | release_all"`
@@ -64,8 +66,8 @@ type pieIn struct {
 func pieSpec() *spec.Spec {
 	ops := []spec.OpSpec{
 		{Name: "start", Summary: "start Play In Editor (or Simulate)", Tier: spec.Ephemeral, Idempotent: true, Rejects: []string{"key", "action", "duration_s"}, Reaches: []string{"pie_start", "editor_ping"}},
-		{Name: "stop", Summary: "stop PIE (game-world changes are discarded)", Tier: spec.Ephemeral, Idempotent: true, Rejects: []string{"simulate", "key", "action", "duration_s"}, Reaches: []string{"pie_stop", "editor_ping"}},
-		{Name: "input", Summary: "inject a key/button into the running game", Tier: spec.Ephemeral, Required: []string{"key"}, Rejects: []string{"simulate", "wait"}, Reaches: []string{"pie_input"}, Needs: []string{"pie", "plugin"}},
+		{Name: "stop", Summary: "stop PIE (game-world changes are discarded)", Tier: spec.Ephemeral, Idempotent: true, Rejects: []string{"simulate", "ignore_blueprint_errors", "key", "action", "duration_s"}, Reaches: []string{"pie_stop", "editor_ping"}},
+		{Name: "input", Summary: "inject a key/button into the running game", Tier: spec.Ephemeral, Required: []string{"key"}, Rejects: []string{"simulate", "ignore_blueprint_errors", "wait"}, Reaches: []string{"pie_input"}, Needs: []string{"pie", "plugin"}},
 	}
 	return &spec.Spec{
 		Name: "pie", Title: "Play In Editor", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
@@ -88,18 +90,33 @@ func pieHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	}
 	want := c.Op.Name == "start"
 	py := map[bool]string{true: "pie_start", false: "pie_stop"}[want]
-	out, err := v2Op(ctx, c, py, pick(c.Args, "simulate"))
+	out, err := v2Op(ctx, c, py, pick(c.Args, "simulate", "ignore_blueprint_errors"))
+	var ee *envelope.Error
+	if errors.As(err, &ee) && ee.Details["blueprints"] != nil {
+		ee.WithHint("fix them (the editor log names the errors), or pass ignore_blueprint_errors=true to play anyway")
+	}
 	if err != nil || (in.Wait != nil && !*in.Wait) {
 		return &spec.Result{Data: out, Summary: "PIE " + c.Op.Name + " requested"}, err
 	}
-	// PIE begins/ends on a later editor tick: poll until the state flips.
+	pid, _ := out["editor_pid"].(float64)
+	delete(out, "editor_pid")
+	// PIE begins/ends on a later editor tick: poll until the state flips. Each ping is
+	// short so a game thread blocked by a modal dialog is noticed, not waited out.
 	started := time.Now()
 	deadline := started.Add(pollTimeout(ctx, 0, 15*time.Second))
+	var guard modalGuard
 	for {
-		ping, perr := v2Op(ctx, c, "editor_ping", nil)
+		pctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		ping, perr := v2Op(pctx, c, "editor_ping", nil)
+		cancel()
 		if perr == nil && ping["pie"] == want {
 			out["pie"] = want
 			return &spec.Result{Data: out, Summary: map[bool]string{true: "PIE is running", false: "PIE stopped"}[want]}, nil
+		}
+		if perr != nil && ctx.Err() == nil {
+			if e := guard.check(int(pid)); e != nil {
+				return nil, e
+			}
 		}
 		if time.Now().After(deadline) {
 			if perr != nil {
@@ -121,6 +138,67 @@ func pieHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
+}
+
+// modalGuard recognizes an editor whose game thread is held by a modal dialog (it
+// stops answering while the dialog waits for a human). PIE's "Blueprint Compilation
+// Errors" dialog is cancelled at once (WM_CLOSE = its Cancel); any other window of
+// the editor process still there on a later check is reported, never touched.
+type modalGuard struct{ seen map[uintptr]int }
+
+// editorDialogs lists the top-level windows of the editor process other than its
+// main window (Windows only; nil elsewhere or without a pid).
+var editorDialogs = func(pid int) []desktop.Window {
+	if pid <= 0 {
+		return nil
+	}
+	all, err := desktop.ListWindows("")
+	if err != nil {
+		return nil
+	}
+	var out []desktop.Window
+	for _, w := range all {
+		if w.PID == pid && !strings.HasSuffix(w.Title, "Unreal Editor") {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+var closeWindow = desktop.CloseWindow
+
+const bpErrorsDialog = "Blueprint Compilation Errors"
+
+func (g *modalGuard) check(pid int) *envelope.Error {
+	if g.seen == nil {
+		g.seen = map[uintptr]int{}
+	}
+	var stuck []desktop.Window
+	for _, w := range editorDialogs(pid) {
+		if w.Title == bpErrorsDialog {
+			e := envelope.New(envelope.Precondition, "PIE stopped at the editor's %q dialog, which was cancelled", bpErrorsDialog).
+				WithHint("fix the Blueprints (logs op=tail names them), or pass ignore_blueprint_errors=true (needs the UnrealMCP plugin)").
+				WithDetail("modal", w.Title)
+			if err := closeWindow(w.HWND); err != nil {
+				e.Message = fmt.Sprintf("PIE is stopped at the editor's %q dialog (closing it failed: %v)", bpErrorsDialog, err)
+			}
+			return e
+		}
+		// A progress window comes and goes; a dialog waiting for a human stays.
+		if g.seen[w.HWND]++; g.seen[w.HWND] >= 3 {
+			stuck = append(stuck, w)
+		}
+	}
+	if len(stuck) == 0 {
+		return nil
+	}
+	titles := make([]string, len(stuck))
+	for i, w := range stuck {
+		titles[i] = w.Title
+	}
+	return envelope.New(envelope.Precondition, "the editor is blocked by a dialog: %s", strings.Join(titles, ", ")).
+		WithHint("look at it with desktop_capture op=window hwnd=<hwnd>, then answer it with desktop_input").
+		WithDetail("windows", stuck)
 }
 
 func orStr(s, def string) string {

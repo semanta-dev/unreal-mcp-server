@@ -19,8 +19,9 @@ import (
 type fakeEditorRunner struct {
 	mu           sync.Mutex
 	gen          uint64
-	moduleVer    int  // editor-side _MCP2_BRIDGE_VERSION (0 = absent)
-	moduleLoaded bool // whether _mcp2_dispatch is defined
+	moduleVer    int    // editor-side _MCP2_BRIDGE_VERSION (0 = absent)
+	moduleLoaded bool   // whether _mcp2_dispatch is defined
+	moduleDigest string // editor-side _MCP2_BRIDGE_DIGEST
 	dispatch     func(op string, args map[string]any) (ok bool, result any, errMsg string)
 
 	versionChecks int
@@ -55,6 +56,9 @@ func (f *fakeEditorRunner) RunCommand(_ context.Context, code string, mode uexec
 	// Version sentinel check.
 	if mode == uexec.ModeEval && strings.Contains(code, "_MCP2_BRIDGE_VERSION") {
 		f.versionChecks++
+		if f.moduleVer != 0 && !strings.Contains(code, strconv.Quote(f.moduleDigest)) {
+			return okResult("-1"), nil // resident, but other source
+		}
 		return okResult(strconv.Itoa(f.moduleVer)), nil
 	}
 	// Module install: the base64 bootstrap that decodes + execs the source.
@@ -62,6 +66,7 @@ func (f *fakeEditorRunner) RunCommand(_ context.Context, code string, mode uexec
 		f.installs++
 		f.moduleLoaded = true
 		f.moduleVer = CompanionVersion()
+		f.moduleDigest = CompanionDigest()
 		return uexec.CommandResult{Success: true}, nil
 	}
 	// A dispatch call.
@@ -304,6 +309,23 @@ func TestExtractMarkerMidLineAndMissing(t *testing.T) {
 	if _, ok := extractMarker(uexec.CommandResult{Success: true,
 		Output: []uexec.OutputEntry{{Type: "Info", Output: "no marker here"}}}); ok {
 		t.Fatal("expected no marker")
+	}
+}
+
+// An editor outlives server processes: a resident companion with the same version
+// number but different source (a rebuilt server) must be reinstalled.
+func TestInstallReplacesSameVersionDifferentSource(t *testing.T) {
+	f := newFakeEditor()
+	f.moduleLoaded, f.moduleVer, f.moduleDigest = true, CompanionVersion(), "0123456789abcdef"
+	b := New(f, Options{})
+	if _, err := b.Call(context.Background(), "editor_status", map[string]any{}); err != nil {
+		t.Fatal(err)
+	}
+	if f.installs != 1 || f.moduleDigest != CompanionDigest() {
+		t.Fatalf("installs=%d digest=%q, want a reinstall to %q", f.installs, f.moduleDigest, CompanionDigest())
+	}
+	if _, err := b.Call(context.Background(), "editor_status", map[string]any{}); err != nil || f.installs != 1 {
+		t.Fatalf("second call reinstalled: installs=%d err=%v", f.installs, err)
 	}
 }
 

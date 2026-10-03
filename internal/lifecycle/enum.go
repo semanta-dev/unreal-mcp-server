@@ -1,5 +1,7 @@
 package lifecycle
 
+import "strings"
+
 // TokenProc is a running process bearing a launch-flag token (e.g. an editor started
 // with -MCPInstanceToken=<token>), as found by EnumerateTokenProcesses.
 type TokenProc struct {
@@ -32,4 +34,11 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+// namesProject reports whether an editor command line opens uproject (paths compared
+// case-insensitively with slashes normalized). Pure + testable.
+func namesProject(cmdline, uproject string) bool {
+	norm := func(s string) string { return strings.ToLower(strings.ReplaceAll(s, `\`, "/")) }
+	return uproject != "" && strings.Contains(norm(cmdline), norm(uproject))
 }

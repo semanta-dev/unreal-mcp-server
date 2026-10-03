@@ -142,7 +142,7 @@ def _op_asset_thumbnail(args):
     out_dir = _saved_mcp_dir("AssetThumbs")
     dirty_before = _dirty_map_names()
     fname = path.strip("/").replace("/", "_") + ".png"
-    out_path = os.path.join(out_dir, fname)
+    out_path = os.path.join(out_dir, fname).replace("\\", "/")
 
     world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
     actsys = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
@@ -164,12 +164,12 @@ def _op_asset_thumbnail(args):
             key_rot = unreal.Rotator(look.pitch - 25.0, look.yaw, 0.0)
             sun = actsys.spawn_actor_from_class(
                 unreal.DirectionalLight, unreal.Vector(0, 0, org.z + ext.z + 500.0), key_rot)
-            sun.directional_light_component.set_intensity(12.0)
+            sun.light_component.set_intensity(12.0)
             temp_lights.append(sun)
             fill = actsys.spawn_actor_from_class(
                 unreal.DirectionalLight, unreal.Vector(0, 0, org.z + ext.z + 500.0),
                 unreal.Rotator(-20.0, look.yaw + 150.0, 0.0))
-            fill.directional_light_component.set_intensity(4.0)
+            fill.light_component.set_intensity(4.0)
             temp_lights.append(fill)
         except Exception as le:
             facts["light_warn"] = str(le)
@@ -179,6 +179,13 @@ def _op_asset_thumbnail(args):
         comp.texture_target = rt
         comp.capture_source = unreal.SceneCaptureSource.SCS_FINAL_COLOR_LDR
         comp.fov_angle = 40.0
+        # Only the mesh is drawn (the level's floor/walls would occlude or clutter it);
+        # the temporary lights above still light it.
+        try:
+            comp.set_editor_property("primitive_render_mode", unreal.SceneCapturePrimitiveRenderMode.PRM_USE_SHOW_ONLY_LIST)
+            comp.set_editor_property("show_only_actors", [mesh_actor])
+        except Exception as se:
+            facts["isolate_warn"] = str(se)
         comp.capture_scene()
         comp.capture_scene()
         opts = unreal.ImageWriteOptions()
@@ -281,9 +288,13 @@ def _op_widget_render(args):
     # Render a UserWidget CLASS offscreen to a PNG via MCPAuthoringSubsystem::CaptureWidget
     # (FWidgetRenderer) — the visual-iteration loop the Python WidgetTree path can't do in
     # UE 5.7 (WidgetTree is protected). No PIE needed.
-    auth = unreal.get_editor_subsystem(unreal.MCPAuthoringSubsystem)
+    auth_cls = getattr(unreal, "MCPAuthoringSubsystem", None)
+    auth = unreal.get_editor_subsystem(auth_cls) if auth_cls else None
     if not auth:
-        return {"error": "MCPAuthoring editor subsystem unavailable (module not compiled/loaded)"}
+        return {"error": "MCPAuthoring editor subsystem unavailable (module not compiled/loaded)", "code": "PLUGIN_MISSING"}
+    if not hasattr(auth, "capture_widget"):
+        return {"error": "the project's UnrealMCP plugin predates CaptureWidget: copy plugin/UnrealMCP into "
+                         "<project>/Plugins and rebuild (build strategy=ubt)", "code": "PLUGIN_MISSING"}
     out = auth.capture_widget(args["widget_class"], int(args.get("width", 1280)), int(args.get("height", 720)), args["out_path"])
     return {"ok": bool(out), "path": out}
 

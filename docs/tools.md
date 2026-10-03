@@ -430,6 +430,7 @@ Play In Editor.
 |---|---|---|
 | `action` | string | input: tap (default) \| press \| release \| hold \| release_all — one of: tap, press, release, hold, release_all |
 | `duration_s` | number | input action=hold: seconds (default 1) |
+| `ignore_blueprint_errors` | boolean | start: play despite Blueprint compile errors |
 | `key` | string | input: UE key name, e.g. W, SpaceBar, LeftMouseButton |
 | `op` | string | one of: start, stop, input |
 | `simulate` | boolean | start: Simulate In Editor (the world runs, no player is possessed) |

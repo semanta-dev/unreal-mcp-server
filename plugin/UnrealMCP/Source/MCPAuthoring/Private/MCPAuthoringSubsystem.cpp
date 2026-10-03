@@ -7,6 +7,9 @@
 #include "Components/PanelWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "Kismet2/BlueprintEditorUtils.h"
+#include "Engine/Blueprint.h"
+#include "UObject/UObjectIterator.h"
 #include "Kismet2/CompilerResultsLog.h"
 #include "UObject/UnrealType.h"
 #include "Serialization/JsonSerializer.h"
@@ -193,4 +196,42 @@ FString UMCPAuthoringSubsystem::CaptureWidget(const FString& WidgetClassPath, in
 	}
 	BeginCleanup(Renderer);
 	return bOk ? OutPath : FString();
+}
+
+TArray<FString> UMCPAuthoringSubsystem::PrepareBlueprintsForPIE(bool bAcknowledgeErrors)
+{
+	// What PIE would compile first (dirty, not data-only, status known). Compiling them
+	// here also avoids the "compile before playing?" prompt when auto-recompile is off.
+	TArray<UBlueprint*> ToCompile;
+	for (TObjectIterator<UBlueprint> It; It; ++It)
+	{
+		UBlueprint* Blueprint = *It;
+		if (IsValid(Blueprint) && !Blueprint->IsUpToDate() && Blueprint->IsPossiblyDirty()
+			&& Blueprint->Status != BS_Unknown && !FBlueprintEditorUtils::IsDataOnlyBlueprint(Blueprint))
+		{
+			ToCompile.Add(Blueprint);
+		}
+	}
+	for (UBlueprint* Blueprint : ToCompile)
+	{
+		if (IsValid(Blueprint))
+		{
+			FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipGarbageCollection);
+		}
+	}
+	// What PIE's dialog would then list.
+	TArray<FString> Errored;
+	for (TObjectIterator<UBlueprint> It; It; ++It)
+	{
+		UBlueprint* Blueprint = *It;
+		if (IsValid(Blueprint) && Blueprint->Status == BS_Error && Blueprint->bDisplayCompilePIEWarning)
+		{
+			Errored.Add(Blueprint->GetPathName());
+			if (bAcknowledgeErrors)
+			{
+				Blueprint->bDisplayCompilePIEWarning = false;
+			}
+		}
+	}
+	return Errored;
 }

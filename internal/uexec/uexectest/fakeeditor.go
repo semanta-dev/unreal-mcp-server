@@ -80,6 +80,11 @@ type Options struct {
 	// closes every existing command channel (a different client steals the slot; the
 	// same client reconnecting replaces its own).
 	SingleSlot bool
+	// StickyConnection models UE 5.7's FPythonScriptRemoteExecution::OpenCommandConnection:
+	// an open_connection from the node+endpoint the editor believes it is already
+	// connected to is ignored until that node sends close_connection — even when the
+	// client has dropped the TCP side (e.g. after a timeout).
+	StickyConnection bool
 }
 
 // Editor is a running fake editor. Close it when done.
@@ -95,6 +100,7 @@ type Editor struct {
 	mu       sync.Mutex
 	conns    map[net.Conn]bool // live command channels (SingleSlot)
 	accepted int               // command channels ever connected back
+	believed map[string]string // StickyConnection: node id -> endpoint the editor thinks is connected
 }
 
 // Connections reports how many command channels the editor has accepted so far
@@ -189,11 +195,25 @@ func (e *Editor) serveUDP() {
 					CommandPort int    `json:"command_port"`
 				}
 				_ = json.Unmarshal(m.Data, &d)
-				e.wg.Add(1)
-				go e.handleCommandChannel(m.Source, d.CommandIP, d.CommandPort)
+				ep := fmt.Sprintf("%s:%d", d.CommandIP, d.CommandPort)
+				e.mu.Lock()
+				sticky := e.opts.StickyConnection && e.believed[m.Source] == ep
+				if e.opts.StickyConnection {
+					if e.believed == nil {
+						e.believed = map[string]string{}
+					}
+					e.believed[m.Source] = ep
+				}
+				e.mu.Unlock()
+				if !sticky {
+					e.wg.Add(1)
+					go e.handleCommandChannel(m.Source, d.CommandIP, d.CommandPort)
+				}
 			}
 		case "close_connection":
-			// nothing to do for the fake
+			e.mu.Lock()
+			delete(e.believed, m.Source)
+			e.mu.Unlock()
 		}
 	}
 }

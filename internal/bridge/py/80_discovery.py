@@ -4,11 +4,11 @@ def _op_asset_query(args):
     """Query the AssetRegistry with an ARFilter (5.7 class_paths, not deprecated
     class_names). Find assets by class and/or content path without loading them."""
     ar = unreal.AssetRegistryHelpers.get_asset_registry()
-    flt = unreal.ARFilter()
+    # ARFilter's fields are read-only on instances in 5.7: build it in one constructor call.
+    kw = {"recursive_paths": bool(args.get("recursive", True))}
     pkgs = args.get("package_paths") or []
     if pkgs:
-        flt.set_editor_property("package_paths", [unreal.Name(p) for p in pkgs])
-    flt.set_editor_property("recursive_paths", bool(args.get("recursive", True)))
+        kw["package_paths"] = [unreal.Name(p) for p in pkgs]
     tlaps = []
     for cp in (args.get("class_paths") or []):
         if isinstance(cp, str) and cp.startswith("/") and "." in cp:
@@ -18,8 +18,9 @@ def _op_asset_query(args):
             except Exception:
                 pass
     if tlaps:
-        flt.set_editor_property("class_paths", tlaps)
-        flt.set_editor_property("recursive_classes", bool(args.get("recursive_classes", True)))
+        kw["class_paths"] = tlaps
+        kw["recursive_classes"] = bool(args.get("recursive_classes", True))
+    flt = unreal.ARFilter(**kw)
     # blueprints=True => find Blueprint assets whose PARENT is in class_paths
     # (get_assets matches an asset's OWN class, and a BP's class is always
     # /Script/Engine.Blueprint, so it can never find "BPs deriving ATurret").
@@ -43,10 +44,8 @@ def _op_asset_query(args):
             item["class"] = str(a.get_editor_property("asset_class_path").get_editor_property("asset_name"))
         except Exception:
             pass
-        try:
-            item["path"] = str(a.to_soft_object_path())
-        except Exception:
-            pass
+        if "package" in item and "name" in item:
+            item["path"] = "%s.%s" % (item["package"], item["name"])
         out.append(item)
     return {"total": len(assets), "assets": out}
 
@@ -78,10 +77,16 @@ def _op_asset_tags(args):
     NativeParentClass / GeneratedClass) WITHOUT loading the asset."""
     ar = unreal.AssetRegistryHelpers.get_asset_registry()
     path = args["asset"]
+    if "." not in path.rsplit("/", 1)[-1]:  # a package path: /Game/X/BP_Y -> /Game/X/BP_Y.BP_Y
+        path = path + "." + path.rsplit("/", 1)[-1]
+    data = None
     try:
-        data = ar.get_asset_by_object_path(unreal.SoftObjectPath(path))
+        data = unreal.EditorAssetLibrary.find_asset_data(path)
     except Exception:
-        data = None
+        try:
+            data = ar.get_asset_by_object_path(unreal.SoftObjectPath(path))
+        except Exception:
+            data = None
     if not data or not data.is_valid():
         return {"error": "asset not found: " + str(path), "code": "ASSET_NOT_FOUND"}
     tags = {}

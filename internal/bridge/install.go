@@ -60,9 +60,13 @@ func (b *Bridge) markUninstalled() {
 	b.mu.Unlock()
 }
 
-// installedVersion reads the editor-side _MCP_BRIDGE_VERSION sentinel (0 if absent).
+// installedVersion reads the editor-side _MCP2_BRIDGE_VERSION sentinel (0 if absent).
+// A resident module whose source digest differs from this build's reads as -1, so a
+// rebuilt server reinstalls changed companion code even when the version number was
+// not bumped (an editor outlives server processes).
 func (b *Bridge) installedVersion(ctx context.Context) (int, error) {
-	s, err := b.Eval(ctx, "globals().get('_MCP2_BRIDGE_VERSION', 0)")
+	s, err := b.Eval(ctx, fmt.Sprintf(
+		"globals().get('_MCP2_BRIDGE_VERSION', 0) if globals().get('_MCP2_BRIDGE_DIGEST') == %q else -1", CompanionDigest()))
 	if err != nil {
 		return 0, fmt.Errorf("%w: version check: %w", ErrInstall, err)
 	}
@@ -109,7 +113,8 @@ func (b *Bridge) installHotload(ctx context.Context) error {
 		"exec(compile(base64.b64decode(%q).decode(\"utf-8\"), \"mcp2_bridge\", \"exec\"), _mcp2.__dict__)\n"+
 		"_mcp2_dispatch = _mcp2._mcp2_dispatch\n"+
 		"_mcp2_dispatch_native = _mcp2._mcp2_dispatch_native\n"+
-		"_MCP2_BRIDGE_VERSION = _mcp2._MCP2_BRIDGE_VERSION", b64)
+		"_MCP2_BRIDGE_VERSION = _mcp2._MCP2_BRIDGE_VERSION\n"+
+		"_MCP2_BRIDGE_DIGEST = %q", b64, CompanionDigest())
 	res, err := b.run.RunCommand(ctx, boot, uexec.ModeExecFile)
 	if err != nil {
 		return fmt.Errorf("%w: hotload: %w", ErrInstall, err)
@@ -149,7 +154,8 @@ importlib.reload(_mcpb)
 globals()['_mcp2'] = _mcpb
 globals()['_mcp2_dispatch'] = _mcpb._mcp2_dispatch
 globals()['_mcp2_dispatch_native'] = _mcpb._mcp2_dispatch_native
-globals()['_MCP2_BRIDGE_VERSION'] = _mcpb._MCP2_BRIDGE_VERSION`, pyDir, pyDir)
+globals()['_MCP2_BRIDGE_VERSION'] = _mcpb._MCP2_BRIDGE_VERSION
+globals()['_MCP2_BRIDGE_DIGEST'] = %q`, pyDir, pyDir, CompanionDigest())
 	res, err := b.run.RunCommand(ctx, boot, uexec.ModeExecFile)
 	if err != nil {
 		return fmt.Errorf("%w: ondisk import: %w", ErrInstall, err)

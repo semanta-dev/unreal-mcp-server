@@ -111,6 +111,10 @@ func ListWindows(filter string) ([]Window, error) {
 	return out, nil
 }
 
+// CloseWindow asks a window to close (WM_CLOSE), like clicking its title-bar X; a
+// dialog treats that as Cancel.
+func CloseWindow(hwnd uintptr) error { return closeHWND(hwnd) }
+
 // FindWindow resolves a Selector to a single best-match window.
 func FindWindow(sel Selector) (Window, error) {
 	ensureDPIAware()

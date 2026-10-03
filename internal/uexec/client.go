@@ -118,6 +118,14 @@ func (s *Session) openCommandLocked(ctx context.Context, nodeID string) error {
 		s.cmd.close()
 		s.cmd = nil
 	}
+	if s.nodeID == nodeID {
+		// Reconnecting to the same editor: release our previous channel first. UE
+		// ignores open_connection while it still holds one from this node+endpoint
+		// (OpenCommandConnection is a no-op when IsConnectedTo), and it does not
+		// notice a channel we abandoned after a timeout — found live (P7): after a
+		// modal dialog, every later call timed out until the server restarted.
+		s.bc.broadcastCloseConnection(nodeID)
+	}
 	cmd := &commandConn{cfg: s.cfg, self: s.self, remote: nodeID, bc: s.bc, logger: s.logger, now: s.now}
 	if err := cmd.open(ctx); err != nil {
 		return err

@@ -10,5 +10,8 @@ func EnumerateTokenProcesses(exeSubstr, flag string) []TokenProc { return nil }
 // ProcessToken is Windows-only; the stub returns "".
 func ProcessToken(pid int, flag string) string { return "" }
 
+// EditorPIDsForProject is Windows-only; the stub returns nil.
+func EditorPIDsForProject(uproject string) []int { return nil }
+
 // ProcessCommandLine is Windows-only; the stub returns "".
 func ProcessCommandLine(pid int) string { return "" }

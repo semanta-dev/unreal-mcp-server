@@ -221,7 +221,8 @@ def _game_scene_start(args, session, width, height):
     out_dir = _capture_session_dir(session)
     cam = args.get("camera") or {}
     mode = cam.get("mode", "player")
-    cam_cls = getattr(unreal, "EMCPCaptureCamera", None)
+    # UE Python drops an enum's E prefix: EMCPCaptureCamera is unreal.MCPCaptureCamera.
+    cam_cls = getattr(unreal, "MCPCaptureCamera", None) or getattr(unreal, "EMCPCaptureCamera", None)
     if cam_cls is None:
         return {"error": "game_scene capture needs the UnrealMCP plugin's EMCPCaptureCamera enum "
                          "(recompile the plugin into the project)", "code": "PLUGIN_MISSING"}
@@ -286,9 +287,10 @@ def _op_capture_start(args):
         return {"error": "no world to capture (open a level / start play)"}
     warning = None
     if source == "pie_highres":
-        # HighResShot writes to Saved/Screenshots — record frames there under a
-        # session-prefixed name so Go resolves dir+file to the real path.
-        rec_dir = unreal.SystemLibrary.get_project_directory() + "Saved/Screenshots/"
+        # HighResShot writes to the platform screenshot dir (Saved/Screenshots/WindowsEditor
+        # in the editor) — record frames there under a session-prefixed name so Go
+        # resolves dir+file to the real path.
+        rec_dir = _screenshot_dir()
         file_prefix = "mcp_" + session + "_"
         min_interval = 0.2  # HighResShot is slow; a tight interval drops frames
         cap, rt = (None, None)

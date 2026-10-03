@@ -20,6 +20,8 @@ func windowRect(uintptr) (Rect, bool) { return Rect{}, false }
 
 func focusHWND(uintptr) error { return ErrUnsupported }
 
+func closeHWND(uintptr) error { return ErrUnsupported }
+
 func virtualScreenRect() (Rect, error) { return Rect{}, ErrUnsupported }
 
 func monitorRects() ([]Rect, error) { return nil, ErrUnsupported }

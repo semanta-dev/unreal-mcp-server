@@ -1,11 +1,29 @@
 package tools
 
 import (
+	"context"
 	"strings"
+
+	"github.com/jdziat/unreal-mcp-server/internal/build"
 )
 
 // Never stage these generated/machine-local trees in a checkpoint.
 var gitExcludes = []string{":(exclude)Saved", ":(exclude)Intermediate", ":(exclude)DerivedDataCache"}
+
+// stageExcludes is gitExcludes minus the trees .gitignore already ignores: `git add`
+// fails (exit 1, after staging the rest) when a pathspec names an ignored path, even
+// an exclude — and a typical UE project ignores all three.
+func stageExcludes(ctx context.Context, dir string) []string {
+	var out []string
+	for _, ex := range gitExcludes {
+		name := strings.TrimPrefix(ex, ":(exclude)")
+		if _, err := build.Run(ctx, dir, "check-ignore", "-q", "--no-index", name+"/"); err == nil {
+			continue // ignored: git skips it anyway
+		}
+		out = append(out, ex)
+	}
+	return out
+}
 
 type gitStatusOut struct {
 	Branch    string   `json:"branch"`

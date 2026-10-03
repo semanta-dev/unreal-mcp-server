@@ -410,7 +410,7 @@ func gitHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	if len(in.Paths) > 0 {
 		add = append(add, in.Paths...)
 	} else {
-		add = append(append(add, "."), gitExcludes...)
+		add = append(append(add, "."), stageExcludes(ctx, dir)...)
 	}
 	if _, err := build.Run(ctx, dir, add...); err != nil {
 		return nil, gitFail("add", err)

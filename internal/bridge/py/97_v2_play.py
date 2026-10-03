@@ -22,7 +22,7 @@ def _full_path(p):
 
 
 def _saved_mcp_dir(*parts):
-    d = os.path.join(_full_path(unreal.Paths.project_saved_dir()), "MCP", *parts)
+    d = os.path.join(_full_path(unreal.Paths.project_saved_dir()), "MCP", *parts).replace("\\", "/")
     os.makedirs(d, exist_ok=True)
     return d
 
@@ -46,18 +46,40 @@ def _pie_running():
     return _game_world() is not None
 
 
+def _pie_blueprint_preflight(acknowledge):
+    """PIE pops a modal "Blueprint Compilation Errors" dialog (blocking the game thread
+    and every remote command) when a Blueprint fails to compile. With the plugin, find
+    those Blueprints first: refuse, or acknowledge them as the dialog's "Play in Editor"
+    button would. None when the plugin cannot tell (the server's modal guard remains)."""
+    cls = getattr(unreal, "MCPAuthoringSubsystem", None)
+    auth = unreal.get_editor_subsystem(cls) if cls else None
+    if not auth or not hasattr(auth, "prepare_blueprints_for_pie"):
+        return None
+    return [str(p) for p in auth.prepare_blueprints_for_pie(bool(acknowledge))]
+
+
 def _op_pie_start(args):
     if _pie_running():
         return {"pie": True, "already_running": True}
+    ignore = bool(args.get("ignore_blueprint_errors"))
+    errored = _pie_blueprint_preflight(ignore)
+    if errored and not ignore:
+        raise _V2Error("PRECONDITION", "%d Blueprint(s) have compile errors; PIE would stop at a modal dialog"
+                       % len(errored), blueprints=errored)
     _op_start_play(args)
-    return {"pie": "starting", "simulate": bool(args.get("simulate"))}
+    out = {"pie": "starting", "simulate": bool(args.get("simulate")), "editor_pid": os.getpid()}
+    if errored:
+        out["blueprint_errors_ignored"] = errored
+    if errored is None:
+        out["blueprint_preflight"] = "unavailable (UnrealMCP plugin missing or older)"
+    return out
 
 
 def _op_pie_stop(args):
     if not _pie_running():
         return {"pie": False, "already_stopped": True}
     _op_stop_play(args)
-    return {"pie": "stopping"}
+    return {"pie": "stopping", "editor_pid": os.getpid()}
 
 
 def _op_pie_observe_v2(args):
@@ -244,13 +266,34 @@ def _op_take_screenshot_v2(args):
     return out
 
 
+def _screenshot_dir():
+    """Where HighResShot writes a relative filename: FPaths::ScreenShotDir()
+    (Saved/Screenshots/WindowsEditor/ in the editor), absolute, with a trailing /."""
+    try:
+        d = _full_path(unreal.Paths.screen_shot_dir())
+    except Exception:
+        d = os.path.join(_full_path(unreal.Paths.project_saved_dir()), "Screenshots")
+    d = d.replace("\\", "/").rstrip("/") + "/"
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
 def _op_pie_screenshot_v2(args):
     fname = args.get("filename") or ""
-    if os.path.basename(fname) != fname or not fname.endswith(".png") or ".." in fname:
+    if fname and (os.path.basename(fname) != fname or not fname.endswith(".png") or ".." in fname):
         raise _V2Error("BAD_VALUE", "filename must be a bare .png name")
     if not _pie_running():
         raise _V2Error("NOT_IN_PIE", "PIE is not running")
-    return _op_pie_screenshot(args)
+    # A fresh name per shot: the server waits for this file to appear, and a reused
+    # name would hand back the previous shot.
+    fname = fname or "mcp_pie_%d.png" % int(time.time() * 1000)
+    out_dir = _screenshot_dir()
+    try:
+        os.remove(out_dir + fname)
+    except OSError:
+        pass
+    unreal.AutomationLibrary.take_high_res_screenshot(int(args.get("width", 1920)), int(args.get("height", 1080)), fname)
+    return {"file": out_dir + fname, "async": True}
 
 
 def _op_capture_start_v2(args):

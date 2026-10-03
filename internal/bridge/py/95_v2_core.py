@@ -134,7 +134,7 @@ def _resolve_class_v2(ref):
     try:
         ar = unreal.AssetRegistryHelpers.get_asset_registry()
         flt = unreal.ARFilter(class_paths=[unreal.TopLevelAssetPath("/Script/Engine", "Blueprint")],
-                              package_paths=["/Game"], recursive_paths=True)
+                              package_paths=["/Game"], recursive_paths=True, recursive_classes=True)
         for ad in ar.get_assets(flt):
             if str(ad.asset_name) == base:
                 path = str(ad.package_name) + "." + base
@@ -311,6 +311,14 @@ def _op_actor_transform(args):
     loc, rot, scale = args.get("location"), args.get("rotation"), args.get("scale")
     if loc is None and rot is None and scale is None:
         raise _V2Error("BAD_VALUE", "transform needs location, rotation and/or scale")
+    root = actor.get_editor_property("root_component")
+    mobility = None
+    if (name == "pie" and root is not None and (loc is not None or rot is not None)
+            and root.get_editor_property("mobility") == unreal.ComponentMobility.STATIC):
+        # A Static root ignores moves in a game world: the PIE copy is made Movable
+        # (discarded on stop) instead of reporting a move that did not happen.
+        root.set_mobility(unreal.ComponentMobility.MOVABLE)
+        mobility = "static->movable (pie copy only)"
     with _undoable(name, "transform " + actor.get_actor_label(), actor):
         if loc is not None:
             actor.set_actor_location(unreal.Vector(*_vec(loc, None)), False, False)
@@ -319,7 +327,16 @@ def _op_actor_transform(args):
             actor.set_actor_rotation(unreal.Rotator(r[2], r[0], r[1]), False)
         if scale is not None:
             actor.set_actor_scale3d(unreal.Vector(*_vec(scale, None)))
-    return {"world": name, "actor": _actor_view(actor, name, True)}
+    if loc is not None:
+        got = actor.get_actor_location()
+        want = _vec(loc, None)
+        if max(abs(got.x - want[0]), abs(got.y - want[1]), abs(got.z - want[2])) > 0.5:
+            raise _V2Error("EDITOR_ERROR", "the actor did not move (now at [%g, %g, %g]); it may be attached or constrained"
+                           % (got.x, got.y, got.z))
+    out = {"world": name, "actor": _actor_view(actor, name, True)}
+    if mobility:
+        out["mobility"] = mobility
+    return out
 
 
 def _op_actor_set_properties(args):

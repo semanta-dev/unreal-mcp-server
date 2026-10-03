@@ -111,6 +111,22 @@ def test_pie_resolves_editor_path(v2, ue):
     assert ok(v2, "actor_transform", {"world": "pie", "actor": editor_path, "location": [1, 1, 1]})["actor"]["label"] == "A"
 
 
+def test_pie_transform_of_a_static_actor_moves_its_pie_copy(v2, ue):
+    ue.pie_actors = []
+    a = ue.add_actor("/Script/Engine.Actor", "Wall", world="pie")
+    a.game, a.root.mobility = True, ue.ComponentMobility.STATIC
+    res = ok(v2, "actor_transform", {"world": "pie", "actor": "Wall", "location": [0, 0, 1500]})
+    assert a.loc.z == 1500 and res["mobility"].startswith("static->movable")
+    assert a.root.mobility == ue.ComponentMobility.MOVABLE
+
+
+def test_transform_that_does_not_land_is_an_error(v2, ue):
+    a = ue.add_actor("/Script/Engine.Actor", "Stuck")
+    a.set_actor_location = lambda v, sweep, teleport: False  # e.g. attached/constrained
+    res = err(v2, "actor_transform", {"world": "editor", "actor": "Stuck", "location": [9, 9, 9]})
+    assert res["code"] == "EDITOR_ERROR" and "did not move" in res["error"]
+
+
 def test_set_properties_all_failing_is_an_error(v2, ue):
     a = ue.add_actor("/Script/Engine.Actor", "A")
     a.readonly = {"Locked"}
@@ -233,3 +249,37 @@ def test_select_resolves_refs_strictly(v2, ue):
 def test_viewport_set_has_no_console_passthrough(v2, ue):
     res = ok(v2, "viewport_set", {"location": [1, 2, 3], "rotation": [-10, 90, 0], "console": ["quit"]})
     assert res["camera"]["location"] == [1.0, 2.0, 3.0] and res["camera"]["rotation"] == [-10.0, 90.0, 0.0]
+
+
+# --- asset_query (registry) -----------------------------------------------------
+
+def test_asset_search_builds_the_filter_in_its_constructor(v2, ue):
+    ue.assets["/Game/BP/BP_A"] = ue.Blueprint(ue.classes["/Script/Engine.Actor"])
+    res = ok(v2, "asset_query", {"package_paths": ["/Game"], "class_paths": ["/Script/Engine.Blueprint"]})
+    assert res["total"] == 1 and res["assets"][0]["name"] == "BP_A"
+
+
+def test_asset_tags_accepts_a_package_path(v2, ue):
+    ue.assets["/Game/BP/BP_A"] = ue.Blueprint(ue.classes["/Script/Engine.Actor"])
+    assert ok(v2, "asset_tags", {"asset": "/Game/BP/BP_A"})["tags"]["ParentClass"] == "/Script/Engine.Actor"
+
+
+# --- widget_query op=render ------------------------------------------------------
+
+def test_widget_render_resolves_a_blueprint_asset_path_to_its_class(v2, ue):
+    from fakeunreal import _Subsystem
+    ue.UserWidget = ue.add_class("UserWidget", "/Script/UMG.UserWidget")
+    gen = ue.add_class("WBP_Banner_C", "/Game/UI/WBP_Banner.WBP_Banner_C", ue.UserWidget)
+    ue.assets["/Game/UI/WBP_Banner"] = ue.Blueprint(gen)
+    seen = []
+
+    class Auth:
+        def capture_widget(self, path, w, h, out):
+            seen.append(path)
+            return out
+
+    ue.MCPAuthoringSubsystem = Auth
+    ue.get_editor_subsystem = lambda which: Auth() if which is Auth else _Subsystem(ue)
+    res = ok(v2, "widget_render", {"widget_class": "/Game/UI/WBP_Banner", "width": 64, "height": 32})
+    assert seen == ["/Game/UI/WBP_Banner.WBP_Banner_C"] and res["ok"]
+    assert err(v2, "widget_render", {"widget_class": "/Script/Engine.Actor"})["code"] == "BAD_VALUE"

@@ -16,3 +16,13 @@ func TestExtractToken(t *testing.T) {
 		}
 	}
 }
+
+func TestNamesProject(t *testing.T) {
+	cmd := `"D:\Unreal\Engine\Binaries\Win64\UnrealEditor.exe" "C:\Games\Aesir\Aesir.uproject" -AutoDeclinePackageRecovery`
+	if !namesProject(cmd, "c:/games/aesir/Aesir.uproject") {
+		t.Fatal("same project with other slashes/case should match")
+	}
+	if namesProject(cmd, "C:/Games/Other/Other.uproject") || namesProject(cmd, "") {
+		t.Fatal("another project (or none) must not match")
+	}
+}

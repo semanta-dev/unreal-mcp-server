@@ -153,6 +153,12 @@ def _op_widget_render_v2(args):
     out_dir = _saved_mcp_dir("WidgetRenders")
     stem = re.sub(r"[^A-Za-z0-9_]+", "_", wc.strip("/")) or "widget"
     stem += "_%d" % int(time.time() * 1000)  # render -> edit -> render keeps the "before" image
+    # CaptureWidget LoadClass()es a class path: accept a WidgetBlueprint asset path, a
+    # short name or a _C path alike.
+    cls = _resolve_class_v2(wc)
+    if not unreal.MathLibrary.class_is_child_of(cls, unreal.UserWidget):
+        raise _V2Error("BAD_VALUE", "%s is not a UserWidget class" % cls.get_path_name())
+    wc = cls.get_path_name()
     out = _op_widget_render({"widget_class": wc, "out_path": os.path.join(out_dir, stem + ".png"),
                              "width": int(args.get("width", 1280)), "height": int(args.get("height", 720))})
     if "error" in out:

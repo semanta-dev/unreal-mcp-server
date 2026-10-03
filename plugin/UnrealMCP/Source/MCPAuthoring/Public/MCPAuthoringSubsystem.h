@@ -49,4 +49,13 @@ public:
 	 *  reach (FWidgetRenderer is C++). Returns OutPath on success, empty on failure. */
 	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
 	FString CaptureWidget(const FString& WidgetClassPath, int32 Width, int32 Height, const FString& OutPath);
+
+	/** Pre-flight for an unattended Play In Editor. Compiles the Blueprints PIE would
+	 *  compile and returns the paths of those PIE would list in its modal "Blueprint
+	 *  Compilation Errors" dialog (which blocks the game thread — and every remote
+	 *  command — until a human answers). With bAcknowledgeErrors, marks them as the
+	 *  dialog's "Play in Editor" button does, so PIE starts without asking. Mirrors
+	 *  FInternalPlayLevelUtils::ResolveDirtyBlueprints (PlayLevel.cpp, UE 5.7). */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
+	TArray<FString> PrepareBlueprintsForPIE(bool bAcknowledgeErrors);
 };

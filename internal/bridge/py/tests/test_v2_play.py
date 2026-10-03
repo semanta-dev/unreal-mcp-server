@@ -1,5 +1,7 @@
 """P5c op bodies against the stateful fake: strict world vocabulary, snapshots (incl.
 World Partition), path-matched restore, tag-scoped scenes and server-owned paths."""
+import time
+
 import pytest
 from conftest import run_dispatch
 from fakeunreal import Fake, installed
@@ -125,7 +127,7 @@ def test_saved_dir_is_absolute(v2, ue, tmp_path, monkeypatch):
     m = v2["_mcp2"]
     ue.Paths.convert_relative_path_to_full = lambda p: str(tmp_path / "Saved")
     d = m._saved_mcp_dir("WidgetRenders")
-    assert d.startswith(str(tmp_path)) and d.endswith("WidgetRenders")
+    assert d.startswith(tmp_path.as_posix()) and d.endswith("WidgetRenders") and "\\" not in d
 
 
 def test_audio_is_pie_only(v2, ue):
@@ -172,3 +174,50 @@ def test_polyworld_is_pie_only(v2, ue):
     ue.pie_actors = []
     wrapped = m._pie_only(lambda args: seen.append(args) or {"capital": 1})
     assert wrapped({"world": "auto"}) == {"capital": 1} and seen == [{"world": "pie"}]
+
+
+# --- PIE blueprint pre-flight (found live: a modal dialog froze the editor) ------
+
+def _auth(ue, errored):
+    from fakeunreal import _Subsystem
+    calls = []
+
+    class Auth:
+        def prepare_blueprints_for_pie(self, acknowledge):
+            calls.append(acknowledge)
+            return list(errored)
+
+    ue.MCPAuthoringSubsystem = Auth
+    ue.get_editor_subsystem = lambda which: Auth() if which is Auth else _Subsystem(ue)
+    return calls
+
+
+def test_pie_start_refuses_blueprint_errors_before_the_modal(v2, ue):
+    calls = _auth(ue, ["/Game/BP_Bad.BP_Bad"])
+    res = err(v2, "pie_start", {})
+    assert res["code"] == "PRECONDITION" and res["details"]["blueprints"] == ["/Game/BP_Bad.BP_Bad"]
+    assert calls == [False] and ue.pie_requests == []
+
+
+def test_pie_start_can_acknowledge_blueprint_errors(v2, ue):
+    calls = _auth(ue, ["/Game/BP_Bad.BP_Bad"])
+    res = ok(v2, "pie_start", {"ignore_blueprint_errors": True})
+    assert calls == [True] and res["blueprint_errors_ignored"] == ["/Game/BP_Bad.BP_Bad"] and res["editor_pid"] > 0
+
+
+def test_pie_start_without_the_plugin_says_so(v2, ue):
+    res = ok(v2, "pie_start", {})
+    assert res["blueprint_preflight"].startswith("unavailable")
+
+
+def test_pie_screenshot_uses_a_fresh_name_in_the_screenshot_dir(v2, ue, tmp_path):
+    shots = []
+    ue.AutomationLibrary = type("A", (), {"take_high_res_screenshot": staticmethod(lambda w, h, f: shots.append(f))})
+    ue.Paths.screen_shot_dir = lambda: str(tmp_path / "Screenshots" / "WindowsEditor")
+    ue.Paths.convert_relative_path_to_full = lambda p: p
+    v2["_mcp2"]._pie_running = lambda: True
+    a = ok(v2, "pie_screenshot", {})
+    time.sleep(0.002)
+    b = ok(v2, "pie_screenshot", {})
+    assert a["file"] != b["file"] and len(set(shots)) == 2
+    assert a["file"].startswith((tmp_path / "Screenshots" / "WindowsEditor").as_posix() + "/")

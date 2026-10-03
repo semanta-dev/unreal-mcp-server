@@ -38,6 +38,7 @@ var (
 	procSendInput             = user32.NewProc("SendInput")
 	procEnumDisplayMonitors   = user32.NewProc("EnumDisplayMonitors")
 	procAttachThreadInput     = user32.NewProc("AttachThreadInput")
+	procPostMessageW          = user32.NewProc("PostMessageW")
 
 	procCreateCompatibleDC     = gdi32.NewProc("CreateCompatibleDC")
 	procCreateCompatibleBitmap = gdi32.NewProc("CreateCompatibleBitmap")
@@ -212,6 +213,16 @@ func windowRect(hwnd uintptr) (Rect, bool) {
 		return Rect{}, false
 	}
 	return Rect{X: int(rc.Left), Y: int(rc.Top), W: int(rc.Right - rc.Left), H: int(rc.Bottom - rc.Top)}, true
+}
+
+// closeHWND posts WM_CLOSE: for a dialog, the same as its title-bar X (Cancel). It
+// does not need the window to be in the foreground.
+func closeHWND(hwnd uintptr) error {
+	const wmClose = 0x0010
+	if r, _, err := procPostMessageW.Call(hwnd, wmClose, 0, 0); r == 0 {
+		return fmt.Errorf("PostMessage(WM_CLOSE): %w", err)
+	}
+	return nil
 }
 
 // focusHWND brings a window to the foreground. SetForegroundWindow is subject to

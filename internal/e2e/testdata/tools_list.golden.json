@@ -1637,6 +1637,10 @@
             "description": "input action=hold: seconds (default 1)",
             "type": "number"
           },
+          "ignore_blueprint_errors": {
+            "description": "start: play despite Blueprint compile errors",
+            "type": "boolean"
+          },
           "key": {
             "description": "input: UE key name, e.g. W, SpaceBar, LeftMouseButton",
             "type": "string"
