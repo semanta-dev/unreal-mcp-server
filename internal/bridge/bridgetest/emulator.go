@@ -46,6 +46,7 @@ type Emulator struct {
 	installs     int
 	versionQs    int    // version-sentinel evals received
 	nativeClaims int    // ClaimNative commands received
+	v1Version    int    // a resident v1 companion's _MCP_BRIDGE_VERSION (0 = none or invalidated)
 	installed    string // decoded source of the last successful install
 	calls        []string
 	pyScripts    []string
@@ -141,6 +142,9 @@ func (e *Emulator) OnCommand(req uexectest.CommandRequest) uexectest.CommandResp
 	case strings.Contains(code, "_mcp_dispatch_native'] = _mcp2._mcp2_dispatch_native"):
 		e.mu.Lock()
 		e.nativeClaims++
+		if strings.Contains(code, "globals()['_MCP_BRIDGE_VERSION'] = 0") {
+			e.v1Version = 0 // a v1 server reconnecting will now reinstall its companion
+		}
 		e.mu.Unlock()
 		return uexectest.CommandResponse{Success: true, Result: "None"}
 	case strings.Contains(code, "EditorPerformanceSettings"):
@@ -157,6 +161,20 @@ func (e *Emulator) OnCommand(req uexectest.CommandRequest) uexectest.CommandResp
 		return py(req)
 	}
 	return uexectest.CommandResponse{Success: true, Result: "None"}
+}
+
+// SetV1Resident models a v1 companion already loaded in __main__ (handover tests).
+func (e *Emulator) SetV1Resident(version int) {
+	e.mu.Lock()
+	e.v1Version = version
+	e.mu.Unlock()
+}
+
+// V1Version is the resident v1 companion's sentinel (0 once invalidated).
+func (e *Emulator) V1Version() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.v1Version
 }
 
 // NativeClaims reports how many times the server claimed the native entry point.

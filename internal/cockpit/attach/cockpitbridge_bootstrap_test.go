@@ -149,3 +149,33 @@ func TestBackoffAndAbsentCache(t *testing.T) {
 		t.Fatal("probe only when not known-absent on the current channel generation")
 	}
 }
+
+// TestBootstrapPeerRefusedStaysOnUexec: the plugin accepts ONE Go peer; when another
+// peer holds it, the native session cannot be opened. Bootstrap must fail without
+// claiming the native entry point or switching the bridge off uexec.
+func TestBootstrapPeerRefusedStaysOnUexec(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close() // the slot is taken: drop the new peer immediately
+		}
+	}()
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+	info := json.RawMessage(`{"cockpit_port":` + port + `,"session_epoch":"ep-1","token":"t","protocol_version":1}`)
+	fs := &fakeSelectable{info: info}
+	sess, err := Bootstrap(context.Background(), fs, BootstrapConfig{Project: "p", CockpitToken: "c", DialTimeout: time.Second})
+	if err == nil || sess != nil {
+		t.Fatalf("a refused peer must not yield a session: %v %v", sess, err)
+	}
+	if fs.wasNativeSet() || fs.claimed != 0 {
+		t.Fatalf("refused attach must stay on uexec and not claim (native=%v claimed=%d)", fs.wasNativeSet(), fs.claimed)
+	}
+}

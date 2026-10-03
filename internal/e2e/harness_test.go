@@ -23,7 +23,8 @@ import (
 // harness is one fake editor + emulator + full MCP server + connected client.
 type harness struct {
 	specs  map[string]*spec.Spec // tool name -> spec (dynamic tier lint)
-	editor *uexectest.Editor     // nil when started with noEditor
+	bridge *bridge.Bridge
+	editor *uexectest.Editor // nil when started with noEditor
 	emu    *bridgetest.Emulator
 	world  *bridgetest.World
 	cs     *mcp.ClientSession
@@ -91,6 +92,7 @@ func startHarness(t *testing.T, o harnessOpts) *harness {
 	t.Cleanup(func() { sess.Close() })
 
 	b := bridge.New(sess, bridge.Options{})
+	h.bridge = b
 	deps := tools.Deps{Bridge: b, Jobs: jobs.NewRegistry()}
 	srv := app.NewServer(app.Options{Deps: deps}, nil).MCP
 	h.specs = map[string]*spec.Spec{}

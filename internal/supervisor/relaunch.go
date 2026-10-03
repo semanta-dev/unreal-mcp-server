@@ -36,18 +36,12 @@ func RelaunchWatcher(ctx context.Context, sess *uexec.Session, cfg config.Config
 		case <-ctx.Done():
 			return
 		case now := <-ticker.C:
-			if len(sess.Nodes()) > 0 {
-				absentSince = time.Time{}
+			var launch bool
+			absentSince, launch = relaunchDue(now, absentSince, lastLaunch, len(sess.Nodes()) > 0, goneFor, cooldown)
+			if !launch {
 				continue
 			}
-			if absentSince.IsZero() {
-				absentSince = now
-				continue
-			}
-			if now.Sub(absentSince) < goneFor || now.Sub(lastLaunch) < cooldown {
-				continue
-			}
-			logger.Warn("editor absent from discovery; auto-relaunching", "absent_for", now.Sub(absentSince).String())
+			logger.Warn("editor absent from discovery; auto-relaunching")
 			pid, err := lifecycle.Launch(cfg.EngineDir, uproject, "-nosplash")
 			if err != nil {
 				logger.Error("auto-relaunch failed", "err", err)
@@ -58,4 +52,20 @@ func RelaunchWatcher(ctx context.Context, sess *uexec.Session, cfg config.Config
 			absentSince = time.Time{}
 		}
 	}
+}
+
+// relaunchDue is the watcher's decision: relaunch only after the editor has been
+// absent from discovery for goneFor, and not within cooldown of the last launch.
+// It returns the updated absence start and whether to launch now.
+func relaunchDue(now, absentSince, lastLaunch time.Time, present bool, goneFor, cooldown time.Duration) (time.Time, bool) {
+	if present {
+		return time.Time{}, false
+	}
+	if absentSince.IsZero() {
+		return now, false
+	}
+	if now.Sub(absentSince) < goneFor || now.Sub(lastLaunch) < cooldown {
+		return absentSince, false
+	}
+	return time.Time{}, true
 }
