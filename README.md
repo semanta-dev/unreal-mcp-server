@@ -5,11 +5,10 @@ tools, letting Claude Code (or any MCP client) drive the editor: run Python,
 inspect and edit levels, take screenshots, control play sessions, orchestrate
 C++ builds, observe PIE, and checkpoint with git.
 
-This is the **Go rewrite** of the original Python server. See
-[`GO_REWRITE_PLAN.md`](GO_REWRITE_PLAN.md) for the design (A+-graded by the
-CTO/GameDev agent gates) and [`PROGRESS.md`](PROGRESS.md) for build status. The
-original Python server (`server.py`, `unreal_bridge.py`, `remote_execution.py`)
-is kept as the rollback path.
+> **v2 overhaul in progress** on branch `overhaul/v2` — see
+> [`docs/plans/OVERHAUL_PLAN.md`](docs/plans/OVERHAUL_PLAN.md). This README is rewritten in phase P6;
+> historical design docs live in [`docs/archive/`](docs/archive/INDEX.md). The legacy Python server
+> was removed (recoverable from tag `v1-final`).
 
 ## How it works
 
@@ -96,7 +95,7 @@ properties — no hardcoded allowlist), `viewport_set`/`viewport_get`, `focus_ac
 `get_selection`, `editor_state` (rich superset of `editor_status`).
 
 Pure algorithmic cores are separate, unit-tested Go packages: `internal/{montage,scenespec,framing,
-predicate,rubric}`. See `PLAYTEST_UPGRADE_PLAN.md` for the full design.
+predicate,rubric}`. See `docs/archive/PLAYTEST_UPGRADE_PLAN.md` for the full design.
 
 ### OS-level screen capture & computer control (7) — see the *actual* editor, drive it like a human
 
@@ -129,19 +128,17 @@ on every platform; the syscall backend is stubbed on non-Windows so the linux CI
 ```powershell
 go test ./...                                   # unit + in-memory MCP + git-vs-temp-repo
 go test -tags integration ./internal/uexec/     # real loopback multicast (Windows)
-.\dist\uspike.exe -project <aesir-dir>          # live protocol gate (editor must be open)
-.\dist\abparity.exe                             # A/B parity vs the Python server (both registered)
+.\dist\unreal-mcp.exe -selftest -project <dir>  # live gate: discovery, __main__ persistence, editor_status
 ```
 
 `go test -race` needs a C toolchain (mingw locally, or the Linux CI job runs it).
 
-## Migration
+## Deploy
 
-`deploy/mcp.ab.json` runs the Go server alongside Python (Go on `:6777`) for the A/B parity diff;
-`deploy/mcp.cutover.json` makes Go the default `unreal` with Python kept as `unreal-py` for one-line
-rollback.
+`scripts/render-mcp-config.ps1 -ProjectDir <game> -EngineDir <UE>` renders `deploy/mcp.json.tmpl` into the
+game project's `.mcp.json`.
 
-## Gotchas learned the hard way (encoded in `mcp_bridge.py`)
+## Gotchas learned the hard way (encoded in the companion module `internal/snippets/py/`)
 
 - `unreal.Rotator(a, b, c)` is **(roll, pitch, yaw)**, not (pitch, yaw, roll). A sun with positive
   pitch points *up* and the level renders pitch-black.

@@ -1,0 +1,180 @@
+
+_OPS = {
+    "editor_status": _op_editor_status,
+    "list_actors": _op_list_actors,
+    "get_actor": _op_get_actor,
+    "spawn_actor": _op_spawn_actor,
+    "delete_actor": _op_delete_actor,
+    "set_actor_transform": _op_set_actor_transform,
+    "open_level": _op_open_level,
+    "save_all": _op_save_all,
+    "list_assets": _op_list_assets,
+    "import_assets": _op_import_assets,
+    "start_play": _op_start_play,
+    "stop_play": _op_stop_play,
+    "live_coding_compile": _op_live_coding_compile,
+    "take_screenshot": _op_take_screenshot,
+    "pie_observe": _op_pie_observe,
+    "pie_exec": _op_pie_exec,
+    "pie_screenshot": _op_pie_screenshot,
+    "level_snapshot": _op_level_snapshot,
+    "level_diff": _op_level_diff,
+    "apply_level_recipe": _op_apply_level_recipe,
+    "asset_info": _op_asset_info,
+    "asset_thumbnail": _op_asset_thumbnail,
+    "audio_capture_start": _op_audio_capture_start,
+    "audio_capture_stop": _op_audio_capture_stop,
+    "play_test_sound": _op_play_test_sound,
+    "pawn_state": _op_pawn_state,
+    "company_status": _op_company_status,
+    "widget_render": _op_widget_render,
+    "company_road": _op_company_road,
+    "company_demolish": _op_company_demolish,
+    "company_build": _op_company_build,
+    "company_select": _op_company_select,
+    "asset_reimport": _op_asset_reimport,
+    "create_material_instance": _op_create_material_instance,
+    # v7 additions
+    "reflect_object": _op_reflect_object,
+    "capture_start": _op_capture_start,
+    "capture_poll": _op_capture_poll,
+    "capture_stop": _op_capture_stop,
+    "capture_list": _op_capture_list,
+    "capture_poses": _op_capture_poses,
+    "scene_apply": _op_scene_apply,
+    "scene_clear": _op_scene_clear,
+    "scene_bounds": _op_scene_bounds,
+    "design_probe": _op_design_probe,
+    "viewport_set": _op_viewport_set,
+    "viewport_get": _op_viewport_get,
+    "focus_actors": _op_focus_actors,
+    "select_actors": _op_select_actors,
+    "get_selection": _op_get_selection,
+    "editor_state": _op_editor_state,
+    "console": _op_console,
+    # P2 discovery
+    "asset_query": _op_asset_query,
+    "asset_deps": _op_asset_deps,
+    "asset_tags": _op_asset_tags,
+    "reflect_class": _op_reflect_class,
+    "enum_values": _op_enum_values,
+    "map_gameplay": _op_map_gameplay,
+    "find_actors": _op_find_actors,
+    # P3 structured authoring
+    "blueprint_create": _op_blueprint_create,
+    "blueprint_set_defaults": _op_blueprint_set_defaults,
+    "assign_subclass": _op_assign_subclass,
+    "blueprint_add_component": _op_blueprint_add_component,
+    "datatable_create": _op_datatable_create,
+    "datatable_import": _op_datatable_import,
+    "dataasset_create": _op_dataasset_create,
+    "widget_create": _op_widget_create,
+    "widget_compose": _op_widget_compose,
+    "widget_compile": _op_widget_compile,
+    "widget_tree": _op_widget_tree,
+    "widget_describe": _op_widget_describe,
+    "set_world_gamemode": _op_set_world_gamemode,
+    "pie_set_property": _op_pie_set_property,
+    "pie_destroy": _op_pie_destroy,
+    # P4 spatial verification
+    "world_query": _op_world_query,
+    # PW instanced content
+    "instances_count": _op_instances_count,
+    "instances_list": _op_instances_list,
+    "actor_transforms": _op_actor_transforms,
+    # P5 robustness
+    "editor_ping": _op_editor_ping,
+    "cockpit_info": _op_cockpit_info,
+    "scene_restore": _op_scene_restore,
+    # P7 plugin-backed input synthesis
+    "pie_input": _op_pie_input,
+}
+
+
+# Stable error codes an autonomous agent can branch on, instead of regexing a
+# raw Python traceback. Only TIMEOUT is retryable at the op layer (the transport
+# handles connection loss); everything else is a caller/state fault to fix.
+_RETRYABLE_CODES = {"TIMEOUT", "EDITOR_BUSY"}
+
+
+def _classify_error_message(msg):
+    """Classify a failure MESSAGE string (from an in-band op {"error": ...} return
+    or an exception) into a stable code. Shared by the exception path and the
+    in-band-error promotion so NOT_IN_PIE/CLASS_UNRESOLVED/etc. are actually
+    produced by the conditions that name them."""
+    low = str(msg).lower()
+    if "not in pie" in low or "no game world" in low or "no world" in low:
+        return "NOT_IN_PIE"
+    if "could not resolve class" in low or ("class" in low and "resolve" in low):
+        return "CLASS_UNRESOLVED"
+    if "spawn failed" in low or ("spawn" in low and "fail" in low):
+        return "SPAWN_FAILED"
+    if "asset not found" in low or ("not found" in low and "asset" in low):
+        return "ASSET_NOT_FOUND"
+    if "target not found" in low or ("not found" in low and "target" in low):
+        return "TARGET_NOT_FOUND"
+    if ("save" in low and ("fail" in low or "block" in low)):
+        return "SAVE_BLOCKED"
+    if "read-only" in low or "readonly" in low:
+        return "PROPERTY_READONLY"
+    if "not found" in low:
+        return "NOT_FOUND"
+    if "no such session" in low:
+        return "NO_SESSION"
+    return "EDITOR_ERROR"
+
+
+def _classify_error(e):
+    name = type(e).__name__
+    if isinstance(e, KeyError):
+        return "MISSING_ARG"
+    if isinstance(e, FileNotFoundError):
+        return "FILE_NOT_FOUND"
+    if name == "AttributeError" or "no attribute" in str(e).lower():
+        return "BAD_ATTRIBUTE"
+    if name == "TypeError":
+        return "BAD_ARGS"
+    if name == "ValueError":
+        return "BAD_VALUE"
+    m = _classify_error_message(e)
+    return m if m != "EDITOR_ERROR" else "EDITOR_ERROR"
+
+
+def _mcp_dispatch(op, b64args):
+    try:
+        args = json.loads(base64.b64decode(b64args)) if b64args else {}
+        fn = _OPS.get(op)
+        if fn is None:
+            _emit({"ok": False, "error": "unknown op: " + str(op), "code": "UNKNOWN_OP",
+                   "retryable": False, "traceback": ""})
+            return
+        result = fn(args)
+        # Promote an in-band failure ({"error": "..."} — the common way ops signal
+        # NOT_IN_PIE / CLASS_UNRESOLVED / ASSET_NOT_FOUND / SPAWN_FAILED, etc.) to a
+        # coded envelope failure, so every op is machine-branchable, not just ones
+        # that raise. (A partial-result "errors"/"warnings" list is NOT this.)
+        if isinstance(result, dict) and result.get("error") and "code" not in result:
+            code = _classify_error_message(result["error"])
+            _emit({"ok": False, "error": str(result["error"]), "code": code,
+                   "retryable": code in _RETRYABLE_CODES})
+            return
+        _emit({"ok": True, "result": result})
+    except Exception as e:
+        code = _classify_error(e)
+        _emit({"ok": False, "error": str(e), "code": code,
+               "retryable": code in _RETRYABLE_CODES, "traceback": traceback.format_exc()})
+
+
+def _mcp_dispatch_native(op, b64args, op_id):
+    """Native dispatch entry (Phase B1). MCPCore's game-thread Dispatcher calls this via
+    ExecPythonCommandEx. It sets the per-dispatch native sink so the op's single _emit
+    routes its result to the framed channel keyed by op_id, then always clears it — so a
+    later uexec dispatch on the same interpreter is never mis-routed. MCPCore reconciles:
+    if this never reaches _emit (an import/binding failure before the op body), no
+    emit_result(op_id) fires and the native side synthesizes EDITOR_EXEC_FAILED (§5.1)."""
+    global _MCP_NATIVE_SINK
+    _MCP_NATIVE_SINK = op_id
+    try:
+        _mcp_dispatch(op, b64args)
+    finally:
+        _MCP_NATIVE_SINK = None

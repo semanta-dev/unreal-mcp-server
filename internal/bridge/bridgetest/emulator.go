@@ -18,7 +18,6 @@ import (
 	"sync"
 
 	"github.com/jdziat/unreal-mcp-server/internal/fakeeditor"
-	"github.com/jdziat/unreal-mcp-server/internal/snippets"
 )
 
 const jsonMarker = "__MCP_JSON__"
@@ -42,6 +41,8 @@ type Emulator struct {
 	python    func(fakeeditor.CommandRequest) fakeeditor.CommandResponse
 	version   int // installed _MCP_BRIDGE_VERSION (0 = not installed)
 	installs  int
+	versionQs int    // version-sentinel evals received
+	installed string // decoded source of the last successful install
 	calls     []string
 	pyScripts []string
 }
@@ -78,6 +79,20 @@ func (e *Emulator) Installs() int {
 	return e.installs
 }
 
+// VersionChecks reports how many version-sentinel evals the bridge sent.
+func (e *Emulator) VersionChecks() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.versionQs
+}
+
+// InstalledSource returns the decoded module source of the last install ("" if none).
+func (e *Emulator) InstalledSource() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.installed
+}
+
 // Calls returns the op names dispatched so far, in order.
 func (e *Emulator) Calls() []string {
 	e.mu.Lock()
@@ -98,7 +113,11 @@ func (e *Emulator) Options() fakeeditor.Options {
 	return fakeeditor.Options{OnCommand: e.OnCommand}
 }
 
-var dispatchRe = regexp.MustCompile(`_mcp_dispatch\("([^"]*)", "([^"]*)"\)`)
+var (
+	dispatchRe = regexp.MustCompile(`_mcp_dispatch\("([^"]*)", "([^"]*)"\)`)
+	hotloadRe  = regexp.MustCompile(`base64\.b64decode\("([A-Za-z0-9+/=]+)"\)`)
+	versionRe  = regexp.MustCompile(`(?m)^_MCP_BRIDGE_VERSION\s*=\s*(\d+)`)
+)
 
 // OnCommand is the fakeeditor command handler.
 func (e *Emulator) OnCommand(req fakeeditor.CommandRequest) fakeeditor.CommandResponse {
@@ -107,14 +126,11 @@ func (e *Emulator) OnCommand(req fakeeditor.CommandRequest) fakeeditor.CommandRe
 	case req.ExecMode == "EvaluateStatement" && strings.Contains(code, "_MCP_BRIDGE_VERSION"):
 		e.mu.Lock()
 		v := e.version
+		e.versionQs++
 		e.mu.Unlock()
 		return fakeeditor.CommandResponse{Success: true, Result: strconv.Itoa(v)}
 	case strings.Contains(code, "exec(compile(base64.b64decode("):
-		e.mu.Lock()
-		e.version = snippets.Version()
-		e.installs++
-		e.mu.Unlock()
-		return fakeeditor.CommandResponse{Success: true, Result: "None"}
+		return e.install(code)
 	case strings.Contains(code, "EditorPerformanceSettings"):
 		return fakeeditor.CommandResponse{Success: true, Result: "None"}
 	}
@@ -128,6 +144,36 @@ func (e *Emulator) OnCommand(req fakeeditor.CommandRequest) fakeeditor.CommandRe
 	if py != nil {
 		return py(req)
 	}
+	return fakeeditor.CommandResponse{Success: true, Result: "None"}
+}
+
+// install decodes the hotload payload and installs it only if it is a plausible
+// companion module (defines the dispatcher and a version sentinel), so a broken
+// embed/concat is caught here rather than silently "installed".
+func (e *Emulator) install(code string) fakeeditor.CommandResponse {
+	fail := func(msg string) fakeeditor.CommandResponse {
+		return fakeeditor.CommandResponse{Success: false, Result: "None",
+			Output: []fakeeditor.OutputEntry{{Type: "Error", Output: msg}}}
+	}
+	m := hotloadRe.FindStringSubmatch(code)
+	if m == nil {
+		return fail("bridgetest: hotload payload not found")
+	}
+	raw, err := base64.StdEncoding.DecodeString(m[1])
+	if err != nil {
+		return fail("bridgetest: hotload payload is not base64: " + err.Error())
+	}
+	src := string(raw)
+	vm := versionRe.FindStringSubmatch(src)
+	if vm == nil || !strings.Contains(src, "\ndef _mcp_dispatch(") {
+		return fail("bridgetest: installed source lacks _MCP_BRIDGE_VERSION or _mcp_dispatch")
+	}
+	v, _ := strconv.Atoi(vm[1])
+	e.mu.Lock()
+	e.version = v
+	e.installs++
+	e.installed = src
+	e.mu.Unlock()
 	return fakeeditor.CommandResponse{Success: true, Result: "None"}
 }
 

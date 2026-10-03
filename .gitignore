@@ -7,7 +7,18 @@
 # Go workspace
 /vendor/
 
-# Python (legacy server kept as rollback artifact — sources tracked, caches not)
+# Python (companion module tests; caches not tracked)
 .venv/
 __pycache__/
 *.pyc
+
+# Tool caches / agent scratch
+.ruff_cache/
+.pytest_cache/
+.codex-dispatch/
+.agents/
+*.log
+
+# Plugin build output when built in place
+plugin/**/Binaries/
+plugin/**/Intermediate/

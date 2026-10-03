@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jdziat/unreal-mcp-server/internal/fakeeditor"
+	"github.com/jdziat/unreal-mcp-server/internal/snippets"
 	"github.com/jdziat/unreal-mcp-server/internal/uexec"
 )
 
@@ -24,6 +25,9 @@ func TestEditorStatusInstallsCompanionOnce(t *testing.T) {
 	h.call(t, "editor_status", nil)
 	if n := h.emu.Installs(); n != 1 {
 		t.Fatalf("companion installed %d times, want 1", n)
+	}
+	if h.emu.InstalledSource() != snippets.Source() {
+		t.Fatal("editor received a module that differs from the embedded companion source")
 	}
 }
 
@@ -91,6 +95,10 @@ func TestEditorNotRunning(t *testing.T) {
 	if !res.IsError {
 		t.Fatalf("expected an error with no editor, got: %s", text(res))
 	}
+	// Baseline for the P3 envelope (→ EDITOR_UNREACHABLE): today the text is uexec's.
+	if out := text(res); !strings.Contains(out, uexec.ErrEditorNotFound.Error()) {
+		t.Fatalf("error text does not identify a missing editor: %q", out)
+	}
 }
 
 // TestCompanionReinstalledAfterEditorRestart: the editor loses the hot-loaded module
@@ -121,5 +129,10 @@ func TestCallsSurviveChannelDrops(t *testing.T) {
 	}
 	if n := h.emu.Installs(); n != 1 {
 		t.Fatalf("installs = %d, want 1", n)
+	}
+	// Every command reconnects (CloseAfterReplies=1), so each call re-verifies the
+	// sentinel once: initial check + post-install confirm, then one per later call.
+	if n := h.emu.VersionChecks(); n < 4 {
+		t.Fatalf("version re-verified %d times, want >= 4 (once per reconnect-bearing call)", n)
 	}
 }

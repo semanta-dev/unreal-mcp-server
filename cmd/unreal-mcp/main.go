@@ -1,6 +1,6 @@
 // Command unreal-mcp is the Go MCP server that exposes a live Unreal Editor
-// session as tools (replacement for the Python server.py). It speaks MCP over
-// stdio and drives the editor via the remote-exec protocol. See GO_REWRITE_PLAN.md.
+// session as tools. It speaks MCP over stdio (or StreamableHTTP in -daemon-addr
+// mode) and drives the editor via the remote-exec protocol. See docs/plans/OVERHAUL_PLAN.md.
 package main
 
 import (
@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -78,7 +79,7 @@ func main() {
 	})
 
 	if cfg.SelfTest {
-		os.Exit(runSelfTest(ctx, b, logger))
+		os.Exit(runSelfTest(ctx, sess, b, logger))
 	}
 
 	// The cockpit (browser control+observability surface) opens itself once the editor's
@@ -107,15 +108,45 @@ func main() {
 	}
 }
 
-// runSelfTest connects to a live editor, round-trips editor_status, and returns
-// a process exit code (0 = healthy). Doubles as an unattended health check.
-func runSelfTest(ctx context.Context, b *bridge.Bridge, logger *slog.Logger) int {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+// runSelfTest validates the full path against a live editor and returns a process
+// exit code (0 = healthy): discovery + node selection (logs every node and the
+// chosen one), the __main__-persistence probe that decides the snippet mode, and an
+// editor_status round-trip through the companion module. Doubles as an unattended
+// health check. (Absorbs the retired cmd/uspike protocol spike.)
+func runSelfTest(ctx context.Context, sess *uexec.Session, b *bridge.Bridge, logger *slog.Logger) int {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	fail := func(stage string, err error) int {
+		fmt.Fprintf(os.Stderr, "selftest FAIL (%s): %v\n", stage, err)
+		return 1
+	}
+
+	node, err := sess.WaitForNode(ctx)
+	if err != nil {
+		return fail("discovery", fmt.Errorf("%w (is the editor running with remote execution enabled?)", err))
+	}
+	for _, n := range sess.Nodes() {
+		marker := "  "
+		if n.ID == node.ID {
+			marker = "->"
+		}
+		fmt.Fprintf(os.Stderr, "  %s node %s project=%q engine=%q\n", marker, n.ID, n.ProjectRoot, n.EngineVersion)
+	}
+
+	if _, err := b.RunPython(ctx, "_umcp_selftest_probe = 1", uexec.ModeExecFile); err != nil {
+		return fail("persistence probe", err)
+	}
+	v, err := b.Eval(ctx, "globals().get('_umcp_selftest_probe', 0)")
+	if err != nil {
+		return fail("persistence probe", err)
+	}
+	persistent := strings.TrimSpace(v) == "1"
+	fmt.Fprintf(os.Stderr, "  __main__ persists across commands = %v (hotload snippet mode %s)\n",
+		persistent, map[bool]string{true: "OK", false: "UNAVAILABLE — use -snippet-mode ondisk"}[persistent])
+
 	raw, err := b.Call(ctx, "editor_status", map[string]any{})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "selftest FAIL: %v\n", err)
-		return 1
+		return fail("editor_status", err)
 	}
 	fmt.Fprintf(os.Stderr, "selftest OK: %s\n", string(raw))
 	return 0

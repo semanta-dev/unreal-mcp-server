@@ -19,6 +19,10 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+# go.mod is the single source of the Go version; the pinned archive hash below must match it.
+$modVer = 'go' + ((Select-String -Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'go.mod') -Pattern '^go\s+(\S+)').Matches[0].Groups[1].Value)
+if ($modVer -ne $Version) { throw "go.mod pins $modVer but bootstrap pins $Version - bump `$Version and `$Sha256 together with go.mod." }
+
 $sdkRoot   = Join-Path $env:LOCALAPPDATA 'go-sdk'
 $goRoot    = Join-Path $sdkRoot $Version
 $goBin     = Join-Path $goRoot 'bin'
