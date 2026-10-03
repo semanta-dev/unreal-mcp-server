@@ -1,7 +1,7 @@
 // Package daemon is the Model-A router (MULTI_PROJECT_SYSTEM.md §0/§3): one
 // long-lived process binds each agent MCP session to a 1:1 editor lease and routes
 // that session's tool calls to the right per-instance bridge. It sits on top of
-// editorpool (the liveness state machine) and a shared uexec.Discovery, adding the
+// supervisor.Pool (the liveness state machine) and a shared uexec.Discovery, adding the
 // session→lease binding, lease-or-spawn with a per-project spawn guard (so two
 // sessions attaching to the same project can't double-spawn), and the
 // kill-before-teardown discipline for expected-dead instances.

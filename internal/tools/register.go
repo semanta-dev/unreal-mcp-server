@@ -12,6 +12,7 @@ import (
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"github.com/jdziat/unreal-mcp-server/internal/session"
+	"github.com/jdziat/unreal-mcp-server/internal/tools/spec"
 )
 
 // Deps are the collaborators the tools need (defined in package session so the
@@ -199,8 +200,38 @@ func registerParityTools(s *mcp.Server, b *bridge.Bridge) {
 }
 
 // add registers one typed tool.
+// add registers a v1 tool through the spec layer (envelope, annotations, per-call
+// recovery) while keeping its v1 name, schema and result shape.
 func add[In, Out any](s *mcp.Server, name, desc string, h mcp.ToolHandlerFor[In, Out]) {
-	mcp.AddTool(s, &mcp.Tool{Name: name, Description: desc}, h)
+	spec.Register(s, []*spec.Spec{spec.Typed(name, desc, v1Tier(name), h)}, spec.Options{})
+}
+
+// v1Tier classifies a v1 tool by its same-named companion op's worst-case tier
+// (interim, until the v2 specs carry explicit per-op tiers). Tools that are not a
+// same-named op are listed explicitly in v1ToolTiers; anything else is Mutating.
+func v1Tier(name string) spec.Tier {
+	if t, ok := v1ToolTiers[name]; ok {
+		return t
+	}
+	if op, ok := spec.PyOps[name]; ok {
+		return op.WorstTier()
+	}
+	return spec.Mutating
+}
+
+var v1ToolTiers = map[string]spec.Tier{
+	"execute_python": spec.Exec, "execute_console_command": spec.Exec, "headless_run": spec.Exec,
+	"pie_input": spec.Exec, "pie_verify": spec.Exec, "playtest_capture": spec.Exec, "scenario_run": spec.Exec,
+	"mouse_control": spec.Exec, "key_press": spec.Exec, "type_text": spec.Exec, "focus_window": spec.Exec,
+	"git_revert_to": spec.Destructive, "scene_restore": spec.Destructive, "editor_restart": spec.Destructive,
+	"import_assets": spec.Destructive, "asset_reimport": spec.Destructive,
+	"git_status": spec.ReadOnly, "git_diff": spec.ReadOnly, "git_log": spec.ReadOnly,
+	"logs_tail": spec.ReadOnly, "logs_since": spec.ReadOnly, "logs_mark": spec.ReadOnly, "editor_events": spec.ReadOnly,
+	"job_status": spec.ReadOnly, "project_map": spec.ReadOnly, "perf_parse": spec.ReadOnly, "scenario_list": spec.ReadOnly,
+	"image_compare": spec.ReadOnly, "read_capture": spec.ReadOnly, "affordances": spec.ReadOnly, "cockpit_url": spec.ReadOnly,
+	"list_windows": spec.ReadOnly, "screen_capture": spec.ReadOnly, "window_capture": spec.ReadOnly,
+	"layout_preview": spec.ReadOnly, "playtest_evaluate": spec.ReadOnly, "health_check": spec.ReadOnly,
+	"scene_plan": spec.ReadOnly, "scene_digest": spec.ReadOnly, "editor_state": spec.ReadOnly,
 }
 
 // structHandler dispatches a companion op and returns its result object as

@@ -63,8 +63,12 @@ func TestOpErrorSurfacesCode(t *testing.T) {
 	if !res.IsError {
 		t.Fatalf("expected tool error, got: %s", text(res))
 	}
-	if out := text(res); !strings.Contains(out, "CLASS_UNRESOLVED") {
-		t.Fatalf("error text lacks code: %s", out)
+	e := errorOf(t, res)
+	if e["code"] != "NOT_FOUND" {
+		t.Fatalf("code = %v, want NOT_FOUND (%s)", e["code"], text(res))
+	}
+	if d, _ := e["details"].(map[string]any); d["editor_code"] != "CLASS_UNRESOLVED" {
+		t.Fatalf("details.editor_code = %v, want CLASS_UNRESOLVED", d["editor_code"])
 	}
 }
 
@@ -95,7 +99,10 @@ func TestEditorNotRunning(t *testing.T) {
 	if !res.IsError {
 		t.Fatalf("expected an error with no editor, got: %s", text(res))
 	}
-	// Baseline for the P3 envelope (→ EDITOR_UNREACHABLE): today the text is uexec's.
+	e := errorOf(t, res)
+	if e["code"] != "EDITOR_UNREACHABLE" || e["retryable"] != true {
+		t.Fatalf("want retryable EDITOR_UNREACHABLE, got %v", e)
+	}
 	if out := text(res); !strings.Contains(out, uexec.ErrEditorNotFound.Error()) {
 		t.Fatalf("error text does not identify a missing editor: %q", out)
 	}

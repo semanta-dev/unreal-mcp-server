@@ -143,3 +143,21 @@ func structured(t *testing.T, res *mcp.CallToolResult) map[string]any {
 	}
 	return out
 }
+
+// errorOf returns the structured envelope error of an isError result.
+func errorOf(t *testing.T, res *mcp.CallToolResult) map[string]any {
+	t.Helper()
+	if !res.IsError {
+		t.Fatalf("expected an error result, got: %s", text(res))
+	}
+	e, ok := structured(t, res)["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("error result lacks structured error: %s", text(res))
+	}
+	for _, k := range []string{"code", "message", "retryable", "outcome"} {
+		if _, ok := e[k]; !ok {
+			t.Fatalf("envelope error missing %q: %v", k, e)
+		}
+	}
+	return e
+}

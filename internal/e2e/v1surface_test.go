@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -29,6 +30,12 @@ func (noEditor) RunCommand(context.Context, string, uexec.ExecMode) (uexec.Comma
 // all optional deps wired (jobs, cockpit URL) plus the daemon-only project tools,
 // and the byte size of the stdio tools/list result.
 func v1Surface(t *testing.T) (names []string, listBytes int) {
+	names, raw := v1SurfaceRaw(t)
+	return names, len(raw)
+}
+
+// v1SurfaceRaw also returns the stdio tools/list result JSON.
+func v1SurfaceRaw(t *testing.T) (names []string, stdioList []byte) {
 	t.Helper()
 	srv := mcp.NewServer(&mcp.Implementation{Name: "unreal", Version: "v1"}, nil)
 	tools.RegisterAll(srv, tools.Deps{
@@ -53,7 +60,7 @@ func v1Surface(t *testing.T) (names []string, listBytes int) {
 		names = append(names, tl.Name)
 	}
 	sort.Strings(names)
-	return names, len(raw)
+	return names, raw
 }
 
 func listTools(t *testing.T, srv *mcp.Server) *mcp.ListToolsResult {
@@ -100,5 +107,32 @@ func TestV1SurfaceFrozen(t *testing.T) {
 	}
 	if string(want) != got {
 		t.Fatalf("v1 tool surface changed; diff %s against the registered names", path)
+	}
+}
+
+// TestV1EnvelopeGolden pins the full stdio tools/list as served through the spec
+// layer (v1 names + schemas, v2 annotations, no output schemas). Any schema,
+// description or annotation change shows up as a diff. Regenerate with
+// UMCP_UPDATE_GOLDEN=1.
+func TestV1EnvelopeGolden(t *testing.T) {
+	_, raw := v1SurfaceRaw(t)
+	var pretty bytes.Buffer
+	if err := json.Indent(&pretty, raw, "", "  "); err != nil {
+		t.Fatal(err)
+	}
+	pretty.WriteByte('\n')
+	path := filepath.Join("testdata", "tools_list.v1-envelope.golden.json")
+	if os.Getenv("UMCP_UPDATE_GOLDEN") == "1" {
+		if err := os.WriteFile(path, pretty.Bytes(), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden (UMCP_UPDATE_GOLDEN=1 to create): %v", err)
+	}
+	if !bytes.Equal(bytes.ReplaceAll(want, []byte("\r\n"), []byte("\n")), pretty.Bytes()) {
+		t.Fatalf("tools/list changed vs %s (%d bytes now); review and regenerate if intended", path, len(raw))
 	}
 }

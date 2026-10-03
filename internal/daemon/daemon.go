@@ -67,12 +67,12 @@ func NewDaemon(ctx context.Context, cfg uexec.Config, engineDir, intentDir strin
 		isAlive: lifecycle.IsAlive, records: records,
 		logger: logger, leaseJobs: map[string]*jobs.Registry{}, lastSeen: map[string]time.Time{},
 	}
-	dm.Runtime = NewRuntime(router, editorpoolLiveness{}, 3*time.Second, 120*time.Second, dm.onLeaseLost)
+	dm.Runtime = NewRuntime(router, poolLiveness{}, 3*time.Second, 120*time.Second, dm.onLeaseLost)
 	return dm, nil
 }
 
-// editorpoolLiveness is supervisor.OSLiveness (aliased so this package doesn't re-export).
-type editorpoolLiveness = supervisor.OSLiveness
+// poolLiveness is supervisor.OSLiveness (aliased so this package doesn't re-export).
+type poolLiveness = supervisor.OSLiveness
 
 // Run starts the liveness loop; it returns when ctx is cancelled. Also closes the
 // shared discovery on exit.

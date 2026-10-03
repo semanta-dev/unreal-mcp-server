@@ -83,7 +83,7 @@ emulation (P4), raw-result emulator mode for the error-key rule (P5), goroutine-
 
 ## P2 — Packages (2026-10-03)
 
-**Result: 48 → 28 top-level internal packages** (+ test helpers `uexec/uexectest`, `bridge/bridgetest`, and
+**Result: 48 → 28 top-level internal packages that link into the binary** (counting rule: `go list ./internal/...` minus the test-only `e2e`/`archtest`, top-level dirs only; 30 dirs total) (+ test helpers `uexec/uexectest`, `bridge/bridgetest`, and
 `cockpit/attach`); `manifest` + `affordances` are deleted in P3a when the spec table replaces them (→ 26).
 Commits: P2a (leaf merges), P2a-fmt, P2b, P2c, P2d, P2e.
 
@@ -128,3 +128,50 @@ probe global; `refs.ps1` header path fixed; CI Windows build fetches tags (`fetc
 
 **Evidence.** `go build ./...`, `go vet ./...`, gofmt clean; `go test ./...` all ok (incl. e2e, archtest);
 `scripts/refs.ps1` exit 0.
+
+**Gate P2:** A (CTO reviewer; ran e2e at 9769348 and HEAD — 155 tools, identical 106,701-byte tools/list; `-race`
+on daemon/supervisor/archtest). Notes: `pool.go` shows as a new file (rename similarity lost; use
+`git log --follow internal/editorpool/editorpool.go` at v1-final for history); stale `editorpool:` error strings and
+comments are renamed in P3a; archtest now locates `go` via PATH.
+
+## P3a — Envelope & spec (2026-10-03)
+
+**Done.**
+- `internal/tools/envelope`: closed 15-code set; `Error{code,message,hint,retryable,outcome,details}`; `Classify`
+  maps `bridge.OpError` (via the plan's Python-code table, original kept in `details.editor_code`; traceback ⇒
+  `PYTHON_ERROR`), uexec sentinels (`ErrEditorNotFound` ⇒ retryable `EDITOR_UNREACHABLE`; timeout/connection-loss ⇒
+  `outcome:"unknown"` for non-ReadOnly calls), context errors, and passes envelope errors through. `SafetyNet`
+  receiving middleware rewrites unstructured `isError` results to `INTERNAL` and turns calls to known-but-disabled
+  tools into `PRECONDITION` naming the toolset (truly unknown names stay protocol errors).
+- `internal/tools/spec`: `Spec`/`OpSpec` (per-op tier, idempotency, async, timeout/max, required/rejects, reaches);
+  registration through raw `Server.AddTool` with in-house validation (`jsonschema-go`, defaults applied) so every
+  error path is enveloped; op dispatch with per-op Required/Rejects; `timeout_s` capped at the op's Max; per-call
+  `recover()`; annotations from the worst op per the §2.1 table (openWorldHint always explicit); no outputSchema.
+  `Lint` enforces R2/R3/R6 and the tier rules (RO-only tools, no destructive op beside RO/Eph ops, declared tier ≥
+  worst reached Python op unless its escalating args are Rejected). Resolved schemas cached per Spec.
+- `spec/pyops.go` replaces `internal/manifest` (deleted): all 81 ops classified on the 5-tier model with argument
+  escalations evaluated on effective values (`apply_level_recipe clean_slate` defaults true ⇒ escalates by
+  default). Bijection test vs `bridge.CompanionOps()`. Sweep + hazards: [`P3a_PYOPS_SWEEP.md`](P3a_PYOPS_SWEEP.md).
+- v1 surface re-served through the spec layer via `spec.Typed` (`add()` now registers a Spec): same names and input
+  schemas and result shapes, v2 annotations (tier = same-named op's worst tier, explicit table otherwise), envelope
+  errors. Stdio server installs `SafetyNet`.
+- bridge install errors now wrap their cause (`%w`), so an install-time timeout classifies as `TIMEOUT`.
+- Stale `editorpool:` error strings/aliases/comments renamed (P2 gate note).
+
+**Evidence.**
+- `testdata/tools_list.v1-envelope.golden.json` committed and asserted byte-for-byte (`TestV1EnvelopeGolden`); the
+  155-name list is unchanged (`TestV1SurfaceFrozen`). Stdio tools/list via spec = **100,362 bytes** (was 106,701 —
+  output schemas dropped, annotations added).
+- Envelope on every error path, end-to-end (`internal/e2e/envelope_test.go`): schema violation ⇒ `INVALID_ARGUMENT`
+  and the editor is never reached; editor `UNKNOWN_OP`; editor op error ⇒ `OPERATION_FAILED`; `CLASS_UNRESOLVED` ⇒
+  `NOT_FOUND` with `details.editor_code`; no editor ⇒ retryable `EDITOR_UNREACHABLE`; slow mutating op ⇒
+  `TIMEOUT`/`outcome:unknown`/non-retryable. Unit: panic ⇒ `INTERNAL`; unknown op/missing/rejected params;
+  `timeout_s=60` capped at a 200 ms op Max; annotation mapping per tier; every Python code mapping; Classify matrix;
+  SafetyNet rewrite + disabled-tool hint; Lint catches each rule and accepts the Rejects escape hatch.
+- `BenchmarkServerConstruction` (50 specs): **16 µs/op** (target < 2 ms; was 2.03 ms before caching resolved schemas).
+- `go vet ./...`, gofmt, `go test ./...` (incl. archtest with the new `tools/envelope`, `tools/spec` edges) green.
+
+**Deviations.** `affordances` is kept until P5e: it backs the v1 `affordances` tool, which stays on the surface until
+`toolsets describe` replaces it (P3 must not change the v1 surface). Archtest allows `tools/envelope → uexec` (needed
+to map protocol errors; plan listed `session, bridge`). The daemon's three `project_*` tools still register via
+`mcp.AddTool` until P3b moves them behind `session.ProjectManager`.

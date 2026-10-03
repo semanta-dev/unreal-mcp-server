@@ -61,7 +61,7 @@ func (b *Bridge) markUninstalled() {
 func (b *Bridge) installedVersion(ctx context.Context) (int, error) {
 	s, err := b.Eval(ctx, "globals().get('_MCP_BRIDGE_VERSION', 0)")
 	if err != nil {
-		return 0, fmt.Errorf("%w: version check: %v", ErrInstall, err)
+		return 0, fmt.Errorf("%w: version check: %w", ErrInstall, err)
 	}
 	n, err := strconv.Atoi(strings.TrimSpace(s))
 	if err != nil {
@@ -105,7 +105,7 @@ func (b *Bridge) installHotload(ctx context.Context) error {
 		"exec(compile(base64.b64decode(%q).decode(\"utf-8\"), \"mcp_bridge\", \"exec\"), globals())", b64)
 	res, err := b.run.RunCommand(ctx, boot, uexec.ModeExecFile)
 	if err != nil {
-		return fmt.Errorf("%w: hotload: %v", ErrInstall, err)
+		return fmt.Errorf("%w: hotload: %w", ErrInstall, err)
 	}
 	if !res.Success {
 		return fmt.Errorf("%w: hotload:\n%s", ErrInstall, FormatOutput(res))
@@ -141,7 +141,7 @@ globals()['_mcp_dispatch_native'] = _mcpb._mcp_dispatch_native
 globals()['_MCP_BRIDGE_VERSION'] = _mcpb._MCP_BRIDGE_VERSION`, pyDir, pyDir)
 	res, err := b.run.RunCommand(ctx, boot, uexec.ModeExecFile)
 	if err != nil {
-		return fmt.Errorf("%w: ondisk import: %v", ErrInstall, err)
+		return fmt.Errorf("%w: ondisk import: %w", ErrInstall, err)
 	}
 	if !res.Success {
 		return fmt.Errorf("%w: ondisk import:\n%s", ErrInstall, FormatOutput(res))

@@ -92,10 +92,10 @@ type Liveness interface {
 }
 
 var (
-	ErrNotFound      = errors.New("editorpool: instance not found")
-	ErrNoneAvailable = errors.New("editorpool: no idle instance for project")
-	ErrNotLeased     = errors.New("editorpool: instance not leased by caller")
-	ErrBadState      = errors.New("editorpool: instance not in the required state")
+	ErrNotFound      = errors.New("supervisor: instance not found")
+	ErrNoneAvailable = errors.New("supervisor: no idle instance for project")
+	ErrNotLeased     = errors.New("supervisor: instance not leased by caller")
+	ErrBadState      = errors.New("supervisor: instance not in the required state")
 )
 
 // Pool is a concurrency-safe registry of editor instances.

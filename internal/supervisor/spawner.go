@@ -1,5 +1,5 @@
 // Package daemonwire is the production wiring that connects the daemon CORE
-// (internal/daemon, internal/editorpool, internal/uexec split) to real OS editors
+// (internal/daemon, internal/supervisor, internal/uexec) to real OS editors
 // (internal/lifecycle) and per-instance command bridges (internal/bridge). It
 // implements Spawner (editor bring-up + kill) and the Editor that
 // wraps a per-instance uexec.Session + bridge.Bridge. Kept separate from the daemon

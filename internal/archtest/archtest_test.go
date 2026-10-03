@@ -27,7 +27,11 @@ var allowed = map[string][]string{
 	"bridge/bridgetest": {"uexec/uexectest"},
 	"config":            {"uexec"},
 	"visual":            {"audit"},
+	// envelope maps bridge.OpError and uexec sentinel errors onto the closed code set.
+	"tools/envelope": {"bridge", "uexec"},
+	"tools/spec":     {"session", "bridge", "tools/envelope"},
 	"tools": {
+		"tools/spec", "tools/envelope",
 		"session", "bridge", "uexec", "jobs", "lifecycle", "logs", "build", "headless", "desktop",
 		"crash", "perf", "projectconfig", "projectmap", "scenespec", "audit", "visual", "eval",
 		"design", "snapshot",
@@ -39,7 +43,10 @@ var allowed = map[string][]string{
 var testOnly = map[string]bool{"e2e": true, "archtest": true}
 
 func TestImportDAG(t *testing.T) {
-	gobin := filepath.Join(runtime.GOROOT(), "bin", "go")
+	gobin, err := exec.LookPath("go")
+	if err != nil {
+		gobin = filepath.Join(runtime.GOROOT(), "bin", "go") // fallback when go is not on PATH
+	}
 	out, err := exec.Command(gobin, "list", "-f", `{{.ImportPath}}|{{join .Imports " "}}`, "../../...").Output()
 	if err != nil {
 		t.Fatalf("go list: %v", err)

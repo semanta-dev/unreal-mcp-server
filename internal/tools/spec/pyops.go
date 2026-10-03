@@ -1,0 +1,162 @@
+package spec
+
+// PyOp classifies one companion-module op (internal/bridge/py, `_OPS`). This table
+// replaces the v1 manifest (internal/manifest) and is kept in bijection with
+// bridge.CompanionOps() by TestPyOpsBijection — an unclassified op fails the build.
+//
+// Tiers were assigned by reading every op body (sweep recorded in
+// docs/plans/OVERHAUL_PROGRESS.md §P3a). Policy calls, applied consistently:
+//   - PIE game-world state is session state → Ephemeral (pie_set_property, pie_destroy,
+//     pie_input, start/stop_play); it is gone when PIE stops.
+//   - Saving dirty packages is a write, not a loss → Mutating (open_level, save_all).
+//   - Ops whose world defaults to auto (company_*) are graded for the worst case: with
+//     PIE off they act on the editor level.
+type PyOp struct {
+	Tier        Tier
+	Escalations []Escalation
+	Note        string
+}
+
+// Escalation raises an op's tier when an argument's EFFECTIVE value (after the op's
+// own default) is truthy — so a flag that defaults on escalates by default.
+type Escalation struct {
+	Arg     string
+	Default any // the op's default for Arg (checked against the Python source)
+	Tier    Tier
+}
+
+// PyOps is the classification of every companion op.
+var PyOps = map[string]PyOp{
+	"actor_transforms": {Tier: ReadOnly},
+	"apply_level_recipe": {Tier: Exec, Note: "exec()s a caller-supplied script file",
+		Escalations: []Escalation{{Arg: "clean_slate", Default: true, Tier: Destructive}}},
+	"asset_deps":               {Tier: ReadOnly},
+	"asset_info":               {Tier: ReadOnly},
+	"asset_query":              {Tier: ReadOnly},
+	"asset_reimport":           {Tier: Destructive, Note: "overwrites the asset from its source file"},
+	"asset_tags":               {Tier: ReadOnly},
+	"asset_thumbnail":          {Tier: Ephemeral, Note: "writes Saved/MCP/AssetThumbs; transient capture actors dirty the level"},
+	"assign_subclass":          {Tier: Mutating},
+	"audio_capture_start":      {Tier: Ephemeral},
+	"audio_capture_stop":       {Tier: Ephemeral, Note: "writes the capture to out_dir (unchecked path)"},
+	"blueprint_add_component":  {Tier: Mutating},
+	"blueprint_create":         {Tier: Mutating},
+	"blueprint_set_defaults":   {Tier: Mutating},
+	"capture_list":             {Tier: ReadOnly},
+	"capture_poll":             {Tier: ReadOnly},
+	"capture_poses":            {Tier: Ephemeral},
+	"capture_start":            {Tier: Ephemeral},
+	"capture_stop":             {Tier: Ephemeral},
+	"cockpit_info":             {Tier: ReadOnly, Note: "returns the cockpit session token — never surface to the agent"},
+	"company_build":            {Tier: Mutating},
+	"company_demolish":         {Tier: Destructive, Note: "world=auto falls back to the editor level when PIE is off"},
+	"company_road":             {Tier: Mutating},
+	"company_select":           {Tier: Mutating},
+	"company_status":           {Tier: ReadOnly},
+	"console":                  {Tier: Exec},
+	"create_material_instance": {Tier: Mutating},
+	"dataasset_create":         {Tier: Mutating},
+	"datatable_create":         {Tier: Mutating},
+	"datatable_import": {Tier: Mutating,
+		Escalations: []Escalation{{Arg: "json", Default: nil, Tier: Destructive}, {Arg: "csv", Default: nil, Tier: Destructive}},
+		Note:        "fill_data_table_from_*_string replaces every existing row"},
+	"delete_actor":        {Tier: Destructive},
+	"design_probe":        {Tier: ReadOnly},
+	"editor_ping":         {Tier: ReadOnly},
+	"editor_state":        {Tier: ReadOnly},
+	"editor_status":       {Tier: ReadOnly},
+	"enum_values":         {Tier: ReadOnly},
+	"find_actors":         {Tier: ReadOnly},
+	"focus_actors":        {Tier: Ephemeral},
+	"get_actor":           {Tier: ReadOnly},
+	"get_selection":       {Tier: ReadOnly},
+	"import_assets":       {Tier: Destructive, Note: "replace_existing=True and save=True are hard-coded"},
+	"instances_count":     {Tier: ReadOnly},
+	"instances_list":      {Tier: ReadOnly},
+	"level_diff":          {Tier: ReadOnly},
+	"level_snapshot":      {Tier: Ephemeral},
+	"list_actors":         {Tier: ReadOnly},
+	"list_assets":         {Tier: ReadOnly},
+	"live_coding_compile": {Tier: Mutating, Note: "fixed command; compiles and hot-patches project C++"},
+	"map_gameplay":        {Tier: ReadOnly},
+	"open_level":          {Tier: Mutating, Note: "saves all dirty packages before loading"},
+	"pawn_state":          {Tier: ReadOnly},
+	"pie_destroy":         {Tier: Ephemeral},
+	"pie_exec":            {Tier: Exec, Note: "calls a caller-named UFUNCTION"},
+	"pie_input":           {Tier: Ephemeral},
+	"pie_observe":         {Tier: ReadOnly},
+	"pie_screenshot":      {Tier: Ephemeral},
+	"pie_set_property":    {Tier: Ephemeral},
+	"play_test_sound":     {Tier: Ephemeral},
+	"reflect_class":       {Tier: ReadOnly},
+	"reflect_object":      {Tier: ReadOnly},
+	"save_all":            {Tier: Mutating},
+	"scene_apply": {Tier: Mutating,
+		Escalations: []Escalation{{Arg: "prune", Default: false, Tier: Destructive}}},
+	"scene_bounds":        {Tier: ReadOnly},
+	"scene_clear":         {Tier: Destructive},
+	"scene_restore":       {Tier: Mutating, Note: "saves map packages afterwards"},
+	"select_actors":       {Tier: Ephemeral},
+	"set_actor_transform": {Tier: Mutating},
+	"set_world_gamemode":  {Tier: Mutating},
+	"spawn_actor":         {Tier: Mutating},
+	"start_play":          {Tier: Ephemeral},
+	"stop_play":           {Tier: Ephemeral},
+	"take_screenshot":     {Tier: Ephemeral},
+	"viewport_get":        {Tier: ReadOnly},
+	"viewport_set": {Tier: Ephemeral,
+		Escalations: []Escalation{{Arg: "console", Default: nil, Tier: Exec}}},
+	"widget_compile": {Tier: Mutating},
+	"widget_compose": {Tier: Mutating,
+		Escalations: []Escalation{{Arg: "prune", Default: false, Tier: Destructive}, {Arg: "remove", Default: nil, Tier: Destructive}},
+		Note:        "a spec root that differs from the current root also orphans the existing tree"},
+	"widget_create":   {Tier: Mutating},
+	"widget_describe": {Tier: ReadOnly},
+	"widget_render":   {Tier: Ephemeral, Note: "writes a PNG to out_path (unchecked path)"},
+	"widget_tree":     {Tier: ReadOnly},
+	"world_query":     {Tier: ReadOnly},
+}
+
+// WorstTier is the highest tier an op can reach with any arguments.
+func (p PyOp) WorstTier() Tier {
+	t := p.Tier
+	for _, e := range p.Escalations {
+		if e.Tier > t {
+			t = e.Tier
+		}
+	}
+	return t
+}
+
+// EffectiveTier is the op's tier for a concrete argument set.
+func (p PyOp) EffectiveTier(args map[string]any) Tier {
+	t := p.Tier
+	for _, e := range p.Escalations {
+		v, ok := args[e.Arg]
+		if !ok {
+			v = e.Default
+		}
+		if truthy(v) && e.Tier > t {
+			t = e.Tier
+		}
+	}
+	return t
+}
+
+func truthy(v any) bool {
+	switch x := v.(type) {
+	case nil:
+		return false
+	case bool:
+		return x
+	case string:
+		return x != ""
+	case float64:
+		return x != 0
+	case []any:
+		return len(x) > 0
+	case map[string]any:
+		return len(x) > 0
+	}
+	return true
+}

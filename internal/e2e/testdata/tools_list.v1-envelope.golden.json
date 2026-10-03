@@ -1,0 +1,5310 @@
+{
+  "tools": [
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "The tool capability manifest: which tools are offline vs need a live editor / PIE / navmesh / the C++ plugin, and which mutate state. Plan against this instead of discovering constraints by failing.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "offline_only": {
+            "description": "return only tools that need no live editor",
+            "type": "boolean"
+          },
+          "tool": {
+            "description": "return just this tool's affordance",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "affordances"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Run an idempotent level-recipe .py in the editor (optionally clean-slating first), then save. Returns actor counts before/after and any MISSING/errors.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "clean_slate": {
+            "description": "destroy non-WorldSettings actors first; default true",
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "save": {
+            "description": "save after; default true",
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "script_path": {
+            "description": "path to an idempotent level-recipe .py (run in the editor)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "script_path"
+        ],
+        "type": "object"
+      },
+      "name": "apply_level_recipe"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "List an asset's hard dependencies and referencers (what it needs / what needs it).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "asset": {
+            "description": "an asset object or package path, e.g. /Game/BP/BP_Turret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset"
+        ],
+        "type": "object"
+      },
+      "name": "asset_deps"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Get metadata for an asset (class, bounds, LODs, materials, Nanite) — recipes need mesh bounds for tiling.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_path"
+        ],
+        "type": "object"
+      },
+      "name": "asset_info"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Find content-browser assets by class and/or path via the AssetRegistry (no dumb path walk). e.g. every Blueprint deriving a C++ class.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blueprints": {
+            "description": "find Blueprint assets DERIVING the class_paths (a BP's own class is always /Script/Engine.Blueprint, so a plain query never finds them). Use for 'every BP deriving ATurret'.",
+            "type": "boolean"
+          },
+          "class_paths": {
+            "description": "class paths to match, e.g. /Script/Engine.StaticMesh; with blueprints=true these are the PARENT classes, e.g. /Script/AesirWaveDefense.Turret",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "limit": {
+            "description": "max results; default 200",
+            "type": "integer"
+          },
+          "package_paths": {
+            "description": "content roots to search, e.g. /Game/Blueprints",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "recursive": {
+            "description": "recurse package paths; default true",
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "recursive_classes": {
+            "description": "match subclasses of class_paths; default true",
+            "type": [
+              "null",
+              "boolean"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "name": "asset_query"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Reimport an asset from its source file (source art changed mid-session).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_path"
+        ],
+        "type": "object"
+      },
+      "name": "asset_reimport"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Read an asset's registry tags — Blueprint lineage (ParentClass/NativeParentClass/GeneratedClass) WITHOUT loading it.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "asset": {
+            "description": "an asset object or package path, e.g. /Game/BP/BP_Turret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset"
+        ],
+        "type": "object"
+      },
+      "name": "asset_tags"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Render a Content Browser StaticMesh into a PNG thumbnail (canonical 3/4 angle) and return hard facts (tri/vert count, material slot names, LOD count, bounds). The keystone perception primitive so the agent can SEE an asset before placing it. Requires a live editor.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_path": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asset_path"
+        ],
+        "type": "object"
+      },
+      "name": "asset_thumbnail"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Report diagnostic asset-pack utilization (readonly) for a referenced inventory.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "inventory": {
+            "additionalProperties": false,
+            "properties": {
+              "all_assets": {
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              },
+              "pack": {
+                "type": "string"
+              },
+              "referenced": {
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              }
+            },
+            "required": [
+              "pack",
+              "all_assets",
+              "referenced"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "inventory"
+        ],
+        "type": "object"
+      },
+      "name": "asset_utilization"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Assign a class into a Blueprint CDO's TSubclassOf property (e.g. GameMode.DefaultPawnClass, Weapon.ProjectileClass).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "class_path": {
+            "description": "the class to assign",
+            "type": "string"
+          },
+          "prop": {
+            "description": "a TSubclassOf property name, e.g. ProjectileClass",
+            "type": "string"
+          },
+          "target": {
+            "description": "the Blueprint whose CDO to edit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "prop",
+          "class_path"
+        ],
+        "type": "object"
+      },
+      "name": "assign_subclass"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Run the audio Layer-A deterministic audit (readonly) against an RMS track and gameplay events.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "audio_t": {
+                  "type": "number"
+                },
+                "camera_t": {
+                  "type": "number"
+                },
+                "fx_count": {
+                  "type": "integer"
+                },
+                "instigator": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "location": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": "array"
+                },
+                "t": {
+                  "type": "number"
+                },
+                "visual_t": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "t",
+                "kind"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "track": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "peak": {
+                  "type": "number"
+                },
+                "rms": {
+                  "type": "number"
+                },
+                "t": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "t",
+                "rms",
+                "peak"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "track",
+          "events"
+        ],
+        "type": "object"
+      },
+      "name": "audio_audit"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Start tapping the game's main audio submix during PIE, recording an RMS/peak envelope. Requires a running play session. Pair with audio_capture_stop; the envelope feeds audio_audit to certify a build is not silent.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "session": {
+            "type": "string"
+          },
+          "world": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "audio_capture_start"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Stop the audio submix tap and write \u003csession\u003e_audio.jsonl ({t,rms,peak} per buffer) to out_dir. Returns {path,points,max_rms,duration}.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "out_dir": {
+            "type": "string"
+          },
+          "world": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "audio_capture_stop"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Run the balance sweep and gate keystone analysis (readonly) against a scaffold.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "grid": {
+            "additionalProperties": false,
+            "properties": {
+              "ESteps": {
+                "type": "integer"
+              },
+              "SSteps": {
+                "type": "integer"
+              },
+              "SplashSteps": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "SSteps",
+              "ESteps",
+              "SplashSteps"
+            ],
+            "type": "object"
+          },
+          "scaffold": {
+            "additionalProperties": false,
+            "properties": {
+              "BaseDamage": {
+                "type": "number"
+              },
+              "ExpandGrowth": {
+                "type": "number"
+              },
+              "Focus": {
+                "type": "integer"
+              },
+              "SplashMin": {
+                "type": "number"
+              },
+              "Spread": {
+                "type": "integer"
+              },
+              "Waves": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "Count": {
+                      "type": "integer"
+                    },
+                    "HP": {
+                      "type": "number"
+                    },
+                    "Spike": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "Count",
+                    "HP",
+                    "Spike"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              }
+            },
+            "required": [
+              "Waves",
+              "BaseDamage",
+              "Focus",
+              "Spread",
+              "SplashMin",
+              "ExpandGrowth"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "scaffold"
+        ],
+        "type": "object"
+      },
+      "name": "balance_sweep"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Add a component to a Blueprint via the SubobjectDataSubsystem, then compile.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blueprint": {
+            "type": "string"
+          },
+          "component_class": {
+            "description": "e.g. /Script/Engine.StaticMeshComponent",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "blueprint",
+          "component_class"
+        ],
+        "type": "object"
+      },
+      "name": "blueprint_add_component"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Create a Blueprint asset from a C++/Blueprint parent class (the sanctioned split: logic in C++, Blueprints carry data + composition).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dest": {
+            "description": "destination asset path, e.g. /Game/BP/BP_LaserTurret",
+            "type": "string"
+          },
+          "parent_class_path": {
+            "description": "C++ or Blueprint parent, e.g. /Script/AesirWaveDefense.Turret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent_class_path",
+          "dest"
+        ],
+        "type": "object"
+      },
+      "name": "blueprint_create"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Set default property values on a Blueprint's CDO, then compile + save.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blueprint": {
+            "description": "the Blueprint asset path",
+            "type": "string"
+          },
+          "defaults": {
+            "additionalProperties": true,
+            "description": "CDO property overrides, e.g. {Range:4000, Damage:40}",
+            "type": "object"
+          }
+        },
+        "required": [
+          "blueprint",
+          "defaults"
+        ],
+        "type": "object"
+      },
+      "name": "blueprint_set_defaults"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Compile the project's C++ (async job). strategy=auto classifies from the git diff: header/reflection/new-file changes -\u003e full Build.bat rebuild (closes+reopens the editor); body-only changes -\u003e Live Coding. Poll job_status for streamed progress and structured diagnostics.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "strategy": {
+            "description": "auto|livecoding|full (default auto: classify from the git diff)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "build_compile"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Delete MCP capture files from disk (a specific session, or all of them) so runs don't accumulate frames. Clears both Saved/MCP/capture and the mcp_* pie_highres screenshots.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "session": {
+            "description": "a specific capture session to delete; empty = clear ALL MCP captures",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "capture_clear"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Start an in-editor recorder that captures a screenshot + observed game state every interval_s to disk (no per-frame round-trip). Use scene_capture for editor/simulate, pie_highres for possessed PIE. Stop with capture_stop.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "camera_actor": {
+            "description": "actor label to ride when camera_mode=actor",
+            "type": "string"
+          },
+          "camera_fov": {
+            "description": "field of view for game_scene fixed/player capture; default 90",
+            "type": "number"
+          },
+          "camera_location": {
+            "description": "[x,y,z] for camera_mode=fixed",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "camera_mode": {
+            "description": "viewport (follow editor viewport; default) | fixed | actor",
+            "type": "string"
+          },
+          "camera_rotation_pyr": {
+            "description": "[pitch,yaw,roll] for camera_mode=fixed",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "cell_height": {
+            "description": "per-frame height; default 270",
+            "type": "integer"
+          },
+          "cell_width": {
+            "description": "per-frame width; default 480",
+            "type": "integer"
+          },
+          "exclude": {
+            "description": "observe: property exclude globs",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "include": {
+            "description": "observe: property include globs",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "include_ui": {
+            "description": "game_scene only: capture the composited on-screen viewport INCLUDING the Slate/UMG HUD (needs a visible/rendering window). Default false = 3D scene only (backgrounded-safe, no HUD).",
+            "type": "boolean"
+          },
+          "interval_s": {
+            "description": "seconds between frames; default 0.25",
+            "type": "number"
+          },
+          "max_frames": {
+            "description": "auto-stop after this many frames; default 240",
+            "type": "integer"
+          },
+          "max_seconds": {
+            "description": "auto-stop after this many seconds; default 60",
+            "type": "number"
+          },
+          "properties": {
+            "description": "observe: exact property names",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "session": {
+            "description": "a session id to reuse; omit to auto-generate",
+            "type": "string"
+          },
+          "source": {
+            "description": "scene_capture (editor/simulate, backgrounded-safe; default) | pie_highres (possessed PIE, needs a foreground viewport) | game_scene (live PIE via the UnrealMCP C++ plugin — renders backgrounded)",
+            "type": "string"
+          },
+          "track_actors": {
+            "description": "actor labels to record detailed per-frame state for",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "world": {
+            "description": "auto|editor|game; default auto (game world if in PIE)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "capture_start"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "One-shot status of a running capture (frames captured so far, last world time). Does NOT block or poll — the recorder owns cadence.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "session": {
+            "description": "the capture session id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session"
+        ],
+        "type": "object"
+      },
+      "name": "capture_status"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Stop a capture recorder and return a single contact-sheet montage image plus a synchronized timeline (per-frame world time + observed state, each mapped to a montage cell).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cols": {
+            "description": "montage columns; default 8",
+            "type": "integer"
+          },
+          "draw_labels": {
+            "description": "stamp each frame's world time into its cell",
+            "type": "boolean"
+          },
+          "mark_cells": {
+            "description": "frame indices to flag with a red border",
+            "items": {
+              "type": "integer"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "session": {
+            "description": "the capture session id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session"
+        ],
+        "type": "object"
+      },
+      "name": "capture_stop"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Return the MCP Cockpit URL — a browser page for live control + observability of the editor (feed, gates, STOP). Open it in a browser. Empty with ready=false until an editor with the UnrealMCP (MCPCore) plugin is running.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "name": "cockpit_url"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Place a factory from the build catalog (option index) at a world [x,y,z] location — what a HUD build-palette click does; spends Capital. Returns {built,name,spent,capital}.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "location": {
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "option": {
+            "type": "integer"
+          },
+          "world": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "option"
+        ],
+        "type": "object"
+      },
+      "name": "company_build"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Bulldoze the building nearest a world [x,y,z] location — refunds half its cost and destroys it (frees its grid cells). Returns {demolished,name,refund,capital}.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "location": {
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "world": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "company_demolish"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Drag-build a road line from grid cell start=[x,y] to end=[x,y] (X-first L), clamped to the affordable/unblocked prefix. Returns {placed,capital,road_cells}.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "items": {
+              "type": "integer"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "start": {
+            "items": {
+              "type": "integer"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "world": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "type": "object"
+      },
+      "name": "company_road"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Set a production building's SUPPLIER (who you buy inputs from) and/or MARKET (who you sell the product to) by catalog index — the core Capitalism-2 choice. Profit updates next cycle.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "building": {
+            "type": "integer"
+          },
+          "market": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "supplier": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "name": "company_select"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Read the PolyWorld Company-MVP economy from the live PIE: company Capital + each production building's supplier/market and last-cycle profit.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "world": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "company_status"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Create a material instance from a parent, applying scalar/vector/texture parameter overrides.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dest": {
+            "description": "destination asset path for the instance",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "description": "{scalar:{}, vector:{}, texture:{}} parameter overrides",
+            "type": "object"
+          },
+          "parent": {
+            "description": "parent material path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent",
+          "dest"
+        ],
+        "type": "object"
+      },
+      "name": "create_material_instance"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Create a DataAsset instance of a class.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "class": {
+            "description": "the DataAsset (sub)class",
+            "type": "string"
+          },
+          "dest": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dest",
+          "class"
+        ],
+        "type": "object"
+      },
+      "name": "dataasset_create"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Create a DataTable asset backed by a row struct.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dest": {
+            "type": "string"
+          },
+          "row_struct": {
+            "description": "/Script/Module.MyRow or a UserDefinedStruct asset path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dest",
+          "row_struct"
+        ],
+        "type": "object"
+      },
+      "name": "datatable_create"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Populate a DataTable from a JSON (preferred) or CSV string; returns imported:true + row count, or an IMPORT_FAILED code (per-row errors go to the editor log).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "csv": {
+            "description": "rows as a CSV string",
+            "type": "string"
+          },
+          "datatable": {
+            "type": "string"
+          },
+          "json": {
+            "description": "rows as a JSON string (the reliable population path)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "datatable"
+        ],
+        "type": "object"
+      },
+      "name": "datatable_import"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Run the decision cadence Layer-A deterministic audit (readonly) against observed decision points.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "points": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": [
+                    "null",
+                    "array"
+                  ]
+                },
+                "chosen": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "t": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "t",
+                "available",
+                "chosen"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "points"
+        ],
+        "type": "object"
+      },
+      "name": "decision_audit"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Delete an actor from the current level by its editor label.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_label": {
+            "description": "the actor's editor label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor_label"
+        ],
+        "type": "object"
+      },
+      "name": "delete_actor"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Lint the current level's design invariants (lighting, missing meshes, player start, nav bounds) via one probe. Catches the failures that make a level unplayable/black before a playtest.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "checks": {
+            "additionalProperties": false,
+            "description": "explicit invariants to require (overrides the spec's checks)",
+            "properties": {
+              "require_environment_lit": {
+                "type": "boolean"
+              },
+              "require_nav_bounds": {
+                "type": "boolean"
+              },
+              "require_no_missing_meshes": {
+                "type": "boolean"
+              },
+              "require_player_start": {
+                "type": "boolean"
+              },
+              "spawns_within_bounds": {
+                "type": "boolean"
+              }
+            },
+            "type": [
+              "null",
+              "object"
+            ]
+          },
+          "spec_json": {
+            "type": "string"
+          },
+          "spec_path": {
+            "description": "a spec whose checks block to evaluate",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "design_check"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Run the design exploration keystone search (readonly) from a seed genotype.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "donors": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "BaseDamage": {
+                  "type": "number"
+                },
+                "ExpandGrowth": {
+                  "type": "number"
+                },
+                "Focus": {
+                  "type": "integer"
+                },
+                "SplashMin": {
+                  "type": "number"
+                },
+                "Spread": {
+                  "type": "integer"
+                },
+                "Waves": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "Count": {
+                        "type": "integer"
+                      },
+                      "HP": {
+                        "type": "number"
+                      },
+                      "Spike": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "Count",
+                      "HP",
+                      "Spike"
+                    ],
+                    "type": "object"
+                  },
+                  "type": [
+                    "null",
+                    "array"
+                  ]
+                }
+              },
+              "required": [
+                "Waves",
+                "BaseDamage",
+                "Focus",
+                "Spread",
+                "SplashMin",
+                "ExpandGrowth"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "evaluations": {
+            "type": "integer"
+          },
+          "search_seed": {
+            "type": "integer"
+          },
+          "seed": {
+            "additionalProperties": false,
+            "properties": {
+              "Policy": {
+                "additionalProperties": false,
+                "properties": {
+                  "E": {
+                    "type": "number"
+                  },
+                  "S": {
+                    "type": "number"
+                  },
+                  "Splash": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "S",
+                  "Splash",
+                  "E"
+                ],
+                "type": "object"
+              },
+              "Scaffold": {
+                "additionalProperties": false,
+                "properties": {
+                  "BaseDamage": {
+                    "type": "number"
+                  },
+                  "ExpandGrowth": {
+                    "type": "number"
+                  },
+                  "Focus": {
+                    "type": "integer"
+                  },
+                  "SplashMin": {
+                    "type": "number"
+                  },
+                  "Spread": {
+                    "type": "integer"
+                  },
+                  "Waves": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "Count": {
+                          "type": "integer"
+                        },
+                        "HP": {
+                          "type": "number"
+                        },
+                        "Spike": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "Count",
+                        "HP",
+                        "Spike"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "null",
+                      "array"
+                    ]
+                  }
+                },
+                "required": [
+                  "Waves",
+                  "BaseDamage",
+                  "Focus",
+                  "Spread",
+                  "SplashMin",
+                  "ExpandGrowth"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "Policy",
+              "Scaffold"
+            ],
+            "type": "object"
+          },
+          "top_k": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seed"
+        ],
+        "type": "object"
+      },
+      "name": "design_explore"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Tail the editor's structured event stream (issues, PIE transitions) by byte offset — observable even while a long op holds the command channel. Returns events + a new offset to poll from.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "max events returned (most recent kept); default 200",
+            "type": "integer"
+          },
+          "since_offset": {
+            "description": "byte marker from a previous call; 0 = from the start",
+            "type": "integer"
+          },
+          "type": {
+            "description": "only return events of this type (e.g. issue)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "editor_events"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Cheap liveness probe: is the editor reachable, what bridge version, is it in PIE. A fast heartbeat that doesn't touch assets.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "name": "editor_ping"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Save, quit, and relaunch the editor (async job). Useful after a full rebuild or to recover a wedged editor.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "save": {
+            "type": "boolean"
+          },
+          "timeout_s": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "name": "editor_restart"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Rich editor state in one call: current level, PIE state, viewport camera, selection, actor count, and active capture recorders (a superset of editor_status).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "name": "editor_state"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Check whether the Unreal Editor is reachable and report engine version, project, current level, and PIE state.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "name": "editor_status"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "List a UENUM(BlueprintType) or UserDefinedEnum's enumerators (names + values) — e.g. to write a wait predicate over an enum field.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "enum_path": {
+            "description": "a UENUM(BlueprintType) name (e.g. EWaveState) or a UserDefinedEnum asset path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enum_path"
+        ],
+        "type": "object"
+      },
+      "name": "enum_values"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Apply a lighting/sky/exposure preset (daytime_clear|overcast|dusk|night|studio) as scene-managed actors, with the sun always correctly pitched down so the level is lit (not black).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "overrides": {
+            "additionalProperties": true,
+            "description": "e.g. {sun_rotation_pyr:[-45,30,0], sun_intensity_lux:75000, exposure_ev100:11}",
+            "type": "object"
+          },
+          "preset": {
+            "description": "daytime_clear|overcast|dusk|night|studio",
+            "type": "string"
+          },
+          "save": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "scene_id": {
+            "description": "scene id to namespace the env actors; default 'env'",
+            "type": "string"
+          }
+        },
+        "required": [
+          "preset"
+        ],
+        "type": "object"
+      },
+      "name": "env_preset_apply"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Run an Unreal console command in the editor (e.g. 'stat fps', 'r.ScreenPercentage 50', 'LiveCoding.Compile'). Returns the command's captured editor log output.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "description": "the console command, e.g. 'stat fps', 'r.ScreenPercentage 50', 'LiveCoding.Compile'",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "type": "object"
+      },
+      "name": "execute_console_command"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Execute arbitrary Python in the Unreal Editor (full `unreal` module access). Set evaluate=true to evaluate a single expression and get its value.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "Python code to run in the editor (full unreal module access)",
+            "type": "string"
+          },
+          "evaluate": {
+            "description": "evaluate a single expression and return its value instead of running a script",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "name": "execute_python"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Run the feedback coverage Layer-A deterministic audit (readonly) against gameplay events.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "audio_t": {
+                  "type": "number"
+                },
+                "camera_t": {
+                  "type": "number"
+                },
+                "fx_count": {
+                  "type": "integer"
+                },
+                "instigator": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "location": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": "array"
+                },
+                "t": {
+                  "type": "number"
+                },
+                "visual_t": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "t",
+                "kind"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "max_fx_per_event": {
+            "type": "integer"
+          },
+          "within_ms": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "type": "object"
+      },
+      "name": "feel_audit"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Find live actors by class with an optional where-filter and selected reflected props (find a runtime-spawned actor by class+property).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "class_path": {
+            "description": "filter to this actor class (/Script or Blueprint path); default all actors",
+            "type": "string"
+          },
+          "limit": {
+            "description": "max results; default 100",
+            "type": "integer"
+          },
+          "reflect": {
+            "description": "property names to include per matched actor",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "where": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "filter to actors whose property equals a value (string-compared), e.g. Archetype maps to Caster",
+            "type": "object"
+          },
+          "world": {
+            "description": "auto|editor|game; default auto",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "find_actors"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Frame actors (or the current selection) in the editor viewport by aiming the camera at their combined bounds.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "distance_scale": {
+            "description": "multiplier on the framing distance; default 2.0",
+            "type": "number"
+          },
+          "pitch": {
+            "description": "camera pitch in degrees (negative looks down); default -30",
+            "type": "number"
+          },
+          "targets": {
+            "description": "actor labels to frame; empty = the current editor selection",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "name": "focus_actors"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Bring a window to the foreground (restoring it if minimized). Useful before a method=screen capture or before sending input that must land on a specific window. Selector: title substring, pid, or hwnd; default the Unreal Editor.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "hwnd": {
+            "description": "target an exact window handle (from list_windows)",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pid": {
+            "description": "target a specific process id instead of by title",
+            "type": "integer"
+          },
+          "title": {
+            "description": "window title substring (case-insensitive); omit to auto-detect the Unreal Editor",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "focus_window"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Append a gameplay tag to DefaultGameplayTags.ini (offline, idempotent).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "type": "string"
+          },
+          "tag": {
+            "description": "e.g. Ability.Dash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tag"
+        ],
+        "type": "object"
+      },
+      "name": "gameplay_tag_add"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Get details for one actor by its editor label: transform, class, components.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_label": {
+            "description": "the actor's editor label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor_label"
+        ],
+        "type": "object"
+      },
+      "name": "get_actor"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Get the currently selected editor actors (labels + classes).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "name": "get_selection"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Commit a checkpoint. Stages the given paths (or all tracked+new except Saved/Intermediate/DerivedDataCache) and commits. Never bypasses hooks.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "description": "commit message",
+            "type": "string"
+          },
+          "paths": {
+            "description": "paths to stage; default = all tracked+new except Saved/Intermediate/DerivedDataCache",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "type": "object"
+      },
+      "name": "git_checkpoint"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Show the git diff of the project working tree, optionally limited to paths.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "paths": {
+            "description": "limit the diff to these paths",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "name": "git_diff"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Show recent commits (hash, subject, date).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "max commits; default 20",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "git_log"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Hard-reset the project working tree to a ref (destructive: discards uncommitted changes). Use to roll back a bad edit in an unattended run.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "ref": {
+            "description": "commit/ref to hard-reset the working tree to (destructive: discards uncommitted changes)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "type": "object"
+      },
+      "name": "git_revert_to"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Show the git working-tree status of the project (branch, staged, unstaged, untracked).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "name": "git_status"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Run a commandlet, an -ExecCmds batch, or automation tests in a SEPARATE headless UnrealEditor-Cmd process — off the interactive editor's command channel. Blocks up to timeout; returns exit code + log tail + test summary.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "commandlet": {
+            "description": "a commandlet to -run, e.g. DataValidation, ResavePackages",
+            "type": "string"
+          },
+          "exec_cmds": {
+            "description": "console commands to batch via -ExecCmds (Quit is appended for you if you include it)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "run_tests": {
+            "description": "automation test filter, e.g. Project.Functional (expands to Automation RunTests \u003cfilter\u003e;Quit)",
+            "type": "string"
+          },
+          "timeout_s": {
+            "description": "max seconds before aborting; default 180, max 600",
+            "type": "number"
+          },
+          "with_gpu": {
+            "description": "render with a GPU (default is -nullrhi for pure-logic jobs)",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "name": "headless_run"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Post-rebuild/relaunch health gate: editor reachable (with the EXPECTED bridge version so a stale DLL is caught), and no crash since a given time. Use before trusting an editor after a compile.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "expect_version": {
+            "description": "fail if the live bridge version is below this (catches a stale/rolled-back module)",
+            "type": "integer"
+          },
+          "since": {
+            "description": "treat crashes at/after this time as failures; default: last 10 min",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "health_check"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Perceptually compare two images (a capture frame vs a golden baseline): dHash/aHash distance + luma delta, with a pass verdict. For visual-regression / golden gates.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "description": "path to a PNG image (e.g. a capture frame)",
+            "type": "string"
+          },
+          "b": {
+            "description": "path to the other PNG / baseline",
+            "type": "string"
+          },
+          "max_dhash": {
+            "description": "pass threshold on dHash distance; default 8. Set 0 for an exact match.",
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "max_luma_delta": {
+            "description": "pass threshold on luma delta; default 0.15. Set 0 for an exact match.",
+            "type": [
+              "null",
+              "number"
+            ]
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ],
+        "type": "object"
+      },
+      "name": "image_compare"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Import external files (FBX meshes, textures, audio) from disk into the content browser at destination_path.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "destination_path": {
+            "description": "content destination, default /Game/Imported",
+            "type": "string"
+          },
+          "file_paths": {
+            "description": "external files (FBX/textures/audio) to import from disk",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "file_paths"
+        ],
+        "type": "object"
+      },
+      "name": "import_assets"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Run the locomotion Layer-A deterministic audit (readonly) against motion samples.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "samples": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "anim_stride": {
+                  "type": "number"
+                },
+                "root_travel": {
+                  "type": "number"
+                },
+                "t": {
+                  "type": "number"
+                },
+                "yaw": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "t",
+                "root_travel",
+                "anim_stride",
+                "yaw"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "samples"
+        ],
+        "type": "object"
+      },
+      "name": "in_motion_audit"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Add/update a legacy input ACTION mapping in DefaultInput.ini (the path aesir uses; offline, idempotent).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "alt": {
+            "type": "boolean"
+          },
+          "cmd": {
+            "type": "boolean"
+          },
+          "ctrl": {
+            "type": "boolean"
+          },
+          "key": {
+            "description": "UE key name, e.g. SpaceBar, LeftShift, LeftMouseButton",
+            "type": "string"
+          },
+          "name": {
+            "description": "action name, e.g. Dash",
+            "type": "string"
+          },
+          "shift": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "key"
+        ],
+        "type": "object"
+      },
+      "name": "input_action"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Add/update a legacy input AXIS mapping in DefaultInput.ini (offline, idempotent).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "description": "UE key name, e.g. W",
+            "type": "string"
+          },
+          "name": {
+            "description": "axis name, e.g. MoveForward",
+            "type": "string"
+          },
+          "scale": {
+            "description": "axis scale, e.g. 1.0 or -1.0",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "key"
+        ],
+        "type": "object"
+      },
+      "name": "input_axis"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Count HISM/ISM instances (which list_actors and pie_observe.counts are blind to — a whole city can live as instances in ONE actor), grouped by mesh, filterable by component tag.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "instances_list cap; default 8192",
+            "type": "integer"
+          },
+          "mesh": {
+            "description": "restrict to components whose static-mesh path contains this substring",
+            "type": "string"
+          },
+          "tag": {
+            "description": "restrict to ISM/HISM components carrying this component tag (e.g. 'static')",
+            "type": "string"
+          },
+          "world": {
+            "description": "editor|game; default editor",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "instances_count"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "List HISM/ISM instance transforms (mesh, loc, rot, scale) — the instance-level content list.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "instances_list cap; default 8192",
+            "type": "integer"
+          },
+          "mesh": {
+            "description": "restrict to components whose static-mesh path contains this substring",
+            "type": "string"
+          },
+          "tag": {
+            "description": "restrict to ISM/HISM components carrying this component tag (e.g. 'static')",
+            "type": "string"
+          },
+          "world": {
+            "description": "editor|game; default editor",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "instances_list"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Request cancellation of an async job.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "job_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "type": "object"
+      },
+      "name": "job_cancel"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Poll an async job (build_compile, editor_restart, project_ensure_open) for status, streamed progress, and result.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "job_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "type": "object"
+      },
+      "name": "job_status"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Send real keyboard shortcuts at the OS level: a chord like 'ctrl+s', 'F5', 'alt+f4', 'escape', 'delete', 'ctrl+shift+p', or a sequence of chords. Goes to the foreground window, so focus_window first if needed. For typing literal text use type_text.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "keys": {
+            "description": "a single chord, e.g. 'ctrl+s', 'F5', 'alt+f4', 'escape', 'delete', 'ctrl+shift+p'",
+            "type": "string"
+          },
+          "sequence": {
+            "description": "a sequence of chords pressed in order, e.g. ['ctrl+a','delete']",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "name": "key_press"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Preview where a layout (grid|ring|line|scatter) would place instances — a pure planning tool that returns locations/rotations without touching the editor.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "layout": {
+            "additionalProperties": false,
+            "description": "a layout block: {type:grid|ring|line|scatter, ...params}",
+            "properties": {
+              "align_to_center": {
+                "type": "boolean"
+              },
+              "center": {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 3,
+                "minItems": 3,
+                "type": "array"
+              },
+              "cols": {
+                "type": "integer"
+              },
+              "count": {
+                "type": "integer"
+              },
+              "end": {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 3,
+                "minItems": 3,
+                "type": "array"
+              },
+              "extent": {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 3,
+                "minItems": 3,
+                "type": "array"
+              },
+              "radius": {
+                "type": "number"
+              },
+              "rows": {
+                "type": "integer"
+              },
+              "seed": {
+                "type": "integer"
+              },
+              "spacing": {
+                "type": "number"
+              },
+              "start": {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 3,
+                "minItems": 3,
+                "type": "array"
+              },
+              "start_angle_deg": {
+                "type": "number"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "layout"
+        ],
+        "type": "object"
+      },
+      "name": "layout_preview"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Diff the current level against a snapshot token: added, removed, and moved actors (verify a recipe did what was intended).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "before_token": {
+            "description": "a token from level_snapshot; empty = diff vs the most recent snapshot",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "level_diff"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Capture a snapshot of the current level's actors; returns a token for a later level_diff.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "name": "level_snapshot"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "List actors in the current level (label, class, location) as a JSON array. Optional case-insensitive filter matching label or class.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name_filter": {
+            "description": "case-insensitive filter matching actor label or class name",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "list_actors"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "List content browser assets under a path (e.g. '/Game', '/Game/Maps').",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "max results; default 200",
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "path": {
+            "description": "content path, default /Game",
+            "type": "string"
+          },
+          "recursive": {
+            "description": "recurse subfolders; default true",
+            "type": [
+              "null",
+              "boolean"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "name": "list_assets"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "List the OS's visible top-level windows (title, pid, handle, on-screen bounds, foreground/minimized). Use it to find the Unreal Editor window (or a dialog/crash popup) to capture or control. Optional case-insensitive title filter.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "filter": {
+            "description": "case-insensitive title substring to filter by; empty = all visible titled windows",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "list_windows"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Trigger a Live Coding compile so C++ changes hot-reload into the running editor. Fire-and-forget; check the editor's Live Coding window for results.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "name": "live_coding_compile"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Return a marker (byte offset) into the project log for a later logs_since.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "name": "logs_mark"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Return project log lines since a marker, with error/warning/ensure counts (attributable output for a run).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "marker": {
+            "description": "a marker from logs_mark",
+            "type": "string"
+          },
+          "min_severity": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "marker"
+        ],
+        "type": "object"
+      },
+      "name": "logs_since"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Return recent project log lines filtered by severity/category.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "categories": {
+            "description": "restrict to these log categories, e.g. LogLiveCoding",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "lines": {
+            "description": "default 200",
+            "type": "integer"
+          },
+          "min_severity": {
+            "description": "Verbose|Log|Display|Warning|Error; default Display",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "logs_tail"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Run the luminance Layer-A deterministic audit (readonly) against captured frame paths.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "frame_paths"
+        ],
+        "type": "object"
+      },
+      "name": "luminance_report"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Discover the gameplay framework: the level's WorldSettings GameMode override, the project default GameMode, and (in PIE) the live mode/state/controller/pawn classes.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "level": {
+            "description": "reserved; current editor/PIE world is used",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "map_gameplay"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Drive the real mouse at the OS level: move|click|double_click|down|up|drag|scroll. Coordinates are screen pixels, OR set 'window' (a title substring like 'unreal') to make x/y relative to that window's top-left — the same origin as window_capture's image — so you can click exactly what you saw. Returns the final cursor position.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "move|click|double_click|down|up|drag|scroll",
+            "type": "string"
+          },
+          "button": {
+            "description": "left|right|middle; default left",
+            "type": "string"
+          },
+          "horizontal": {
+            "description": "scroll horizontally instead of vertically",
+            "type": "boolean"
+          },
+          "scroll_amount": {
+            "description": "wheel notches for action=scroll; +up/right, -down/left; default 3",
+            "type": "integer"
+          },
+          "steps": {
+            "description": "drag interpolation steps; default 12",
+            "type": "integer"
+          },
+          "to_x": {
+            "description": "drag end X",
+            "type": "integer"
+          },
+          "to_y": {
+            "description": "drag end Y",
+            "type": "integer"
+          },
+          "window": {
+            "description": "a window title substring (e.g. 'unreal') to interpret x/y (and to_x/to_y) RELATIVE to that window's top-left — the same origin as window_capture's image",
+            "type": "string"
+          },
+          "window_hwnd": {
+            "description": "like 'window' but an exact window handle",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "x": {
+            "description": "target X (screen px, or window-relative when 'window'/'window_hwnd' is set)",
+            "type": "integer"
+          },
+          "y": {
+            "description": "target Y",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "name": "mouse_control"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Run the novelty cadence Layer-A deterministic audit (readonly) against a session trace.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "max_dead_stretch": {
+            "type": "number"
+          },
+          "trace": {
+            "additionalProperties": false,
+            "properties": {
+              "duration": {
+                "type": "number"
+              },
+              "observed": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "t": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "t"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              },
+              "schedule": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "t": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "t"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              }
+            },
+            "required": [
+              "duration",
+              "observed",
+              "schedule"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "trace"
+        ],
+        "type": "object"
+      },
+      "name": "novelty_audit"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Open a level in the editor by asset path, e.g. '/Game/Maps/L_Arena'. Unsaved changes in the current level are saved first.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "level_path": {
+            "description": "level asset path, e.g. /Game/Maps/L_Arena (unsaved changes are saved first)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "level_path"
+        ],
+        "type": "object"
+      },
+      "name": "open_level"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Read the player pawn's location, velocity, and speed in the running PIE world. Sample it across an injected-input window (pie_input) to observe the verb responding — the frame-level feel read behind verb_response.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "player": {
+            "type": "integer"
+          },
+          "world": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "pawn_state"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Parse a CsvProfiler CSV into frame-time percentiles (p50/p95/p99/max, hitch count) or a memreport dump into memory buckets — perf as DATA for a rubric, not viewport text.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "description": "path to a CsvProfiler .csv (Saved/Profiling) or a .memreport dump",
+            "type": "string"
+          },
+          "hitch_ms": {
+            "description": "frames slower than this count as hitches; default 33.3",
+            "type": "number"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "type": "object"
+      },
+      "name": "perf_parse"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Destroy a live actor in the game world by label.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "description": "actor label in the live game world",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "name": "pie_destroy"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Invoke a UFUNCTION on a live PIE actor by reflection (FindFunction/ProcessEvent) — this dispatches BlueprintCallable functions AND, in single-standalone PIE with authority, Server RPCs. target is an actor label or 'gamestate'.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "args": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "target": {
+            "description": "actor label, or 'gamestate'",
+            "type": "string"
+          },
+          "ufunction": {
+            "description": "a BlueprintCallable UFUNCTION name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "ufunction"
+        ],
+        "type": "object"
+      },
+      "name": "pie_exec"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Synthesize input into the running game (PIE): tap/hold a key or button so an agent can actually PLAY — hold W to walk the pawn, tap SpaceBar to jump, click to fire. Legacy action+axis mappings fire as if a human pressed the key. Needs the UnrealMCP plugin compiled in.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "tap (press+auto-release) | press | release | hold | release_all; default tap",
+            "type": "string"
+          },
+          "duration_s": {
+            "description": "for action=hold: seconds to hold the key; default 1.0",
+            "type": "number"
+          },
+          "key": {
+            "description": "UE key name: W, A, S, D, SpaceBar, LeftMouseButton, Gamepad_FaceButton_Bottom, etc.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "type": "object"
+      },
+      "name": "pie_input"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Read live PIE game-world state: gamestate fields (allowlisted), a class histogram (counts), and detailed state for actors_of_interest. Only valid during PIE.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "actors_of_interest": {
+            "description": "actor labels to read detailed state for",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "exclude": {
+            "description": "glob patterns of property names to exclude",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "include": {
+            "description": "glob patterns of gamestate/actor property names to include; default all (minus a noise list)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "max_props": {
+            "description": "cap on discovered properties per object; default 48",
+            "type": "integer"
+          },
+          "properties": {
+            "description": "read exactly these gamestate/actor properties (preserves key names for predicate paths)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "name": "pie_observe"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Capture an exposure-correct PNG of the running PIE backbuffer via HighResShot. Only valid during PIE (use take_screenshot for the editor world).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "type": "integer"
+          },
+          "width": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "pie_screenshot"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Set properties on a LIVE actor in the game world (arrange a test precondition).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "properties": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "target": {
+            "description": "actor label in the live game world",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "properties"
+        ],
+        "type": "object"
+      },
+      "name": "pie_set_property"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Arrange a gameplay source value in the running game so a widget_bind_field pull can be verified: set a dotted actor/component property (HealthComponent.Health) or a GAS attribute base. The test-arrange verb for component + GAS binding sources.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "attribute": {
+            "description": "ability_system: the GAS attribute name",
+            "type": "string"
+          },
+          "path": {
+            "description": "property: dotted path, e.g. HealthComponent.Health",
+            "type": "string"
+          },
+          "source_kind": {
+            "description": "property | ability_system",
+            "type": "string"
+          },
+          "target": {
+            "description": "actor label in the live game world",
+            "type": "string"
+          },
+          "value": {
+            "description": "the value to set"
+          }
+        },
+        "required": [
+          "target",
+          "source_kind",
+          "value"
+        ],
+        "type": "object"
+      },
+      "name": "pie_set_source"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Poll a BlueprintCallable getter that returns a JSON snapshot (e.g. GetVerificationJSON) until a predicate over the returned JSON holds — functional verification for sim state that pie_observe can't see (subsystems, HISM).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "args": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "interval_s": {
+            "description": "poll interval; default 0.25",
+            "type": "number"
+          },
+          "predicate": {
+            "description": "a comparison over the returned JSON, e.g. nodes.0.SupplyRatio \u003c 0.5",
+            "type": "string"
+          },
+          "target": {
+            "description": "actor label or 'gamestate'",
+            "type": "string"
+          },
+          "timeout_s": {
+            "description": "default 20",
+            "type": "number"
+          },
+          "ufunction": {
+            "description": "a BlueprintCallable getter that returns a JSON STRING snapshot (e.g. GetVerificationJSON)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "ufunction",
+          "predicate"
+        ],
+        "type": "object"
+      },
+      "name": "pie_verify"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Poll pie_observe until a predicate holds or timeout. Makes PIE tests deterministic (vs sleeping). Predicate is a single comparison over the observe schema.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "predicate": {
+            "description": "a comparison over the pie_observe schema. gamestate keys are reflected snake_case, e.g. \"gamestate.wave_number \u003e= 2\"; counts keys are class names, e.g. \"counts.EnemyCharacter \u003e= 1\"",
+            "type": "string"
+          },
+          "properties": {
+            "description": "pin exact gamestate property key names so a predicate can use them verbatim (e.g. [\"WaveNumber\"] to match gamestate.WaveNumber)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "timeout_s": {
+            "description": "default 20",
+            "type": "number"
+          }
+        },
+        "required": [
+          "predicate"
+        ],
+        "type": "object"
+      },
+      "name": "pie_wait_until"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Play a sound cue into the running PIE world (a test signal for audio_capture / audio_audit validation).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "sound": {
+            "type": "string"
+          },
+          "volume": {
+            "type": "number"
+          },
+          "world": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sound"
+        ],
+        "type": "object"
+      },
+      "name": "play_test_sound"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Run an in-depth automated play test: open a level, enter play, capture a synchronized filmstrip of frames+state, drive deterministic beats, then return ONE contact-sheet montage + a per-frame timeline + a rubric PASS/WARN/FAIL verdict + a log summary. The token-efficient way for an agent to validate a game works.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "beats": {
+            "description": "deterministic script run over the capture window",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at_s": {
+                  "description": "seconds after capture start to run this beat",
+                  "type": "number"
+                },
+                "exec": {
+                  "additionalProperties": false,
+                  "description": "invoke a UFUNCTION at this beat",
+                  "properties": {
+                    "args": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "target": {
+                      "description": "actor label or 'gamestate'",
+                      "type": "string"
+                    },
+                    "ufunction": {
+                      "description": "a BlueprintCallable UFUNCTION to invoke",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "target",
+                    "ufunction"
+                  ],
+                  "type": [
+                    "null",
+                    "object"
+                  ]
+                },
+                "timeout_s": {
+                  "description": "wait timeout; default 10",
+                  "type": "number"
+                },
+                "wait_until": {
+                  "description": "pie_observe predicate to wait for before continuing",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "cols": {
+            "description": "montage columns; default 8",
+            "type": "integer"
+          },
+          "duration_s": {
+            "description": "total REAL-TIME capture window seconds; default 20",
+            "type": "number"
+          },
+          "frame_h": {
+            "description": "per-frame height; default 144",
+            "type": "integer"
+          },
+          "frame_w": {
+            "description": "per-frame width; default 256",
+            "type": "integer"
+          },
+          "include": {
+            "description": "observe property include globs",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "interval_s": {
+            "description": "seconds between frames; default 0.5",
+            "type": "number"
+          },
+          "level": {
+            "description": "level to open first, e.g. /Game/Maps/L_Arena",
+            "type": "string"
+          },
+          "max_frames": {
+            "description": "cap on frames; default 64",
+            "type": "integer"
+          },
+          "mode": {
+            "description": "pie (possessed) | simulate | editor; default pie",
+            "type": "string"
+          },
+          "properties": {
+            "description": "observe exact property names",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "rubric": {
+            "description": "pass/fail checks evaluated over the recorded timeline",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "description": "reached|entered|increased|decreased|changed|stayed|range|min|max|nonzero_count|log_zero|log_max",
+                  "type": "string"
+                },
+                "params": {
+                  "additionalProperties": true,
+                  "description": "reducer args, e.g. {value:...} or {min:..,max:..} or {by:..}",
+                  "type": "object"
+                },
+                "path": {
+                  "description": "dotted path into observed state, e.g. gamestate.wave_number, counts.EnemyCharacter, perf.fps (min), perf.hitch_ms (max); or errors|warnings|ensures for log checks",
+                  "type": "string"
+                },
+                "severity": {
+                  "description": "fail|warn|info; default fail",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "path"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "time_dilation": {
+            "description": "speed up the sim during capture via 'slomo N' (e.g. 8) so slow bottlenecks form in fewer real seconds; default 1 (real time). Use a shorter duration_s to match.",
+            "type": "number"
+          },
+          "track_actors": {
+            "description": "actor labels to record detailed per-frame state for",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "name": "playtest_capture"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Re-score a recorded playtest timeline against a rubric WITHOUT re-running the game (pure). Returns the checklist + verdict, evidence pointing at frame indices.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "logs": {
+            "additionalProperties": false,
+            "properties": {
+              "ensures": {
+                "type": "integer"
+              },
+              "errors": {
+                "type": "integer"
+              },
+              "warnings": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "errors",
+              "warnings",
+              "ensures"
+            ],
+            "type": "object"
+          },
+          "rubric": {
+            "description": "checks to evaluate",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "description": "reached|entered|increased|decreased|changed|stayed|range|min|max|nonzero_count|log_zero|log_max",
+                  "type": "string"
+                },
+                "params": {
+                  "additionalProperties": true,
+                  "description": "reducer args, e.g. {value:...} or {min:..,max:..} or {by:..}",
+                  "type": "object"
+                },
+                "path": {
+                  "description": "dotted path into observed state, e.g. gamestate.wave_number, counts.EnemyCharacter, perf.fps (min), perf.hitch_ms (max); or errors|warnings|ensures for log checks",
+                  "type": "string"
+                },
+                "severity": {
+                  "description": "fail|warn|info; default fail",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "path"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "timeline": {
+            "description": "recorded frames (index, t_world, observed state)",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "index": {
+                  "type": "integer"
+                },
+                "state": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "t_world": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "index",
+                "t_world",
+                "state"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "timeline",
+          "rubric"
+        ],
+        "type": "object"
+      },
+      "name": "playtest_evaluate"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Run the primitive art Layer-A deterministic audit (readonly) against a captured scene.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "scene": {
+            "additionalProperties": false,
+            "properties": {
+              "actors": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "class": {
+                      "type": "string"
+                    },
+                    "debug_draw": {
+                      "type": "boolean"
+                    },
+                    "hero": {
+                      "type": "boolean"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "material_path": {
+                      "type": "string"
+                    },
+                    "mesh_path": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "label",
+                    "class"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              },
+              "level": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "level",
+              "actors"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "scene"
+        ],
+        "type": "object"
+      },
+      "name": "primitive_audit"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Ensure the editor is open with the project (launches it if no editor is discovered). Async job: poll job_status; waits up to timeout_s for the editor to answer.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "map": {
+            "type": "string"
+          },
+          "timeout_s": {
+            "description": "seconds to wait for the editor to answer; default 300",
+            "type": "number"
+          },
+          "uproject": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "project_ensure_open"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Map the project's C++ surface OFFLINE (no editor): modules + dependencies + every UCLASS/USTRUCT/UENUM and its /Script path, parsed from the .uproject/Build.cs/headers. The fastest way to resolve a /Script path or find a class's header.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "level": {
+            "description": "reserved; current editor/PIE world is used",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "project_map"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "View an existing capture on disk as a contact-sheet montage — a session under Saved/MCP/capture, or an explicit dir of frames (e.g. your own capture output). Frames are decoded by content, so extensionless files work (no copy-to-.png needed).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cols": {
+            "description": "montage columns; default 6",
+            "type": "integer"
+          },
+          "dir": {
+            "description": "an explicit directory of frames to view (overrides session)",
+            "type": "string"
+          },
+          "glob": {
+            "description": "file glob within the dir; default '*'",
+            "type": "string"
+          },
+          "session": {
+            "description": "a capture session dir under Saved/MCP/capture to view",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "read_capture"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Reflect a CLASS contract: its CDO default property values, callables, and parent — the class an agent is trying to learn (vs reflect_object which reads a live instance).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "class_path": {
+            "description": "/Script/Module.Class or a /Game Blueprint path",
+            "type": "string"
+          },
+          "exclude": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "include": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "max_props": {
+            "type": "integer"
+          },
+          "properties": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "class_path"
+        ],
+        "type": "object"
+      },
+      "name": "reflect_class"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Discover and read an editor/game object's exposed properties WITHOUT a hardcoded allowlist (works for any game). Target 'gamestate', an actor label, 'pawn'/'playercontroller', or a class path. Returns {class, path, properties, functions}.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "exclude": {
+            "description": "glob patterns of property names to exclude (on top of a built-in noise list)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "include": {
+            "description": "glob patterns of property names to include; default ['*']",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "max_props": {
+            "description": "cap on discovered properties; default 64",
+            "type": "integer"
+          },
+          "max_str": {
+            "description": "truncate string/repr values to this length; default 512",
+            "type": "integer"
+          },
+          "properties": {
+            "description": "read exactly these named properties (preserves your key names for predicate paths); overrides include/exclude",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "target": {
+            "description": "'gamestate' (default), an actor label, 'playercontroller'/'pawn', or a class path like /Script/Engine.PointLight",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "reflect_object"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Run the render health Layer-A deterministic audit (readonly) against packaged config and render timeline.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "additionalProperties": false,
+            "properties": {
+              "editor_startup_map": {
+                "type": "string"
+              },
+              "game_default_map": {
+                "type": "string"
+              },
+              "game_maps": {
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              }
+            },
+            "required": [
+              "game_default_map"
+            ],
+            "type": "object"
+          },
+          "timeline": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "seq": {
+                  "type": "integer"
+                },
+                "sim_time": {
+                  "type": "number"
+                },
+                "static": {
+                  "type": "integer"
+                },
+                "tag": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tag",
+                "seq",
+                "sim_time",
+                "static"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "timeline_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "config"
+        ],
+        "type": "object"
+      },
+      "name": "render_health"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Save all dirty packages (levels and assets).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "name": "save_all"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "List saved scenario/v1 files (name + valid?) — the regression suite.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dir": {
+            "description": "directory of scenario .json files; default \u003cproject\u003e/.mcp/scenarios",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "scenario_list"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Run a saved scenario/v1 (arrange -\u003e act beats -\u003e assert rubric) and return the montage + timeline + PASS/WARN/FAIL verdict. The replayable functional/regression test.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cols": {
+            "description": "montage columns; default 8",
+            "type": "integer"
+          },
+          "json": {
+            "description": "inline scenario/v1 JSON (alternative to path)",
+            "type": "string"
+          },
+          "path": {
+            "description": "path to a scenario/v1 .json file",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "scenario_run"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Realize a declarative unreal.scene/v1 spec (blockout, prefabs, layouts, lighting) idempotently in ONE editor transaction. Re-applying only updates; prune (tag-scoped) removes this scene's stale actors. dry_run returns the add/update/prune diff without mutating.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "description": "compute the add/update/prune diff without mutating the level",
+            "type": "boolean"
+          },
+          "prune": {
+            "description": "destroy this scene's previously-applied actors that are no longer in the spec (tag-scoped; never touches hand-placed actors)",
+            "type": "boolean"
+          },
+          "save": {
+            "description": "save after applying; default true",
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "spec_json": {
+            "description": "the spec as inline JSON text (alternative to spec_path)",
+            "type": "string"
+          },
+          "spec_path": {
+            "description": "path to a unreal.scene/v1 JSON spec file",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "scene_apply"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Remove all actors a given scene_id previously applied (tag-scoped; leaves hand-placed actors untouched).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "save": {
+            "description": "save after; default true",
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "scene_id": {
+            "description": "the scene id whose actors to remove",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scene_id"
+        ],
+        "type": "object"
+      },
+      "name": "scene_clear"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Render a target (or the whole level) from N orbit angles into one contact-sheet montage — a quick multi-angle visual of a level/asset for design validation. Editor world (backgrounded-safe).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cell_height": {
+            "description": "per-angle height; default 270",
+            "type": "integer"
+          },
+          "cell_width": {
+            "description": "per-angle width; default 480",
+            "type": "integer"
+          },
+          "cols": {
+            "description": "montage columns; default 4",
+            "type": "integer"
+          },
+          "elevation": {
+            "description": "camera elevation degrees above horizon; default 25 (0 = horizontal orbit)",
+            "type": [
+              "null",
+              "number"
+            ]
+          },
+          "fill": {
+            "description": "fraction of the frame the target fills; default 0.7",
+            "type": "number"
+          },
+          "fov": {
+            "description": "vertical field of view degrees; default 60",
+            "type": "number"
+          },
+          "num_angles": {
+            "description": "orbit angles to capture; default 8",
+            "type": "integer"
+          },
+          "target": {
+            "description": "actor labels/globs to frame; empty = whole level",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "world": {
+            "description": "auto|editor|game; default editor",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "scene_contact_sheet"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Deterministic quantize+SHA1 hash over actor OR HISM/ISM instance transforms — the authored-content oracle (verify a map hashes to an expected value; instance-aware where level_diff is not).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "class_filter": {
+            "description": "actors scope: class/label substring filter",
+            "type": "string"
+          },
+          "limit": {
+            "description": "instances scope: max instances to hash; default 5,000,000 (raise for a huge HISM city)",
+            "type": "integer"
+          },
+          "mesh": {
+            "description": "instances scope: mesh-path substring filter",
+            "type": "string"
+          },
+          "pos_bucket": {
+            "description": "position quantization in world units; default 1",
+            "type": "number"
+          },
+          "rot_bucket": {
+            "description": "rotation quantization in degrees; default 1",
+            "type": "number"
+          },
+          "scope": {
+            "description": "instances (HISM/ISM) | actors; default instances",
+            "type": "string"
+          },
+          "tag": {
+            "description": "instances scope: component tag filter",
+            "type": "string"
+          },
+          "world": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "scene_digest"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Compile a scene spec and diff it against the current level (add/update/prune, missing asset refs) WITHOUT mutating — a dry run to review before scene_apply.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "spec_json": {
+            "type": "string"
+          },
+          "spec_path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "scene_plan"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Reposition existing actors to their snapshot transforms (undo a move/rotate/scale experiment). Transform-only: it does NOT recreate actors deleted since the snapshot or remove ones spawned since (delete those with delete_actor / pie_destroy). Reports labels no longer present.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "snapshot name to restore; default 'auto'",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "scene_restore"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Save the current level's actor transforms (by label) to a named snapshot file so a MOVE/rotate/scale experiment can be undone with scene_restore. Scope is transforms only — it does not record spawns/deletes.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "class_filter": {
+            "description": "only snapshot actors matching this class/label substring",
+            "type": "string"
+          },
+          "name": {
+            "description": "snapshot name; default 'auto'",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "scene_snapshot"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Capture the actual display as a PNG — the whole virtual desktop (all monitors), one monitor, or a region. This is an OS screenshot of what is really on screen (unlike take_screenshot, which renders the 3D scene inside the editor). Downscaled to max_width for token economy.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "max_width": {
+            "description": "downscale so the image is at most this many px wide (aspect preserved); default 1600, 0 = full resolution",
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "monitor": {
+            "description": "monitor index (0-based, see list from MonitorRects); omit or -1 = whole virtual desktop spanning all monitors",
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "region": {
+            "description": "[x,y,w,h] in virtual-desktop pixels to grab a sub-rectangle instead of a whole monitor",
+            "items": {
+              "type": "integer"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "name": "screen_capture"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Set the editor selection by actor labels (mode replace|add|remove|none), optionally framing the result.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "description": "frame the selection in the viewport after selecting",
+            "type": "boolean"
+          },
+          "labels": {
+            "description": "actor labels to select",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "mode": {
+            "description": "replace|add|remove|none; default replace",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "select_actors"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Move/rotate/scale an actor by label. Each of location [x,y,z], rotation_pyr [pitch,yaw,roll], scale [x,y,z] is optional.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_label": {
+            "type": "string"
+          },
+          "location": {
+            "description": "[x,y,z]",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "rotation_pyr": {
+            "description": "[pitch,yaw,roll]",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "scale": {
+            "description": "[x,y,z]",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "actor_label"
+        ],
+        "type": "object"
+      },
+      "name": "set_actor_transform"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Set the project's default GameMode in DefaultEngine.ini (offline, idempotent).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "class_path": {
+            "description": "GameMode class path, e.g. /Game/BP/BP_GM.BP_GM_C or /Script/Module.MyGameMode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "class_path"
+        ],
+        "type": "object"
+      },
+      "name": "set_gamemode"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Register a HUD WidgetBlueprint to auto-appear when the game starts (PIE/editor-gated, cvar-guarded, cooked-safe) — so an authored HUD shows in-game without a project HUD convention. The shipped path is assign_subclass into the project's own HUD property.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "hud_widget": {
+            "description": "the HUD WidgetBlueprint class to auto-spawn",
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "z": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hud_widget"
+        ],
+        "type": "object"
+      },
+      "name": "set_hud_widget"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Set the player input mode (GameOnly / GameAndUI / UIOnly) and cursor visibility — required to make a menu interactive (UIOnly + cursor) and to hand control back to gameplay (GameOnly).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "description": "GameOnly | GameAndUI | UIOnly",
+            "type": "string"
+          },
+          "show_cursor": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
+      "name": "set_input_mode"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Set the current level's WorldSettings GameMode override (a per-map override; use set_gamemode for the project default).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "class_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "class_path"
+        ],
+        "type": "object"
+      },
+      "name": "set_world_gamemode"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Spawn an actor in the current level from a native class or Blueprint asset path.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "class_path": {
+            "description": "native class (/Script/Engine.PointLight) or Blueprint asset path (/Game/BP_Thing); for a mesh prop use /Script/Engine.StaticMeshActor + static_mesh_path",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "pitch": {
+            "type": "number"
+          },
+          "roll": {
+            "type": "number"
+          },
+          "static_mesh_path": {
+            "description": "e.g. /Engine/BasicShapes/Cube for a StaticMeshActor",
+            "type": "string"
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "yaw": {
+            "type": "number"
+          },
+          "z": {
+            "description": "Z location; defaults to 100 when omitted",
+            "type": [
+              "null",
+              "number"
+            ]
+          }
+        },
+        "required": [
+          "class_path"
+        ],
+        "type": "object"
+      },
+      "name": "spawn_actor"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Start a play-in-editor session in the current level. simulate=true runs the world without possessing a player.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "simulate": {
+            "description": "run the world without possessing a player pawn",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "name": "start_play"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Stop the current play-in-editor session.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "name": "stop_play"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Run the style cohesion Layer-A deterministic audit (readonly) against captured frame paths.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "frame_paths"
+        ],
+        "type": "object"
+      },
+      "name": "style_cohesion"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Render the scene and return it as a PNG image. Uses a synchronous scene capture so it works even when the editor is backgrounded (editor world only, not during PIE).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "camera_location": {
+            "description": "[x,y,z]; defaults to the viewport camera",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "camera_rotation_pyr": {
+            "description": "[pitch,yaw,roll]",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "height": {
+            "description": "default 720",
+            "type": "integer"
+          },
+          "width": {
+            "description": "default 1280",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "take_screenshot"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Type a literal Unicode string at the OS level into the focused control (KEYEVENTF_UNICODE — layout-independent). Use for search boxes, names, and paths; use key_press for shortcuts and navigation keys.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "description": "the literal text to type as Unicode characters",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "name": "type_text"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Click a live UMG widget by name or viewport coordinate via the Slate pointer path (works on a backgrounded editor; needs a realized painted window — returns SLATE_WINDOW_UNAVAILABLE under headless -nullrhi). Returns the target widget's own state delta; verify downstream effects with a follow-up widget_read.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "coord": {
+            "description": "[x,y] viewport coordinate to click instead of a named widget",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "handle": {
+            "description": "a live widget handle (with widget_name)",
+            "type": "string"
+          },
+          "widget_name": {
+            "description": "the named widget to click",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "ui_click"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Run the verb response Layer-A deterministic audit (readonly) against an input burst and envelope.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "burst": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "aim": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "input": {
+                  "type": "number"
+                },
+                "pos": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": "array"
+                },
+                "recoil": {
+                  "type": "number"
+                },
+                "t": {
+                  "type": "number"
+                },
+                "vel": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "t",
+                "input"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "envelope": {
+            "additionalProperties": false,
+            "properties": {
+              "max_rise_frames": {
+                "type": "integer"
+              },
+              "min_delta_mag": {
+                "type": "number"
+              },
+              "min_rise_frames": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "min_rise_frames",
+              "max_rise_frames",
+              "min_delta_mag"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "burst",
+          "envelope"
+        ],
+        "type": "object"
+      },
+      "name": "verb_response"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Get the editor viewport camera pose (and game-view state where available). Feeds camera framing for capture.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "name": "viewport_get"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Control the editor viewport: move the camera to a pose, pilot/eject an actor, toggle game view, or run viewport console commands. Returns the resulting camera pose.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "camera_location": {
+            "description": "[x,y,z] to move the editor viewport camera to",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "camera_rotation_pyr": {
+            "description": "[pitch,yaw,roll]",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "console": {
+            "description": "console commands to run against the viewport (e.g. 'r.ScreenPercentage 100')",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "eject": {
+            "description": "stop piloting",
+            "type": "boolean"
+          },
+          "game_view": {
+            "description": "toggle Game View (hides editor-only actors); like pressing G",
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "pilot_actor": {
+            "description": "actor label to pilot the viewport camera with",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "viewport_set"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Bind a UMCPButton's OnClicked to a named command (Resume/Quit/OpenPanel) — a persisted node property consumed at runtime, no graph authoring. Discover commands via widget_describe. Fails WIDGET_NOT_MCPBUTTON on a plain Button.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blueprint": {
+            "type": "string"
+          },
+          "command": {
+            "description": "a RunNamedCommand name discovered via widget_describe (Resume/Quit/OpenPanel)",
+            "type": "string"
+          },
+          "event": {
+            "description": "default OnClicked",
+            "type": "string"
+          },
+          "widget": {
+            "description": "a UMCPButton node name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "blueprint",
+          "widget",
+          "command"
+        ],
+        "type": "object"
+      },
+      "name": "widget_bind_event"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Configure a live gameplay data binding on a UMCPHUDWidget: a target widget field (ProgressBar.Percent, TextBlock.Text) pulls from a gameplay source (owning_pawn/pc/player_state/world_actor/ability_system) each tick, with an optional conversion (ratio for health, format_text for ammo, int_to_text, bool_to_visibility). Validates the path at author time (BIND_PATH_UNRESOLVED).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "attribute": {
+            "description": "GAS attribute name (source=ability_system)",
+            "type": "string"
+          },
+          "blueprint": {
+            "type": "string"
+          },
+          "conversion": {
+            "description": "none|ratio|int_to_text|float_to_text|float_to_percent|bool_to_visibility|format_text",
+            "type": "string"
+          },
+          "format": {
+            "description": "format_text conversion string with {value}/{max}, e.g. '{value} / {max}'",
+            "type": "string"
+          },
+          "max_attribute": {
+            "description": "GAS max attribute for ratio",
+            "type": "string"
+          },
+          "max_path": {
+            "description": "denominator path for conversion=ratio, e.g. MaxHealth",
+            "type": "string"
+          },
+          "path": {
+            "description": "dotted source path, e.g. Health or HealthComponent.Health",
+            "type": "string"
+          },
+          "source": {
+            "description": "owning_pawn | owning_pc | player_state | world_actor:\u003clabel\u003e | ability_system",
+            "type": "string"
+          },
+          "target_field": {
+            "description": "its field, e.g. Percent or Text",
+            "type": "string"
+          },
+          "target_widget": {
+            "description": "the widget to drive, e.g. HealthBar",
+            "type": "string"
+          }
+        },
+        "required": [
+          "blueprint",
+          "target_widget",
+          "target_field",
+          "source"
+        ],
+        "type": "object"
+      },
+      "name": "widget_bind_field"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Add MVVM view bindings (widget property \u003c- viewmodel field, with an optional conversion) to a WidgetBlueprint. Fails BIND_TYPE_MISMATCH with the compile log on an unbindable type pair. Spike-gated.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bindings": {
+            "description": "[{widget, property, source_field, conversion?, mode?}]",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "blueprint": {
+            "type": "string"
+          },
+          "viewmodel_class": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "blueprint",
+          "viewmodel_class",
+          "bindings"
+        ],
+        "type": "object"
+      },
+      "name": "widget_bind_mvvm"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Render a WidgetBlueprint OFFSCREEN at one or more resolutions (no PIE, no foreground) and return per-resolution geometry and/or pixels — the multi-resolution layout oracle (assert anchored elements stay pinned + inside the SafeZone across 720p/1080p/4K) and the golden-image source for image_compare. Geometry inside an embedded composite is opaque (capture the child WBP standalone).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blueprint": {
+            "description": "the WidgetBlueprint to render offscreen",
+            "type": "string"
+          },
+          "geometry": {
+            "description": "return per-widget on-screen rects (works headless via a layout-only pass)",
+            "type": "boolean"
+          },
+          "pixels": {
+            "description": "export a PNG per resolution (needs an active RHI; RHI_UNAVAILABLE under -nullrhi)",
+            "type": "boolean"
+          },
+          "resolutions": {
+            "description": "list of [width,height] to render at (e.g. [[1280,720],[1920,1080],[3840,2160]]); default [[1920,1080]]",
+            "items": {
+              "items": {
+                "type": "integer"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "warmup_frames": {
+            "description": "frames to render before reading (warms fonts/materials); default 3",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "blueprint"
+        ],
+        "type": "object"
+      },
+      "name": "widget_capture"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Compile a WidgetBlueprint and return the structured compiler log (errors/warnings) + digest. Terminates a deferred widget_compose transaction. Fails BINDWIDGET_UNSATISFIED with the log if a required bound widget is missing.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blueprint": {
+            "description": "the WidgetBlueprint asset path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "blueprint"
+        ],
+        "type": "object"
+      },
+      "name": "widget_compile"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "THE primary UMG authoring verb: apply a declarative nested widget tree to a WidgetBlueprint — add/update/reorder/reparent nodes, set slots/props/brush/font, embed composite sub-widgets — then compile once (atomic). Convergent + idempotent: re-composing the same tree yields the same digest. Returns the read-back tree + digest + compile_log (+ a restore_token for destructive changes).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blueprint": {
+            "description": "the WidgetBlueprint asset path to compose into",
+            "type": "string"
+          },
+          "defer": {
+            "description": "patch mode: keep the transaction open (mutations apply but do NOT compile) until an explicit widget_compile",
+            "type": "boolean"
+          },
+          "mode": {
+            "description": "full (default): reconcile the whole tree (convergent — any starting tree yields the spec). patch: update only the given nodes, leaving others",
+            "type": "string"
+          },
+          "prune": {
+            "description": "remove any existing node absent from the spec (destructive; snapshotted). Default false = additive",
+            "type": "boolean"
+          },
+          "remove": {
+            "description": "node names to remove (snapshotted first; returns a restore_token)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "tree": {
+            "additionalProperties": true,
+            "description": "declarative nested widget node: {name, class, slot?, props?, brush?, font?, is_variable?, children?[]}. class is a friendly name (TextBlock/ProgressBar/Image/Button/CanvasPanel/VerticalBox/Overlay/…) or a /Script or /Game path; a /Game WBP or UserWidget subclass is embedded as ONE opaque composite node (its subtree is not expanded). Every node MUST be named. slot is slot-class-aware (CanvasPanelSlot: anchor_preset|anchors+offsets+alignment+z; BoxSlot: size+padding+align; GridSlot: row/col/span)",
+            "type": "object"
+          }
+        },
+        "required": [
+          "blueprint",
+          "tree"
+        ],
+        "type": "object"
+      },
+      "name": "widget_compose"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Create a WidgetBlueprint (UMG HUD/menu) asset. Defaults to a plain UserWidget with a CanvasPanel root. Returns the root name + any required BindWidget slots. Then author the tree with widget_compose.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dest": {
+            "description": "destination WidgetBlueprint asset path, e.g. /Game/UI/WBP_HUD",
+            "type": "string"
+          },
+          "parent_class": {
+            "description": "parent UserWidget class; default /Script/UMG.UserWidget. Use the plugin UMCPHUDWidget ONLY for a gameplay-bound HUD (widget_bind_field/track_actor) — it adds a plugin parent-class dependency you MUST bake out before shipping",
+            "type": "string"
+          },
+          "root_panel": {
+            "description": "root panel widget class; default CanvasPanel (use Overlay for a stacked full-screen menu)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dest"
+        ],
+        "type": "object"
+      },
+      "name": "widget_create"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Describe the authorable UMG palette, or one widget class: its editable props, its slot class (what layout body its children take), and — for UMCPHUDWidget — its BindWidget requirements + named-command handlers. Plan authoring against this instead of guessing class/prop names.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "widget_class": {
+            "description": "a widget class to describe — its editable props, slot class, and (for UMCPHUDWidget) its BindWidget requirements + named-command handlers. Omit for the full authorable palette (panels + leaves)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "widget_describe"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Read a LIVE widget's runtime state in the current viewport: per node name/class/visible/text/percent/checked/enabled + on-screen geometry (current viewport only — for multi-resolution geometry use widget_capture). discover:true enumerates on-screen widgets the project itself created (not just bridge-shown ones).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "discover": {
+            "description": "enumerate on-screen widgets the project created (not just bridge-shown ones)",
+            "type": "boolean"
+          },
+          "handle": {
+            "description": "a live widget handle; omit with discover:true to enumerate on-screen widgets",
+            "type": "string"
+          },
+          "include_geometry": {
+            "description": "include current-viewport on-screen rects (painted widgets only)",
+            "type": "boolean"
+          },
+          "include_values": {
+            "description": "include per-node text/percent/checked/enabled",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "name": "widget_inspect"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Build the one UI material a render-target minimap needs: an MD_UI material sampling a SceneCapture render target, a dynamic instance, applied to a minimap Image brush. The last mile that makes a world-render minimap fully buildable.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dest": {
+            "description": "destination UI material asset path",
+            "type": "string"
+          },
+          "image_widget": {
+            "description": "a minimap Image node to apply the material to",
+            "type": "string"
+          },
+          "param_name": {
+            "description": "texture parameter name; default RT",
+            "type": "string"
+          },
+          "render_target": {
+            "description": "the SceneCapture TextureRenderTarget2D asset path to sample",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dest",
+          "render_target"
+        ],
+        "type": "object"
+      },
+      "name": "widget_make_rt_material"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Fast single value read from a live widget (a named sub-widget's field, e.g. ProgressBar.Percent) — the predicate source for pie_verify. Works by name; no is_variable needed.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "description": "the field/property to read (e.g. Percent, Text); default a sensible per-class value",
+            "type": "string"
+          },
+          "handle": {
+            "description": "a live widget handle",
+            "type": "string"
+          },
+          "widget_name": {
+            "description": "the named sub-widget to read",
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle",
+          "widget_name"
+        ],
+        "type": "object"
+      },
+      "name": "widget_read"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Render a UserWidget class (e.g. /Script/PolyWorld.CityBuildWidget) OFFSCREEN to a PNG at out_path (width x height) via FWidgetRenderer — no PIE. The UMG HUD visual-iteration loop.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "type": "integer"
+          },
+          "out_path": {
+            "type": "string"
+          },
+          "widget_class": {
+            "type": "string"
+          },
+          "width": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "widget_class",
+          "out_path"
+        ],
+        "type": "object"
+      },
+      "name": "widget_render"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Push values into a live (shown) widget in one round-trip: set named fields (health Percent, ammo Text, visibility) via the UMCPHUDWidget setters — which force a Slate refresh so the on-screen widget actually updates — and/or invoke named UFUNCTIONs. Partial-failure: per-entry issues. (A UUserWidget is not an actor, so pie_set_property/pie_exec can't reach it — this is the driver.)",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "calls": {
+            "description": "[{ufunction, args}] — invoke named UFUNCTIONs (e.g. RunNamedCommand)",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "fields": {
+            "description": "[{widget_name, field, value}] — pushed via the typed setter matching value's type, with a forced Slate refresh",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "handle": {
+            "description": "a live widget handle from widget_view show",
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle"
+        ],
+        "type": "object"
+      },
+      "name": "widget_set_fields"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Set keyboard/gamepad focus on a named sub-widget of a live widget — pairs with a pie_input Up/Down/Accept nav nudge to verify controller/keyboard-navigable menus (not just mouse clicks).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "handle": {
+            "type": "string"
+          },
+          "widget_name": {
+            "description": "the sub-widget to focus",
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle",
+          "widget_name"
+        ],
+        "type": "object"
+      },
+      "name": "widget_set_focus"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Configure a marker widget to track a world actor: each tick it projects the actor's world location to DPI-correct widget space and positions the marker (forced point-anchor + centered pivot). The objective-marker binding — a configured property, no graph authoring.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blueprint": {
+            "type": "string"
+          },
+          "marker_widget": {
+            "description": "the marker widget to reposition each tick",
+            "type": "string"
+          },
+          "target": {
+            "description": "world-actor label to track, or owning_pawn",
+            "type": "string"
+          },
+          "world_offset": {
+            "description": "[x,y,z] world-space offset from the actor origin",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "marker_widget",
+          "blueprint",
+          "target"
+        ],
+        "type": "object"
+      },
+      "name": "widget_track_actor"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Inspect or restore a WidgetBlueprint's widget tree. mode=get returns the canonical tree JSON + structural digest (the layer-1 oracle, no rendering). mode=restore re-applies a snapshot from a restore_token.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blueprint": {
+            "description": "the WidgetBlueprint asset path",
+            "type": "string"
+          },
+          "mode": {
+            "description": "get (default): read the current in-memory tree + structural digest. restore: re-apply a snapshot",
+            "type": "string"
+          },
+          "restore_token": {
+            "description": "restore mode: the token returned by a prior destructive widget_compose",
+            "type": "string"
+          }
+        },
+        "required": [
+          "blueprint"
+        ],
+        "type": "object"
+      },
+      "name": "widget_tree"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Show or hide a WidgetBlueprint in the running (PIE) viewport. show returns a handle to drive/observe it; hide releases it. The viewport keeps a shown widget alive (no manual rooting); keep_alive holds it across a hide/re-show.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blueprint": {
+            "description": "show: the WidgetBlueprint to instantiate + add to the viewport",
+            "type": "string"
+          },
+          "handle": {
+            "description": "hide: the handle returned by a prior show",
+            "type": "string"
+          },
+          "keep_alive": {
+            "description": "show: hold a strong ref (C++ UPROPERTY) so the handle survives a hide/re-show",
+            "type": "boolean"
+          },
+          "mode": {
+            "description": "show or hide",
+            "type": "string"
+          },
+          "owner": {
+            "description": "show: owning player-controller actor label (default the first local PC)",
+            "type": "string"
+          },
+          "z": {
+            "description": "show: viewport Z-order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
+      "name": "widget_view"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
+      "description": "Author a UMVVMViewModelBase Blueprint with typed FieldNotify properties (the MVVM data source). Spike-gated: falls back to the UMCPHUDWidget push/pull path if MVVM authoring is intractable in this UE version.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dest": {
+            "description": "destination viewmodel Blueprint path",
+            "type": "string"
+          },
+          "fields": {
+            "description": "[{name,type}] FieldNotify properties",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "dest",
+          "fields"
+        ],
+        "type": "object"
+      },
+      "name": "widget_viewmodel_create"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Capture a specific on-screen window as a PNG — defaults to auto-detecting the Unreal Editor. Sees the FULL editor: menus, panels, the Content Browser, modal dialogs, the composited viewport with UI. method=print (default) works even when the window is backgrounded/occluded and does not steal focus; method=screen blits its on-screen rectangle. Returns the window's screen bounds so you can map image pixels to mouse_control coordinates.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "focus": {
+            "description": "bring the window to the foreground before capturing",
+            "type": "boolean"
+          },
+          "hwnd": {
+            "description": "target an exact window handle (from list_windows)",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_width": {
+            "description": "downscale to at most this width; default 1600, 0 = full resolution",
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "method": {
+            "description": "auto|print|screen. print (default) renders the window even when backgrounded/occluded and never steals focus; screen blits its on-screen rectangle (window must be visible)",
+            "type": "string"
+          },
+          "pid": {
+            "description": "target a specific process id instead of by title",
+            "type": "integer"
+          },
+          "title": {
+            "description": "window title substring (case-insensitive); omit to auto-detect the Unreal Editor",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "window_capture"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Spatial verification in the game world (PIE): line_trace (is a shot/LOS clear?), sphere_overlap (what's near a point?), nav_path (can AI path A-\u003eB?), project_point (is a point on the navmesh?). Needs collision + a built navmesh.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "center": {
+            "description": "[x,y,z] for sphere_overlap",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "end": {
+            "description": "[x,y,z] for line_trace/nav_path",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "kind": {
+            "description": "line_trace | sphere_overlap | nav_path | project_point",
+            "type": "string"
+          },
+          "point": {
+            "description": "[x,y,z] for project_point",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "radius": {
+            "description": "sphere_overlap radius; default 100",
+            "type": "number"
+          },
+          "start": {
+            "description": "[x,y,z] for line_trace/nav_path",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "world": {
+            "description": "auto|editor|game; default auto (game world in PIE)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "world_query"
+    }
+  ]
+}

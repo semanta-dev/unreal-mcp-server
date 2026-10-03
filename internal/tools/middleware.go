@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/jdziat/unreal-mcp-server/internal/tools/envelope"
 )
 
 // RecoverMiddleware turns a panic in any handler into an error rather than
@@ -49,5 +51,5 @@ func LoggingMiddleware(logger *slog.Logger) mcp.Middleware {
 // in the uexec layer (UMCP_COMMAND_TIMEOUT), so no blanket method timeout is
 // imposed here (it would truncate legitimately long ops like builds/screenshots).
 func InstallMiddleware(s *mcp.Server, logger *slog.Logger) {
-	s.AddReceivingMiddleware(RecoverMiddleware(logger), LoggingMiddleware(logger))
+	s.AddReceivingMiddleware(RecoverMiddleware(logger), LoggingMiddleware(logger), envelope.SafetyNet(nil))
 }
