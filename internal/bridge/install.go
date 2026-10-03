@@ -106,7 +106,7 @@ func (b *Bridge) installHotload(ctx context.Context) error {
 	b64 := base64.StdEncoding.EncodeToString([]byte(CompanionSource()))
 	boot := fmt.Sprintf("import base64, types\n"+
 		"_mcp2 = types.ModuleType(\"mcp2\")\n"+
-		"exec(compile(base64.b64decode(%q).decode(\"utf-8\"), \"mcp_bridge\", \"exec\"), _mcp2.__dict__)\n"+
+		"exec(compile(base64.b64decode(%q).decode(\"utf-8\"), \"mcp2_bridge\", \"exec\"), _mcp2.__dict__)\n"+
 		"_mcp2_dispatch = _mcp2._mcp2_dispatch\n"+
 		"_mcp2_dispatch_native = _mcp2._mcp2_dispatch_native\n"+
 		"_MCP2_BRIDGE_VERSION = _mcp2._MCP2_BRIDGE_VERSION", b64)
@@ -120,7 +120,7 @@ func (b *Bridge) installHotload(ctx context.Context) error {
 	return nil
 }
 
-// installOnDisk writes the module to <Project>/Intermediate/PyMCP (gitignored,
+// installOnDisk writes the module to <Project>/Intermediate/PyMCP2/mcp2_bridge.py (gitignored,
 // no /Content pollution) and imports it into __main__. Go writes the file
 // directly (same local machine as the editor); the editor only imports it.
 func (b *Bridge) installOnDisk(ctx context.Context) error {

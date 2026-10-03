@@ -69,6 +69,7 @@ def test_boot_matches_go():
     """The hotload bootstrap in conftest must be the one Go sends (install.go)."""
     go = (REPO / "internal" / "bridge" / "install.go").read_text(encoding="utf-8")
     for line in ('_mcp2 = types.ModuleType(\\"mcp2\\")',
+                 '\\"mcp2_bridge\\", \\"exec\\"), _mcp2.__dict__)',
                  "_mcp2_dispatch = _mcp2._mcp2_dispatch",
                  "_mcp2_dispatch_native = _mcp2._mcp2_dispatch_native",
                  "_MCP2_BRIDGE_VERSION = _mcp2._MCP2_BRIDGE_VERSION",
