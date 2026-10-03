@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.0.2 — 2026-10-03
+
+- First signed release: every archive and `SHA256SUMS` is signed with Sigstore cosign (keyless, GitHub OIDC) and has
+  a build-provenance attestation; builds for windows amd64/arm64, linux amd64 and darwin arm64, plus the UnrealMCP
+  plugin source. How to verify: [`docs/operations.md`](docs/operations.md#releases).
+- CI: reusable workflow (the release runs it first), Windows `go test`, generated-docs check, the tool-selection
+  eval's dry run, release packaging on every push; actions pinned to commit SHAs.
+- Fixed: the import-DAG test had no rule for `cmd/tooleval` (it failed in v2.0.1); two companion tests wrote to a
+  Windows-only path.
+
 ## v2.0.1 — 2026-10-03
 
 - Tool-selection eval (plan §3.5) run: v2 matches v1 on first-call accuracy and completes every task end to end
