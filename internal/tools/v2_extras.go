@@ -14,6 +14,7 @@ import (
 	"github.com/jdziat/unreal-mcp-server/internal/audit"
 	"github.com/jdziat/unreal-mcp-server/internal/design"
 	"github.com/jdziat/unreal-mcp-server/internal/desktop"
+	"github.com/jdziat/unreal-mcp-server/internal/lifecycle"
 	"github.com/jdziat/unreal-mcp-server/internal/session"
 	"github.com/jdziat/unreal-mcp-server/internal/tools/envelope"
 	"github.com/jdziat/unreal-mcp-server/internal/tools/spec"
@@ -202,6 +203,16 @@ func projectSpec(pm session.ProjectManager) *spec.Spec {
 					WithHint("set gate_policy to \"off\" in the project's .umcp.json, or use a server version with approvals")
 			}
 			id, err := pm.Attach(ctx, sid, project)
+			if errors.Is(err, session.ErrEditorStarting) {
+				e := envelope.New(envelope.EditorBusy, "%v", err).
+					WithHint("a cold start can take minutes: call project op=attach again to keep waiting")
+				e.Retryable = true
+				return nil, e
+			}
+			if errors.Is(err, lifecycle.ErrForeignEditor) {
+				return nil, envelope.New(envelope.Precondition, "%v", err).
+					WithHint("close that editor (save first), then attach; or drive it with a stdio server (-project), which uses a running editor")
+			}
 			if err != nil {
 				return nil, err
 			}

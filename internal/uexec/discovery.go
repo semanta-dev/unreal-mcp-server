@@ -162,7 +162,7 @@ func (b *broadcastConn) broadcastCloseConnection(remoteNodeID string) {
 // waitForNode blocks until a node is selectable or timeout elapses. With
 // projectDir set it prefers the matching node; on timeout with nodes present but
 // no match, it falls back to the first node with an ambiguity warning (parity).
-func (b *broadcastConn) waitForNode(ctx context.Context, projectDir string, timeout time.Duration, strict bool) (*Node, error) {
+func (b *broadcastConn) waitForNode(ctx context.Context, projectDir string, timeout time.Duration, strict bool, skip ...map[string]bool) (*Node, error) {
 	// Strict selection is only meaningful with a project to match — pickNode's
 	// no-filter path returns an arbitrary nodes[0], which under a lease would
 	// cross-bind. Refuse rather than bind blind (defends a leased caller that set
@@ -175,7 +175,7 @@ func (b *broadcastConn) waitForNode(ctx context.Context, projectDir string, time
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
 	for {
-		if n, reason := pickNode(b.nodes.list(), projectDir); n != nil {
+		if n, reason := pickNode(withoutNodes(b.nodes.list(), skip...), projectDir); n != nil {
 			b.logger.Info("selected editor node", "node_id", n.ID, "reason", reason,
 				"project_root", n.ProjectRoot, "project_name", n.ProjectName, "engine", n.EngineVersion)
 			return n, nil
@@ -210,4 +210,18 @@ func (b *broadcastConn) close() {
 		_ = b.pc.Close()
 		b.wg.Wait()
 	})
+}
+
+// withoutNodes drops the nodes a session has excluded (see Session.ExcludeNode).
+func withoutNodes(nodes []*Node, skip ...map[string]bool) []*Node {
+	if len(skip) == 0 || len(skip[0]) == 0 {
+		return nodes
+	}
+	out := make([]*Node, 0, len(nodes))
+	for _, n := range nodes {
+		if !skip[0][n.ID] {
+			out = append(out, n)
+		}
+	}
+	return out
 }

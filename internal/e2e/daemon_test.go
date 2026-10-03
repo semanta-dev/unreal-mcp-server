@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -314,4 +315,33 @@ func upper(s string) string {
 		}
 	}
 	return string(b)
+}
+
+// Found live (P7): while a lease restarted, the resolver dropped the whole binding, so
+// job op=wait could not find the restart's own job and editor calls claimed no project
+// was attached. Now only the editor is unavailable (retryable EDITOR_BUSY).
+func TestDaemonRestartKeepsProjectAndJobs(t *testing.T) {
+	e := startDaemon(t, time.Minute, tools.Specs)
+	cs := e.connect(t, nil)
+	defer cs.Close()
+	proj := t.TempDir()
+	if out := callTool(t, cs, "project", map[string]any{"op": "attach", "project": proj}); out["attached"] != true {
+		t.Fatalf("attach: %v", out)
+	}
+	var id string
+	for _, inst := range e.dm.Pool.List() {
+		if session.ProjectKey(inst.Project) == session.ProjectKey(proj) {
+			id = inst.ID
+		}
+	}
+	if err := e.dm.Pool.RestartBegin(id, leasedBy(e.dm, proj)); err != nil {
+		t.Fatal(err)
+	}
+	out := callTool(t, cs, "editor", map[string]any{"op": "status"})
+	if s, _ := out["_error"].(string); !strings.Contains(s, "EDITOR_BUSY") || !strings.Contains(s, "restarting") {
+		t.Fatalf("an editor call mid-restart should be a retryable EDITOR_BUSY: %v", out)
+	}
+	if out := callTool(t, cs, "job", map[string]any{"op": "list"}); out["_error"] != nil {
+		t.Fatalf("the project's jobs must stay reachable mid-restart: %v", out)
+	}
 }

@@ -728,7 +728,7 @@ func revertFiles(ctx context.Context, dir, tag string, changes []fileChange, bac
 			}
 		}
 	}
-	progress(fmt.Sprintf("backed up %d files to %s", len(existed), backup))
+	progress(fmt.Sprintf("backed up %d files to %s", len(existed), filepath.ToSlash(backup)))
 	rollback := func(cause error) error {
 		for _, ch := range changes {
 			dst := filepath.Join(dir, ch.Path)

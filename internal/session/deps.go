@@ -7,6 +7,7 @@ package session
 
 import (
 	"context"
+	"errors"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -32,7 +33,16 @@ type Deps struct {
 
 	// Projects, when non-nil (daemon mode), binds sessions to project editors.
 	Projects ProjectManager
+
+	// Restarting (daemon mode) is set while the session's leased editor is in a
+	// controlled restart: Bridge is nil, but the project, its jobs and offline tools
+	// stay usable, and editor calls get a retryable EDITOR_BUSY.
+	Restarting bool
 }
+
+// ErrEditorStarting: the project's editor is still cold-starting for this session
+// (daemon mode); attaching again resumes the wait.
+var ErrEditorStarting = errors.New("the project's editor is starting")
 
 // ProjectManager binds an MCP session to a project's editor lease (daemon mode).
 type ProjectManager interface {

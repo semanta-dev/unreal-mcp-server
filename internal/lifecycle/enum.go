@@ -1,6 +1,14 @@
 package lifecycle
 
-import "strings"
+import (
+	"errors"
+	"strings"
+)
+
+// ErrForeignEditor: an editor for the project is already running that the daemon did
+// not launch. A second editor on the same project fights it over saves, and discovery
+// could bind either one.
+var ErrForeignEditor = errors.New("an editor for this project is already running outside the daemon")
 
 // TokenProc is a running process bearing a launch-flag token (e.g. an editor started
 // with -MCPInstanceToken=<token>), as found by EnumerateTokenProcesses.

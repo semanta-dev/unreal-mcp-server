@@ -245,6 +245,13 @@ func (dm *Daemon) DepsResolver() func(ctx context.Context, req mcp.Request) (ses
 		}
 		dm.touch(sid) // mark activity so the idle-sweep doesn't reclaim a live session
 		ed, project, err := dm.Router.Resolve(sid)
+		if errors.Is(err, ErrRestartInProgress) {
+			// Found live (P7): dropping the whole binding here made the restart's own
+			// job unreachable ("no job in this project") and editor calls claim no
+			// project was attached. Keep everything but the editor.
+			return session.Deps{ProjectDir: project, EngineDir: dm.EngineDir, Restarting: true,
+				Jobs: dm.jobsForProject(session.ProjectKey(project)), Projects: dm}, true
+		}
 		if err != nil {
 			return session.Deps{}, false
 		}

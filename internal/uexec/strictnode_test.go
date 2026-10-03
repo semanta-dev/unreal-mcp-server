@@ -34,3 +34,20 @@ func TestWaitForNodeStrictNoCrossTenantBind(t *testing.T) {
 		t.Fatalf("strict should bind the matching own node, got n=%v err=%v", n, err)
 	}
 }
+
+// Found live (P7): a just-killed editor of the same project still advertised, so a
+// daemon spawn bound its stale node instead of the editor it launched. Excluded nodes
+// are never selected.
+func TestWaitForNodeSkipsExcludedNodes(t *testing.T) {
+	bc := &broadcastConn{nodes: newNodeTable(), logger: slog.New(slog.DiscardHandler)}
+	bc.nodes.upsert("stale", pong(map[string]any{"project_root": "C:/games/poly-world/"}), time.Now())
+	skip := map[string]bool{"stale": true}
+	if _, err := bc.waitForNode(context.Background(), "C:/games/poly-world", 30*time.Millisecond, true, skip); !errors.Is(err, ErrEditorNotFound) {
+		t.Fatalf("an excluded node must not be bound, got %v", err)
+	}
+	bc.nodes.upsert("fresh", pong(map[string]any{"project_root": "C:/games/poly-world/"}), time.Now())
+	n, err := bc.waitForNode(context.Background(), "C:/games/poly-world", 30*time.Millisecond, true, skip)
+	if err != nil || n == nil || n.ID != "fresh" {
+		t.Fatalf("want the fresh node, got n=%v err=%v", n, err)
+	}
+}

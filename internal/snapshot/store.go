@@ -37,7 +37,7 @@ type File struct {
 	World          string    `json:"world"`
 	WorldPartition bool      `json:"world_partition"`
 	ClassFilter    string    `json:"class_filter,omitempty"` // only actors whose class/label contain this
-	Unloaded       []string  `json:"unloaded,omitempty"`     // WP: known but not loaded when taken (unfiltered snapshots only)
+	Unloaded       []string  `json:"unloaded,omitempty"`     // WP: known but not loaded when taken (any filter)
 	Actors         []Actor   `json:"actors"`
 }
 

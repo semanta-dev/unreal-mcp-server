@@ -88,6 +88,15 @@ def test_snapshot_restore_by_path_one_undo_step(v2, ue):
     assert [k for k, _ in ue.tx] == ["begin", "end"] and res["saved"] is True
 
 
+def test_filtered_snapshot_restore_reports_only_its_own_actors(v2, ue):
+    wp = ue.add_actor("/Script/Engine.Actor", "WP_A")
+    ue.add_actor("/Script/Engine.Actor", "Landscape")  # outside the filter: not "added"
+    extra = ue.add_actor("/Script/Engine.Actor", "WP_New")
+    snap = [{"path": wp.get_path_name(), "loc": [1, 1, 1]}]
+    res = ok(v2, "snapshot_restore", {"name": "s", "actors": snap, "class_filter": "WP_", "save": False})
+    assert res["not_restored"]["added"] == [extra.get_path_name()]
+
+
 SCENE = [{"label": "arena.hero", "kind": "class", "class_path": "/Script/Engine.Actor", "location": [5, 0, 0],
           "tags": ["mcp_scene:arena"]}]
 
@@ -135,13 +144,16 @@ def test_audio_is_pie_only(v2, ue):
     assert err(v2, "play_test_sound", {"sound": "/Game/S"})["code"] == "NOT_IN_PIE"
 
 
-def test_filtered_snapshot_has_no_wp_unloaded(v2, ue):
+def test_filtered_snapshot_lists_only_truly_unloaded_actors(v2, ue):
+    # A filter must neither call a loaded-but-filtered actor (Lamp) unloaded nor drop the
+    # unloaded set: without it a filtered diff reported an unloaded actor as removed
+    # (found live, P7).
     ue.add_actor("/Script/Engine.Actor", "Lamp")
     ue.add_actor("/Script/Engine.StaticMeshActor", "Rock")
     ue.wp_descs = [a.get_path_name() for a in ue.editor_actors] + ["/Game/Maps/L.L:PersistentLevel.Far_9"]
     res = ok(v2, "snapshot_actors", {"class_filter": "Static"})
     assert [a["label"] for a in res["actors"]] == ["Rock"] and res["class_filter"] == "Static"
-    assert "unloaded" not in res  # Lamp is filtered out, not unloaded
+    assert res["unloaded"] == ["/Game/Maps/L.L:PersistentLevel.Far_9"]
     res = ok(v2, "snapshot_actors", {})
     assert res["unloaded"] == ["/Game/Maps/L.L:PersistentLevel.Far_9"]
 
@@ -221,3 +233,22 @@ def test_pie_screenshot_uses_a_fresh_name_in_the_screenshot_dir(v2, ue, tmp_path
     b = ok(v2, "pie_screenshot", {})
     assert a["file"] != b["file"] and len(set(shots)) == 2
     assert a["file"].startswith((tmp_path / "Screenshots" / "WindowsEditor").as_posix() + "/")
+
+
+def test_null_args_are_no_args(v2, ue):
+    # Go sends a nil map as JSON null (playtest's wait_until polled pie_observe that way
+    # and every poll failed on None.get — found live, P7).
+    import base64
+    import io
+    import json
+    import sys
+    ue.pie_actors = []
+    v2["_mcp2"]._pie_running = lambda: True
+    buf, old = io.StringIO(), sys.stdout
+    sys.stdout = buf
+    try:
+        v2["_mcp2_dispatch"]("pie_observe", base64.b64encode(b"null").decode())
+    finally:
+        sys.stdout = old
+    env = json.loads(buf.getvalue().split("__MCP_JSON__", 1)[1])
+    assert env["ok"], env

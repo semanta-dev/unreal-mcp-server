@@ -87,7 +87,9 @@ def _op_console(args):
         raise _V2Error("NOT_IN_PIE", "PIE is not running; use world=editor or start PIE")
     pc = unreal.GameplayStatics.get_player_controller(world, 0) if world else None
     if pc:
-        pc.console_command(cmd)
+        # PlayerController.ConsoleCommand is not exposed to Python in 5.7; the library
+        # call with specific_player routes through that controller just the same.
+        unreal.SystemLibrary.execute_console_command(world, cmd, pc)
         return {"ran": cmd, "via": "player_controller", "world": "pie"}
     unreal.SystemLibrary.execute_console_command(world, cmd)
     return {"ran": cmd, "via": "world" if world else "editor", "world": "pie" if world else "editor"}

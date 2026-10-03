@@ -18,6 +18,7 @@ import (
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"sync"
 
+	"github.com/jdziat/unreal-mcp-server/internal/session"
 	"github.com/jdziat/unreal-mcp-server/internal/supervisor"
 )
 
@@ -37,7 +38,19 @@ type Router struct {
 
 	bindings map[string]string            // sessionID -> instanceID
 	editors  map[string]supervisor.Editor // instanceID -> its bridge
+	pending  map[string]*pendingSpawn     // sessionID -> its editor's cold start in progress
 	seq      int
+}
+
+// pendingSpawn is one session's editor cold start. It runs detached from the attach
+// call: a cold start (tens of seconds to minutes) outlives a tool call, and found live
+// (P7) tying it to the call's deadline killed every editor that was still loading.
+type pendingSpawn struct {
+	project   string
+	done      chan struct{}
+	id        string
+	err       error
+	abandoned bool // the session ended first: the editor is kept warm, unleased
 }
 
 // NewRouter builds a router. newToken generates a fresh -MCPInstanceToken (uuid in
@@ -51,6 +64,7 @@ func NewRouter(pool *supervisor.Pool, spawner supervisor.Spawner, newToken func(
 	return &Router{
 		pool: pool, spawner: spawner, newToken: newToken,
 		bindings: map[string]string{}, editors: map[string]supervisor.Editor{},
+		pending: map[string]*pendingSpawn{},
 	}
 }
 
@@ -64,42 +78,73 @@ func (r *Router) Attach(ctx context.Context, sessionID, project string) (instanc
 		r.mu.Unlock()
 		return id, nil // already attached (idempotent)
 	}
-	// Prefer reusing a warm idle editor for this project (the double-spawn guard).
-	if lease, lerr := r.pool.Lease(project, sessionID); lerr == nil {
-		r.bindings[sessionID] = lease.ID
+	p := r.pending[sessionID]
+	if p != nil && p.project != project {
 		r.mu.Unlock()
-		return lease.ID, nil
+		return "", fmt.Errorf("%w: this session is still starting an editor for %s", session.ErrEditorStarting, p.project)
+	}
+	if p == nil {
+		// Prefer reusing a warm idle editor for this project (the double-spawn guard).
+		if lease, lerr := r.pool.Lease(project, sessionID); lerr == nil {
+			r.bindings[sessionID] = lease.ID
+			r.mu.Unlock()
+			return lease.ID, nil
+		}
+		// No warm editor: start one for THIS session, detached from this call.
+		p = &pendingSpawn{project: project, done: make(chan struct{})}
+		r.pending[sessionID] = p
+		go r.spawnFor(sessionID, p)
 	}
 	r.mu.Unlock()
-
-	// No warm editor: spawn one for THIS session. Spawn (slow: cold start) runs
-	// outside the lock; it wrote the write-ahead intent + waited for accepting.
-	token := r.newToken()
-	ed, pid, identity, serr := r.spawner.Spawn(ctx, project, token)
-	if serr != nil {
-		return "", serr
+	select {
+	case <-p.done:
+		r.mu.Lock()
+		if r.pending[sessionID] == p {
+			delete(r.pending, sessionID)
+		}
+		r.mu.Unlock()
+		return p.id, p.err
+	case <-ctx.Done():
+		// The editor keeps starting; attaching again resumes the wait.
+		return "", fmt.Errorf("%w: %s", session.ErrEditorStarting, project)
 	}
+}
 
+// spawnFor runs one session's cold start and binds the lease when it is ready. The
+// spawner bounds the start (cold-start deadline, launched pid alive).
+func (r *Router) spawnFor(sessionID string, p *pendingSpawn) {
+	defer close(p.done)
+	token := r.newToken()
+	ed, pid, identity, serr := r.spawner.Spawn(context.Background(), p.project, token)
+	if serr != nil {
+		p.err = serr
+		return
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	// Idempotency double-check: a concurrent Attach for the SAME session may have
-	// finished while we were spawning — if so, we double-spawned; tear down the extra.
+	// Idempotency double-check: the session got bound meanwhile — tear down the extra.
 	if id, ok := r.bindings[sessionID]; ok {
 		_ = r.spawner.Kill(pid)
 		_ = ed.Close()
-		return id, nil
+		p.id = id
+		return
 	}
 	id := r.newInstanceID()
-	r.pool.RegisterStarting(id, project, r.pool.NextInstanceID(), pid, token, identity)
+	r.pool.RegisterStarting(id, p.project, r.pool.NextInstanceID(), pid, token, identity)
 	_ = r.pool.MarkAccepting(id) // Spawn already confirmed accepting-ready
 	r.editors[id] = ed
-	lease, lerr := r.pool.Lease(project, sessionID)
+	if p.abandoned {
+		p.err = ErrNoProjectAttached // nobody to lease it to: it stays warm (Idle) for re-lease
+		return
+	}
+	lease, lerr := r.pool.Lease(p.project, sessionID)
 	if lerr != nil {
 		r.teardownLocked(id, pid) // clean up the editor we just made
-		return "", fmt.Errorf("daemon: lease after spawn failed: %w", lerr)
+		p.err = fmt.Errorf("daemon: lease after spawn failed: %w", lerr)
+		return
 	}
 	r.bindings[sessionID] = lease.ID
-	return lease.ID, nil
+	p.id = lease.ID
 }
 
 // editorBridge returns the bridge of an instance's current editor (nil if gone).
@@ -161,6 +206,10 @@ func (r *Router) Resolve(sessionID string) (supervisor.Editor, string, error) {
 func (r *Router) Release(sessionID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if p := r.pending[sessionID]; p != nil {
+		p.abandoned = true // its editor will come up unleased (warm)
+		delete(r.pending, sessionID)
+	}
 	id, ok := r.bindings[sessionID]
 	if !ok {
 		return

@@ -21,8 +21,9 @@ type Session struct {
 	bc         *broadcastConn
 	cmd        *commandConn
 	nodeID     string
-	gen        uint64 // increments on each new command channel (reconnect/editor restart)
-	sharedDisc bool   // true => bc is a shared Discovery this Session must not close
+	gen        uint64          // increments on each new command channel (reconnect/editor restart)
+	sharedDisc bool            // true => bc is a shared Discovery this Session must not close
+	excluded   map[string]bool // nodes this session must never select (ExcludeNode)
 
 	// Theft detection (plan §2.8, case 4).
 	now          func() time.Time
@@ -103,7 +104,30 @@ func (s *Session) WaitForNode(ctx context.Context) (*Node, error) {
 	if bc == nil {
 		return nil, errors.New("uexec: session not started")
 	}
-	return bc.waitForNode(ctx, s.cfg.ProjectDir, s.cfg.DiscoveryTimeout, s.cfg.StrictNode)
+	s.mu.Lock()
+	skip := s.excludedCopyLocked()
+	s.mu.Unlock()
+	return bc.waitForNode(ctx, s.cfg.ProjectDir, s.cfg.DiscoveryTimeout, s.cfg.StrictNode, skip)
+}
+
+// ExcludeNode stops this session from ever selecting a node: one that answered for
+// the project but is not the editor the caller launched (another editor of the same
+// project, or a just-killed one whose node has not aged out of discovery yet).
+func (s *Session) ExcludeNode(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.excluded == nil {
+		s.excluded = map[string]bool{}
+	}
+	s.excluded[id] = true
+}
+
+func (s *Session) excludedCopyLocked() map[string]bool {
+	m := make(map[string]bool, len(s.excluded))
+	for k := range s.excluded {
+		m[k] = true
+	}
+	return m
 }
 
 // OpenCommand opens a command channel to a specific node id.
@@ -303,7 +327,7 @@ func (s *Session) Reclaim() {
 
 func (s *Session) reconnectLocked(ctx context.Context) error {
 	// Strict under a lease: a reconnect must NOT re-pin to a wrong-project node either.
-	node, err := s.bc.waitForNode(ctx, s.cfg.ProjectDir, s.cfg.DiscoveryTimeout, s.cfg.StrictNode)
+	node, err := s.bc.waitForNode(ctx, s.cfg.ProjectDir, s.cfg.DiscoveryTimeout, s.cfg.StrictNode, s.excludedCopyLocked())
 	if err != nil {
 		return err
 	}

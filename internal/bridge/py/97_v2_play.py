@@ -122,6 +122,11 @@ def _wp_actor_paths(world):
     return paths or None
 
 
+def _snapshot_filter_match(actor, flt):
+    """take's class_filter: the class name or label contains flt (case-insensitive)."""
+    return not flt or flt in actor.get_class().get_name().lower() or flt in actor.get_actor_label().lower()
+
+
 def _op_snapshot_actors(args):
     """Editor-world actors with path, label, class, tags and full transform; under
     World Partition also the actors that exist but are not loaded."""
@@ -131,7 +136,7 @@ def _op_snapshot_actors(args):
     for a in _world_actors(world, name):
         cn = a.get_class().get_name()
         label = a.get_actor_label()
-        if flt and flt not in cn.lower() and flt not in label.lower():
+        if not _snapshot_filter_match(a, flt):
             continue
         loc, rot, sc = a.get_actor_location(), a.get_actor_rotation(), a.get_actor_scale3d()
         out.append({"path": _norm_path(a.get_path_name()), "label": label, "class": cn,
@@ -142,9 +147,10 @@ def _op_snapshot_actors(args):
     known = _wp_actor_paths(world)
     if known is not None:
         res["world_partition"] = True
-        if not flt:  # a filtered snapshot cannot tell an unloaded actor from a filtered-out one
-            loaded = {_norm_path(a.get_path_name()) for a in _world_actors(world, name)}
-            res["unloaded"] = sorted(known - loaded)
+        # Every actor WP knows that is not loaded right now — against ALL loaded actors,
+        # so a class filter cannot turn an unloaded actor into "removed" (found live, P7).
+        loaded = {_norm_path(a.get_path_name()) for a in _world_actors(world, name)}
+        res["unloaded"] = sorted(known - loaded)
     return res
 
 
@@ -185,7 +191,9 @@ def _op_snapshot_restore(args):
             if scale:
                 a.set_actor_scale3d(unreal.Vector(scale[0], scale[1], scale[2]))
             restored += 1
-    added = sorted(p for p in by_path if p not in snap_paths)
+    # A class-filtered snapshot only speaks for the actors its filter selects.
+    flt = (args.get("class_filter") or "").lower()
+    added = sorted(p for p, a in by_path.items() if p not in snap_paths and _snapshot_filter_match(a, flt))
     saved = False
     if args.get("save", True):
         saved = bool(unreal.EditorLoadingAndSavingUtils.save_dirty_packages(True, False))

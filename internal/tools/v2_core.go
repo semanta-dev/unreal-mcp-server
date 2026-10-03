@@ -34,6 +34,12 @@ func v2Bridge(c *spec.Call) (*bridge.Bridge, error) {
 	if c.Deps.Bridge != nil {
 		return c.Deps.Bridge, nil
 	}
+	if c.Deps.Restarting {
+		e := envelope.New(envelope.EditorBusy, "the session's editor is restarting").
+			WithHint("retry in a few seconds; job op=wait follows the restart")
+		e.Retryable = true
+		return nil, e
+	}
 	e := envelope.New(envelope.Precondition, "no editor is bound to this session")
 	if c.Deps.Projects != nil {
 		return nil, e.WithHint("call project with op=attach and the project directory first")

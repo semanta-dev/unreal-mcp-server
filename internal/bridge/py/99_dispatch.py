@@ -134,7 +134,8 @@ def _classify_error(e):
 
 def _mcp2_dispatch(op, b64args):
     try:
-        args = json.loads(base64.b64decode(b64args)) if b64args else {}
+        # A JSON null (Go's nil map) is "no arguments", like an empty object.
+        args = (json.loads(base64.b64decode(b64args)) if b64args else None) or {}
         fn = _OPS.get(op)
         if fn is None:
             _emit({"ok": False, "error": "unknown op: " + str(op), "code": "UNKNOWN_OP",

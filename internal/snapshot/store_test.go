@@ -72,3 +72,14 @@ func TestStoreRoundTripAndNames(t *testing.T) {
 		t.Fatalf("list = %+v", l)
 	}
 }
+
+// A class-filtered "current" still carries the unloaded set, so an actor whose cell
+// was unloaded after a filtered snapshot is unknown, never removed (found live, P7).
+func TestFilteredDiffKeepsUnloadedUnknown(t *testing.T) {
+	a := &File{ClassFilter: "WP_", Actors: []Actor{{Path: "/L.L:P.A", Label: "WP_A"}, {Path: "/L.L:P.B", Label: "WP_B"}}}
+	b := &File{ClassFilter: "WP_", Actors: []Actor{{Path: "/L.L:P.A", Label: "WP_A"}}, Unloaded: []string{"/L.L:P.B", "/L.L:P.Other"}}
+	d := Diff(a, b)
+	if len(d.Removed) != 0 || len(d.Unknown) != 1 || d.Unknown[0].Path != "/L.L:P.B" {
+		t.Fatalf("want WP_B unknown, not removed: %+v", d)
+	}
+}

@@ -8,6 +8,7 @@ package supervisor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -62,6 +63,18 @@ func (s *ProcessSpawner) Spawn(ctx context.Context, project, token string) (Edit
 		s.Records.Remove(token)
 		return nil, 0, "", fmt.Errorf("no .uproject under %s", project)
 	}
+	if pids := foreignEditors(uproj); len(pids) > 0 {
+		s.Records.Remove(token)
+		return nil, 0, "", fmt.Errorf("%w (pid %v)", lifecycle.ErrForeignEditor, pids)
+	}
+	// Every node discovery knows now predates this launch, so none of them is the new
+	// editor (a just-killed editor's node lingers until it ages out).
+	var before []string
+	if s.Disc != nil {
+		for _, n := range s.Disc.Nodes() {
+			before = append(before, n.ID)
+		}
+	}
 	// The token is baked into the launch args so process-enumeration reattach can
 	// identify this editor as daemon-owned before it advertises on discovery.
 	pid, err := lifecycle.Launch(s.EngineDir, uproj, InstanceTokenFlag+"="+token)
@@ -78,6 +91,9 @@ func (s *ProcessSpawner) Spawn(ctx context.Context, project, token string) (Edit
 	cfg.CommandAddr = "127.0.0.1:0" // ephemeral per-instance reverse-connect port (§1)
 	cfg.StrictNode = true           // under lease: never bind a foreign tenant's editor (§3)
 	sess := uexec.NewOnDiscovery(cfg, s.Disc, s.Logger)
+	for _, id := range before {
+		sess.ExcludeNode(id)
+	}
 	br := bridge.New(sess, bridge.Options{ProjectDir: project, Mode: s.BridgeMode, Logger: s.Logger})
 
 	if err := s.waitAccepting(ctx, sess, br, pid); err != nil {
@@ -107,9 +123,19 @@ func (s *ProcessSpawner) waitAccepting(ctx context.Context, sess *uexec.Session,
 		node, err := sess.WaitForNode(dctx)
 		if err == nil && node != nil {
 			if oerr := sess.OpenCommand(dctx, node.ID); oerr == nil {
-				// Probe the command channel is actually accepting.
-				if _, perr := br.Call(dctx, "editor_status", map[string]any{}); perr == nil {
-					return nil
+				// Probe the command channel is actually accepting — and that it is the
+				// editor we launched. Discovery matches by project path, so it can offer
+				// another editor of the same project, or one just killed whose node has
+				// not aged out yet (found live, P7).
+				if raw, perr := br.Call(dctx, "editor_status", map[string]any{}); perr == nil {
+					got := statusPID(raw)
+					if got == 0 || got == pid {
+						return nil
+					}
+					s.logger().Warn("discovered editor is not the one launched; excluding it",
+						"node_id", node.ID, "its_pid", got, "launched_pid", pid)
+					sess.ExcludeNode(node.ID)
+					continue
 				}
 			}
 		}
@@ -119,6 +145,35 @@ func (s *ProcessSpawner) waitAccepting(ctx context.Context, sess *uexec.Session,
 		case <-time.After(3 * time.Second):
 		}
 	}
+}
+
+// foreignEditors lists running editors of uproject that carry no daemon instance
+// token (opened by hand or by a stdio server). Found live (P7): the daemon launched a
+// second editor next to one, and its channel then bound the other by project path.
+var foreignEditors = func(uproject string) []int {
+	var out []int
+	for _, pid := range lifecycle.EditorPIDsForProject(uproject) {
+		if lifecycle.ProcessToken(pid, InstanceTokenFlag) == "" {
+			out = append(out, pid)
+		}
+	}
+	return out
+}
+
+// statusPID reads editor_pid from an editor_status result (0 when absent).
+func statusPID(raw []byte) int {
+	var st struct {
+		PID int `json:"editor_pid"`
+	}
+	_ = json.Unmarshal(raw, &st)
+	return st.PID
+}
+
+func (s *ProcessSpawner) logger() *slog.Logger {
+	if s.Logger != nil {
+		return s.Logger
+	}
+	return slog.New(slog.DiscardHandler)
 }
 
 // Kill force-kills a pid (kill-before-teardown). Satisfies Spawner.

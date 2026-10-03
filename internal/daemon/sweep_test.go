@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -18,15 +19,27 @@ type fakeEd struct{}
 func (fakeEd) Close() error { return nil }
 
 type wireFakeSpawner struct {
+	mu    sync.Mutex // Spawn runs on the router's background goroutine
 	pid   int
 	kills []int
+	gate  chan struct{} // when set, Spawn blocks until it is closed (a slow cold start)
 }
 
 func (s *wireFakeSpawner) Spawn(ctx context.Context, project, token string) (supervisor.Editor, int, string, error) {
+	if s.gate != nil {
+		<-s.gate
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.pid++
 	return fakeEd{}, s.pid, "id", nil
 }
-func (s *wireFakeSpawner) Kill(pid int) error { s.kills = append(s.kills, pid); return nil }
+func (s *wireFakeSpawner) Kill(pid int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.kills = append(s.kills, pid)
+	return nil
+}
 
 func newTestDaemon() *Daemon {
 	pool := supervisor.NewPool(nil)

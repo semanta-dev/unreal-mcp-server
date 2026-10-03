@@ -1,9 +1,11 @@
-// Command mcpcall drives an MCP server over stdio for live validation: it starts
-// the server command given after "--", reads one call per line from stdin
+// Command mcpcall drives an MCP server for live validation: it starts the server
+// command given after "--" (stdio), or connects to -url (a daemon's StreamableHTTP
+// endpoint), reads one call per line from stdin
 // ({"tool": "...", "args": {...}} or {"sleep_s": N}), and prints each result as
 // one JSON line. Image content is written to -images and replaced by its path.
 //
 //	mcpcall -images out -- dist/unreal-mcp.exe -project <dir> < calls.jsonl
+//	mcpcall -url http://127.0.0.1:6111/ < calls.jsonl
 package main
 
 import (
@@ -30,18 +32,24 @@ type call struct {
 func main() {
 	images := flag.String("images", "", "directory for image content (default: discard)")
 	timeout := flag.Duration("timeout", 10*time.Minute, "overall deadline")
+	url := flag.String("url", "", "a StreamableHTTP endpoint instead of a server command")
 	flag.Parse()
 	argv := flag.Args()
-	if len(argv) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: mcpcall [-images dir] -- <server> [args...] < calls.jsonl")
+	if len(argv) == 0 && *url == "" {
+		fmt.Fprintln(os.Stderr, "usage: mcpcall [-images dir] (-url <endpoint> | -- <server> [args...]) < calls.jsonl")
 		os.Exit(2)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
-	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Stderr = os.Stderr
-	cs, err := mcp.NewClient(&mcp.Implementation{Name: "mcpcall", Version: "1"}, nil).
-		Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
+	var transport mcp.Transport
+	if *url != "" {
+		transport = &mcp.StreamableClientTransport{Endpoint: *url}
+	} else {
+		cmd := exec.Command(argv[0], argv[1:]...)
+		cmd.Stderr = os.Stderr
+		transport = &mcp.CommandTransport{Command: cmd}
+	}
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "mcpcall", Version: "1"}, nil).Connect(ctx, transport, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "connect:", err)
 		os.Exit(1)
