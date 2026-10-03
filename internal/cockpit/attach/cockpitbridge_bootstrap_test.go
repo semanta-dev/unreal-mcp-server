@@ -1,4 +1,4 @@
-package cockpitbridge
+package attach
 
 import (
 	"context"

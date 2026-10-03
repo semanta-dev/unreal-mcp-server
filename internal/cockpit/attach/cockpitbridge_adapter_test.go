@@ -1,4 +1,4 @@
-package cockpitbridge
+package attach
 
 import (
 	"context"
@@ -55,7 +55,7 @@ func TestAdapterFlattensResult(t *testing.T) {
 	}
 	t.Cleanup(func() { client.Close() })
 
-	a := New(client)
+	a := NewAdapter(client)
 	nr, err := a.RPCNative(context.Background(), "spawn_actor", json.RawMessage(`{}`), "", "")
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +76,7 @@ func TestAdapterFlattensError(t *testing.T) {
 	}
 	t.Cleanup(func() { client.Close() })
 
-	nr, err := New(client).RPCNative(context.Background(), "spawn_actor", json.RawMessage(`{}`), "", "")
+	nr, err := NewAdapter(client).RPCNative(context.Background(), "spawn_actor", json.RawMessage(`{}`), "", "")
 	if err != nil {
 		t.Fatalf("transport error should be nil for an op-level failure: %v", err)
 	}

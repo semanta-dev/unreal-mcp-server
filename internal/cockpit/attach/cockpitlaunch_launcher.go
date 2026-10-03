@@ -1,9 +1,9 @@
-// Package cockpitlaunch wires the cockpit into the running server: once the editor's
+// cockpitlaunch (merged into package attach) wires the cockpit into the running server: once the editor's
 // native MCPCore channel is reachable, it bootstraps a cockpit Session, selects the native
 // backend, and surfaces the browser URL three ways (server log, a file the user can open,
 // and the cockpit_url MCP tool). It re-bootstraps on disconnect. Without this, the
 // Session/Host components exist but nothing ever opens the cockpit.
-package cockpitlaunch
+package attach
 
 import (
 	"context"
@@ -17,11 +17,10 @@ import (
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"github.com/jdziat/unreal-mcp-server/internal/cockpit"
-	"github.com/jdziat/unreal-mcp-server/internal/cockpitbridge"
 )
 
-// Config parametrizes the launcher.
-type Config struct {
+// LaunchConfig parametrizes the launcher.
+type LaunchConfig struct {
 	Project     string // project key (for the epoch store)
 	ProjectDir  string // where to drop the cockpit_url.txt pointer
 	GateTimeout time.Duration
@@ -36,8 +35,8 @@ type Launcher struct {
 	sess  *cockpit.Session
 }
 
-// New builds an idle launcher; call Run in a goroutine.
-func New() *Launcher { return &Launcher{} }
+// NewLauncher builds an idle launcher; call Run in a goroutine.
+func NewLauncher() *Launcher { return &Launcher{} }
 
 // URL returns the current cockpit URL and whether it is live. Safe for the cockpit_url tool.
 func (l *Launcher) URL() (string, bool) {
@@ -54,13 +53,13 @@ func (l *Launcher) set(sess *cockpit.Session, url string, ready bool) {
 
 // Run bootstraps the cockpit whenever the editor's native channel is reachable, surfaces
 // the URL, waits for the session to drop, and repeats. Returns when ctx is cancelled.
-func (l *Launcher) Run(ctx context.Context, b *bridge.Bridge, cfg Config, logger *slog.Logger) {
+func (l *Launcher) Run(ctx context.Context, b *bridge.Bridge, cfg LaunchConfig, logger *slog.Logger) {
 	if cfg.RetryEvery <= 0 {
 		cfg.RetryEvery = 3 * time.Second
 	}
-	epochs := cockpitbridge.NewMemEpochStore()
+	epochs := NewMemEpochStore()
 	for ctx.Err() == nil {
-		sess, err := cockpitbridge.Bootstrap(ctx, b, cockpitbridge.BootstrapConfig{
+		sess, err := Bootstrap(ctx, b, BootstrapConfig{
 			Project:      cfg.Project,
 			CockpitToken: randToken(),
 			DialTimeout:  5 * time.Second,

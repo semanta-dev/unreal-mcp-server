@@ -1,8 +1,8 @@
-// Package cockpitbridge adapts the framed cockpit transport (internal/cockpit) to the
+// cockpitbridge (merged into package attach) adapts the framed cockpit transport (internal/cockpit) to the
 // semantic Bridge's native backend interface (internal/bridge.NativeDispatcher). It lives
 // in its own package so neither the transport nor the semantic layer imports the other —
 // the composition root wires them here (EDITOR_PLUGIN_PLAN.md §5.4 backend selector).
-package cockpitbridge
+package attach
 
 import (
 	"context"
@@ -18,8 +18,8 @@ type Adapter struct {
 	Client *cockpit.Client
 }
 
-// New wraps a cockpit.Client as a bridge.NativeDispatcher.
-func New(c *cockpit.Client) *Adapter { return &Adapter{Client: c} }
+// NewAdapter wraps a cockpit.Client as a bridge.NativeDispatcher.
+func NewAdapter(c *cockpit.Client) *Adapter { return &Adapter{Client: c} }
 
 // RPCNative sends the op over the framed channel and flattens the rpc_result frame into a
 // bridge.NativeResult. A transport error (channel dropped) is returned as an error so the

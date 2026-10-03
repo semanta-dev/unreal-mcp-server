@@ -1,4 +1,4 @@
-package cockpitbridge
+package attach
 
 import (
 	"context"
@@ -70,7 +70,7 @@ func Bootstrap(ctx context.Context, b Selectable, cfg BootstrapConfig) (*cockpit
 		return nil, err
 	}
 	// Route op dispatch through the framed socket; uexec remains the install/fallback.
-	b.SetNative(New(sess.Client()))
+	b.SetNative(NewAdapter(sess.Client()))
 	if cfg.Epochs != nil {
 		cfg.Epochs.Record(cfg.Project, info.SessionEpoch)
 	}

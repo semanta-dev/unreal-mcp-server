@@ -17,12 +17,12 @@ $anchors = @(
   @{ File = 'internal/bridge/py/99_dispatch.py';    Pattern = '^_OPS\s*=\s*\{' },
   @{ File = 'internal/tools/build_tools.go';         Pattern = 'add\(s, "editor_restart"' },
   @{ File = 'internal/tools/discovery_tools.go';     Pattern = 'add\(s, "project_map"' },
-  @{ File = 'internal/cockpitbridge/bootstrap.go';   Pattern = 'func \(.*MemEpochStore\) LastSeq' },
+  @{ File = 'internal/cockpit/attach/cockpitbridge_bootstrap.go';   Pattern = 'func \(.*MemEpochStore\) LastSeq' },
   @{ File = 'cmd/unreal-mcp/daemon.go';              Pattern = 'mcp.NewServer|NewStreamableHTTPHandler' },
   @{ File = 'internal/uexec/client.go';              Pattern = 'errors.Is\(err, ErrConnectionLost\) && attempt == 0' },
   @{ File = 'internal/uexec/command.go';             Pattern = 'ErrConnectionLost' },
   @{ File = 'internal/uexec/config.go';              Pattern = 'defaultCommandAddr\s*=' },
-  @{ File = 'internal/bridge/install.go';            Pattern = 'cur != snippets.Version\(\)' },
+  @{ File = 'internal/bridge/install.go';            Pattern = 'cur != CompanionVersion\(\)' },
   @{ File = 'internal/uexec/uexectest/fakeeditor.go';     Pattern = 'case "open_connection"|case "close_connection"' }
 )
 
