@@ -18,6 +18,8 @@ const mod = "github.com/jdziat/unreal-mcp-server/"
 var allowed = map[string][]string{
 	// P3 replaces these direct edges with `cmd/unreal-mcp → app, config, version`.
 	"cmd/unreal-mcp": {"app", "bridge", "cockpit/attach", "config", "daemon", "jobs", "session", "supervisor", "tools", "uexec", "version"},
+	// The tool-selection eval harness (plan §3.5): the real server over the op emulator.
+	"cmd/tooleval": {"app", "bridge", "bridge/bridgetest", "jobs", "session", "tools", "tools/spec", "uexec", "uexec/uexectest"},
 
 	// app is the one place both topologies assemble a server.
 	"app": {"session", "tools", "tools/envelope", "tools/spec", "version"},
