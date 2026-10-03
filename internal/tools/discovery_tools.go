@@ -137,25 +137,4 @@ func registerDiscoveryTools(s *registrar, d Deps) {
 			return m
 		}))
 
-	add(s, "find_actors",
-		"Find live actors by class with an optional where-filter and selected reflected props (find a runtime-spawned actor by class+property).",
-		structHandler[findActorsIn](b, "find_actors", func(in findActorsIn) map[string]any {
-			m := map[string]any{}
-			if in.ClassPath != "" {
-				m["class_path"] = in.ClassPath
-			}
-			if len(in.Where) > 0 {
-				m["where"] = in.Where
-			}
-			if len(in.Reflect) > 0 {
-				m["reflect"] = in.Reflect
-			}
-			if in.World != "" {
-				m["world"] = in.World
-			}
-			if in.Limit > 0 {
-				m["limit"] = in.Limit
-			}
-			return m
-		}))
 }

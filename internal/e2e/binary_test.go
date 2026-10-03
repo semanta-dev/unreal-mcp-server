@@ -76,17 +76,23 @@ func TestBinaryStdio(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tl.Tools) != 152 { // v1 stdio surface incl. cockpit_url (P5 changes this)
-		t.Fatalf("stdio tools = %d, want 152", len(tl.Tools))
+	names := map[string]bool{}
+	for _, tool := range tl.Tools {
+		names[tool.Name] = true
 	}
-	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "spawn_actor",
-		Arguments: map[string]any{"class_path": "/Script/Engine.Actor", "label": "FromBinary"}})
+	for _, want := range []string{"editor", "python", "actor_query", "actor_edit"} {
+		if !names[want] {
+			t.Fatalf("binary does not serve %q (%d tools)", want, len(tl.Tools))
+		}
+	}
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "actor_edit",
+		Arguments: map[string]any{"op": "spawn", "world": "editor", "class": "/Script/Engine.Actor", "label": "FromBinary"}})
 	if err != nil || res.IsError {
 		t.Fatalf("spawn via binary: %v %s\nstderr:\n%s", err, text(res), stderr.String())
 	}
-	res, _ = cs.CallTool(ctx, &mcp.CallToolParams{Name: "list_actors"})
-	if !strings.Contains(text(res), "FromBinary") {
-		t.Fatalf("list_actors via binary missing actor: %s", text(res))
+	res, _ = cs.CallTool(ctx, &mcp.CallToolParams{Name: "actor_query", Arguments: map[string]any{"op": "list"}})
+	if !strings.Contains(text(res), "1 actors") {
+		t.Fatalf("actor_query via binary: %s", text(res))
 	}
 	// Any non-JSON-RPC write to stdout would already have broken the transport.
 
@@ -165,8 +171,8 @@ func TestBinaryDaemonTwoSessions(t *testing.T) {
 			t.Fatalf("session %d project_list: %v %s", i, err, text(res))
 		}
 		// An unattached session gets an enveloped error, not a crash.
-		res, _ = cs.CallTool(ctx, &mcp.CallToolParams{Name: "editor_status"})
-		if !res.IsError {
+		res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "editor", Arguments: map[string]any{"op": "status"}})
+		if err != nil || !res.IsError {
 			t.Fatalf("session %d: unattached editor_status should fail cleanly", i)
 		}
 	}

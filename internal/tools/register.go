@@ -64,6 +64,7 @@ func Specs(d Deps) []*spec.Spec {
 	registerHUDTools(s, d)
 	registerCockpitTools(s, d)
 	registerProjectTools(s, d)
+	s.specs = append(s.specs, v2Specs()...)
 	return s.specs
 }
 
@@ -88,75 +89,8 @@ func registerCockpitTools(s *registrar, d Deps) {
 // registerParityTools adds the 16 frozen parity tools.
 func registerParityTools(s *registrar, b *bridge.Bridge) {
 	// --- Session & raw exec ---
-	add(s, "editor_status",
-		"Check whether the Unreal Editor is reachable and report engine version, project, current level, and PIE state.",
-		structHandler[noArgs](b, "editor_status", func(noArgs) map[string]any { return map[string]any{} }))
-
-	add(s, "execute_python",
-		"Execute arbitrary Python in the Unreal Editor (full `unreal` module access). Set evaluate=true to evaluate a single expression and get its value.",
-		executePython(b))
-
-	add(s, "execute_console_command",
-		"Run an Unreal console command in the editor (e.g. 'stat fps', 'r.ScreenPercentage 50', 'LiveCoding.Compile'). Returns the command's captured editor log output.",
-		executeConsoleCommand(b))
 
 	// --- Level & actors ---
-	add(s, "open_level",
-		"Open a level in the editor by asset path, e.g. '/Game/Maps/L_Arena'. Unsaved changes in the current level are saved first.",
-		textHandler[openLevelIn](b, "open_level", func(in openLevelIn) map[string]any {
-			return map[string]any{"level_path": in.LevelPath}
-		}))
-
-	add(s, "list_actors",
-		"List actors in the current level (label, class, location) as a JSON array. Optional case-insensitive filter matching label or class.",
-		listActors(b))
-
-	add(s, "get_actor",
-		"Get details for one actor by its editor label: transform, class, components.",
-		structHandler[actorLabelIn](b, "get_actor", func(in actorLabelIn) map[string]any {
-			return map[string]any{"actor_label": in.ActorLabel}
-		}))
-
-	add(s, "spawn_actor",
-		"Spawn an actor in the current level from a native class or Blueprint asset path.",
-		structHandler[spawnActorIn](b, "spawn_actor", func(in spawnActorIn) map[string]any {
-			m := map[string]any{
-				"class_path": in.ClassPath, "x": in.X, "y": in.Y,
-				"pitch": in.Pitch, "yaw": in.Yaw, "roll": in.Roll,
-			}
-			if in.Z != nil {
-				m["z"] = *in.Z
-			}
-			if in.Label != "" {
-				m["label"] = in.Label
-			}
-			if in.StaticMeshPath != "" {
-				m["static_mesh_path"] = in.StaticMeshPath
-			}
-			return m
-		}))
-
-	add(s, "delete_actor",
-		"Delete an actor from the current level by its editor label.",
-		textHandler[actorLabelIn](b, "delete_actor", func(in actorLabelIn) map[string]any {
-			return map[string]any{"actor_label": in.ActorLabel}
-		}))
-
-	add(s, "set_actor_transform",
-		"Move/rotate/scale an actor by label. Each of location [x,y,z], rotation_pyr [pitch,yaw,roll], scale [x,y,z] is optional.",
-		textHandler[setTransformIn](b, "set_actor_transform", func(in setTransformIn) map[string]any {
-			m := map[string]any{"actor_label": in.ActorLabel}
-			if in.Location != nil {
-				m["location"] = in.Location
-			}
-			if in.RotationPyr != nil {
-				m["rotation_pyr"] = in.RotationPyr
-			}
-			if in.Scale != nil {
-				m["scale"] = in.Scale
-			}
-			return m
-		}))
 
 	// --- Assets ---
 	add(s, "list_assets",
@@ -184,10 +118,6 @@ func registerParityTools(s *registrar, b *bridge.Bridge) {
 			}
 			return m
 		}))
-
-	add(s, "save_all",
-		"Save all dirty packages (levels and assets).",
-		textHandler[noArgs](b, "save_all", func(noArgs) map[string]any { return map[string]any{} }))
 
 	// --- Visual ---
 	add(s, "take_screenshot",

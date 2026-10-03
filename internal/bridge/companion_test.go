@@ -10,7 +10,7 @@ func TestOpNamesExtractsAll(t *testing.T) {
 		t.Fatalf("OpNames extracted only %d ops; expected ~70 (regex likely broke)", len(names))
 	}
 	// spot-check a few known ops across the alphabet + that they're sorted/unique.
-	want := map[string]bool{"spawn_actor": false, "delete_actor": false, "cockpit_info": false, "world_query": false, "console": false}
+	want := map[string]bool{"actor_spawn": false, "actor_delete": false, "cockpit_info": false, "world_query": false, "console": false}
 	seen := map[string]bool{}
 	prev := ""
 	for _, n := range names {

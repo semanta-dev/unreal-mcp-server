@@ -419,9 +419,7 @@ def _op_widget_describe(args):
 
 
 def _op_set_world_gamemode(args):
-    cls = _resolve_class(args["class_path"])
-    if not cls:
-        return {"error": "gamemode class not found: " + str(args["class_path"]), "code": "CLASS_UNRESOLVED"}
+    cls = _resolve_class_v2(args["class_path"])
     sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
     ws = next((a for a in sub.get_all_level_actors() if isinstance(a, unreal.WorldSettings)), None)
     if not ws:
@@ -449,18 +447,6 @@ def _op_pie_set_property(args):
                 except Exception as e:
                     errors.append(_issue("PROPERTY_SET_FAILED", k, str(e)))
             return {"target": label, "errors": errors}
-    return {"error": "target not found: " + str(label), "code": "TARGET_NOT_FOUND"}
-
-
-def _op_pie_destroy(args):
-    world = _game_world()
-    if not world:
-        return {"error": "not in PIE", "code": "NOT_IN_PIE"}
-    label = args["target"]
-    for a in unreal.GameplayStatics.get_all_actors_of_class(world, unreal.Actor):
-        if a.get_actor_label() == label:
-            a.destroy_actor()
-            return {"destroyed": label}
     return {"error": "target not found: " + str(label), "code": "TARGET_NOT_FOUND"}
 
 

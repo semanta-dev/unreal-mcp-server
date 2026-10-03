@@ -337,3 +337,31 @@ one's context ends) and is retried if the first resolve fails. Accepted NB for l
 (before P7); T3 `toolsets enable` → list_changed lands with the `toolsets` tool (P5e).
 Also landed: **ruff is blocking in CI** (companion linted as the concatenated module per `pyproject.toml`; baseline of
 19 findings fixed — `E402` ignored by design for the sectioned module) and pytest runs in CI.
+
+## P5a — editor / python / console / level / actor_* (+§2.7 items 1-4)
+
+**Landed.** Seven v2 tools from one spec table (`internal/tools/v2_core.go`): `editor` (status|ping|health),
+`python` (run|recipe; `clean_slate` defaults **false** and escalates to Destructive), `console` (world editor|pie,
+default editor), `level` (open|save_all|set_world_gamemode), `actor_query` (list|get|find, default editor, `auto`
+allowed — RO), `actor_edit` (spawn|delete|transform|set_properties, **world required**, per-op tiers via pyops),
+`actor_call` (once or `until` polling; returns met/result/calls). 20 v1 tools retired (the bijection test accounts
+for every one via `Replaces`). Python (`95_v2_core.py`): `_V2Error` coded errors; `_v2_world` (editor|pie|auto,
+`game` alias, unknown ⇒ `INVALID_ARGUMENT`) — item 1; `_resolve_actor` label/path/`@gamestate`/`@pawn` with PIE
+path translation (`UEDPIE_<n>_`) and `CONFLICT` + candidates — items 2 and (part of) 9; `_resolve_class_v2` over
+loaded modules + AssetRegistry `*_C` with `CONFLICT` — item 3; transform/set_properties generalized over both
+worlds, editor set inside a transaction with `modify()` — item 4. `editor_status` now carries camera, selection,
+actor_count, recorders (absorbing v1 `editor_state`).
+
+**Parity gap caught by the tests and closed:** v1's text tools surfaced the editor's captured Warning/Error lines
+(e.g. "Package X failed to save"). `Bridge.CallLog` returns them and every v2 op reports them as `editor_log` —
+on success in the result, on failure in `error.details.editor_log` (`TestConsoleSurfacesEditorLog`,
+`TestSaveAllFailureKeepsEditorLog`).
+
+**Tests.** T1 e2e rewritten to v2 (world matrix editor/pie/auto, `CONFLICT` on duplicate labels, `actor_call until`,
+python run + recipe, editor health) against the stateful `bridgetest` world (editor + PIE worlds); T2 pytest
+`test_v2_core.py` (world picker, resolver ambiguity, PIE path translation, class resolver); `TestMigrationAccounting`
+(155 v1 names: registered, replaced exactly once, or in `droppedV1`) and `TestV2SpecsLint`; surface golden renamed
+`tools_list.golden.json` and regenerated (stdio: **139 tools**, from 152).
+
+**Evidence.** `go vet ./...` clean; gofmt clean; `go test ./...` all ok; `-race` over tools/e2e/bridge/daemon/uexec
+ok; pytest 17 passed; ruff (as CI: concatenated module + tests) clean; every part `py_compile`s.

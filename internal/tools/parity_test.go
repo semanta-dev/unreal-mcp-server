@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -107,84 +108,74 @@ func firstText(t *testing.T, res *mcp.CallToolResult) string {
 	return tc.Text
 }
 
-// TestExecuteConsoleCommandSurfacesOutput is the P3-gate fix: the tool must
-// surface captured editor Warning/Error output, not just a canned message
-// (parity with the Python server's format_output).
-func TestExecuteConsoleCommandSurfacesOutput(t *testing.T) {
-	r := &scriptedRunner{
-		raw: func(code string) uexec.CommandResult {
-			// The editor logs a warning for the command in addition to the print.
-			return uexec.CommandResult{Success: true, Output: []uexec.OutputEntry{
-				{Type: "Info", Output: "Executed console command: badcvar"},
-				{Type: "Warning", Output: "Command not recognized: badcvar"},
-			}}
-		},
-	}
-	res := callTool(t, r, "execute_console_command", map[string]any{"command": "badcvar"})
-	got := firstText(t, res)
-	if !strings.Contains(got, "Executed console command: badcvar") {
-		t.Fatalf("missing echo line: %q", got)
-	}
-	if !strings.Contains(got, "[Warning] Command not recognized: badcvar") {
-		t.Fatalf("captured warning was dropped (parity regression): %q", got)
-	}
-}
-
-// TestListActorsReturnsArray is the P3-gate fix: list_actors must return a bare
-// JSON array (Python contract), not an object.
-func TestListActorsReturnsArray(t *testing.T) {
+// TestConsoleSurfacesEditorLog: warnings the editor logs while running a console
+// command reach the agent as editor_log (v1 parity: format_output).
+func TestConsoleSurfacesEditorLog(t *testing.T) {
 	r := &scriptedRunner{
 		dispatch: func(op string, args map[string]any) any {
-			return []map[string]any{
-				{"label": "Cube", "class": "StaticMeshActor", "location": []float64{0, 0, 100}},
-			}
+			return map[string]any{"ran": args["command"], "world": args["world"]}
 		},
+		dispatchExtra: []uexec.OutputEntry{{Type: "Warning", Output: "Command not recognized: badcvar"}},
 	}
-	res := callTool(t, r, "list_actors", map[string]any{})
-	got := strings.TrimSpace(firstText(t, res))
-	if !strings.HasPrefix(got, "[") {
-		t.Fatalf("list_actors must return a top-level JSON array, got: %q", got)
+	res := callTool(t, r, "console", map[string]any{"command": "badcvar"})
+	sc := structuredMap(t, res)
+	if sc["world"] != "editor" {
+		t.Fatalf("console must default to the editor world: %v", sc)
 	}
-	var arr []map[string]any
-	if err := json.Unmarshal([]byte(got), &arr); err != nil {
-		t.Fatalf("not a JSON array: %v (%q)", err, got)
-	}
-	if len(arr) != 1 || arr[0]["label"] != "Cube" {
-		t.Fatalf("unexpected array content: %v", arr)
+	if log, _ := sc["editor_log"].([]any); len(log) != 1 || log[0] != "[Warning] Command not recognized: badcvar" {
+		t.Fatalf("captured warning dropped: %v", sc["editor_log"])
 	}
 }
 
-// TestTextToolSurfacesCapturedWarnings is the P3-re-review fix: RPC text tools
-// must surface editor Warning/Error output captured during the op (like Python's
-// format_output), not just the canned message.
-func TestTextToolSurfacesCapturedWarnings(t *testing.T) {
+// TestActorQueryReturnsAnObject: results are objects (plan R4), never a bare array.
+func TestActorQueryReturnsAnObject(t *testing.T) {
+	r := &scriptedRunner{
+		dispatch: func(op string, args map[string]any) any {
+			return map[string]any{"world": "editor", "count": 1, "actors": []any{map[string]any{"label": "Cube"}}}
+		},
+	}
+	sc := structuredMap(t, callTool(t, r, "actor_query", map[string]any{"op": "list"}))
+	if sc["count"] != float64(1) || sc["world"] != "editor" {
+		t.Fatalf("unexpected result: %v", sc)
+	}
+}
+
+// TestSaveAllFailureKeepsEditorLog: a failed save is an OPERATION_FAILED error that
+// still carries the editor's warnings.
+func TestSaveAllFailureKeepsEditorLog(t *testing.T) {
 	r := &scriptedRunner{
 		dispatch: func(op string, args map[string]any) any {
 			return map[string]any{"saved": false, "message": "Save reported failures"}
 		},
-		dispatchExtra: []uexec.OutputEntry{
-			{Type: "Warning", Output: "Package /Game/Broken failed to save"},
-		},
+		dispatchExtra: []uexec.OutputEntry{{Type: "Warning", Output: "Package /Game/Broken failed to save"}},
 	}
-	res := callTool(t, r, "save_all", map[string]any{})
-	got := firstText(t, res)
-	if !strings.Contains(got, "Save reported failures") {
-		t.Fatalf("missing message: %q", got)
+	res := callTool(t, r, "level", map[string]any{"op": "save_all"})
+	if !res.IsError {
+		t.Fatal("a failed save must be an error")
 	}
-	if !strings.Contains(got, "[Warning] Package /Game/Broken failed to save") {
-		t.Fatalf("captured warning dropped (parity regression): %q", got)
+	e := structuredMap(t, res)["error"].(map[string]any)
+	d, _ := e["details"].(map[string]any)
+	if e["code"] != "OPERATION_FAILED" || d == nil || !strings.Contains(fmt.Sprint(d["editor_log"]), "Package /Game/Broken failed to save") {
+		t.Fatalf("error lost the editor log: %v", e)
 	}
 }
 
-// TestExecutePythonEvaluate covers the other PROTO tool's evaluate path.
-func TestExecutePythonEvaluate(t *testing.T) {
+// TestPythonEvaluate covers python op=run evaluate=true.
+func TestPythonEvaluate(t *testing.T) {
 	r := &scriptedRunner{
-		raw: func(code string) uexec.CommandResult {
-			return uexec.CommandResult{Success: true, Result: "42"}
-		},
+		raw: func(code string) uexec.CommandResult { return uexec.CommandResult{Success: true, Result: "42"} },
 	}
-	res := callTool(t, r, "execute_python", map[string]any{"code": "21*2", "evaluate": true})
-	if got := firstText(t, res); got != "42" {
-		t.Fatalf("execute_python evaluate = %q, want 42", got)
+	if sc := structuredMap(t, callTool(t, r, "python", map[string]any{"op": "run", "code": "21*2", "evaluate": true})); sc["value"] != "42" {
+		t.Fatalf("python evaluate = %v, want 42", sc["value"])
 	}
+}
+
+func structuredMap(t *testing.T, res *mcp.CallToolResult) map[string]any {
+	t.Helper()
+	b, _ := json.Marshal(res.StructuredContent)
+	out := map[string]any{}
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("structured content is not an object: %s", b)
+	}
+	return out
 }

@@ -13,7 +13,7 @@ import (
 func TestHandoverV1ResidentThenV2(t *testing.T) {
 	h := startHarness(t, harnessOpts{})
 	h.emu.SetV1Resident(37)
-	if res := h.call(t, "editor_status", nil); res.IsError {
+	if res := h.call(t, "editor", map[string]any{"op": "status"}); res.IsError {
 		t.Fatalf("v2 must work with a v1 companion resident: %s", text(res))
 	}
 	if h.emu.V1Version() != 37 {

@@ -150,7 +150,7 @@ func TestAnnotationsFromWorstOp(t *testing.T) {
 
 func TestLintRules(t *testing.T) {
 	good := &Spec{Name: "ok_tool", Timeout: time.Second, Max: 10 * time.Second,
-		Ops: []OpSpec{{Name: "a", Tier: Mutating, Reaches: []string{"spawn_actor"}}, {Name: "b", Tier: Destructive, Reaches: []string{"delete_actor"}}}}
+		Ops: []OpSpec{{Name: "a", Tier: Mutating, Reaches: []string{"actor_spawn"}}, {Name: "b", Tier: Destructive, Reaches: []string{"actor_delete"}}}}
 	if v := Lint([]*Spec{good}); len(v) != 0 {
 		t.Fatalf("unexpected violations: %v", v)
 	}

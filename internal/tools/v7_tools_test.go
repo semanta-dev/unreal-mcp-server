@@ -13,7 +13,7 @@ var v7ToolNames = []string{
 	"reflect_object",
 	"capture_start", "capture_status", "capture_stop", "scene_contact_sheet",
 	"scene_apply", "scene_plan", "scene_clear", "env_preset_apply", "design_check", "layout_preview",
-	"viewport_set", "viewport_get", "focus_actors", "select_actors", "get_selection", "editor_state",
+	"viewport_set", "viewport_get", "focus_actors", "select_actors", "get_selection",
 	"playtest_capture", "playtest_evaluate",
 }
 
@@ -23,12 +23,6 @@ func TestV7ToolsRegister(t *testing.T) {
 	for _, want := range v7ToolNames {
 		if !names[want] {
 			t.Errorf("missing v7 tool: %q", want)
-		}
-	}
-	// The frozen parity tools must still be present alongside the additions.
-	for _, want := range parityToolNames {
-		if !names[want] {
-			t.Errorf("v7 additions dropped a frozen parity tool: %q", want)
 		}
 	}
 }

@@ -78,33 +78,18 @@ def _op_console(args):
     controller so cheat/exec commands like 'slomo' actually apply TimeDilation
     (a null world context finds no PC and silently no-ops)."""
     cmd = args["command"]
+    where = args.get("world")  # v2 passes editor|pie; absent = v1 behaviour (PIE if running)
+    if where == "editor":
+        unreal.SystemLibrary.execute_console_command(None, cmd)
+        return {"ran": cmd, "via": "editor", "world": "editor"}
     world = _game_world()
+    if where == "pie" and not world:
+        raise _V2Error("NOT_IN_PIE", "PIE is not running; use world=editor or start PIE")
     pc = unreal.GameplayStatics.get_player_controller(world, 0) if world else None
     if pc:
         pc.console_command(cmd)
-        return {"ran": cmd, "via": "player_controller"}
+        return {"ran": cmd, "via": "player_controller", "world": "pie"}
     unreal.SystemLibrary.execute_console_command(world, cmd)
-    return {"ran": cmd, "via": "world" if world else "editor"}
+    return {"ran": cmd, "via": "world" if world else "editor", "world": "pie" if world else "editor"}
 
-
-def _op_editor_state(args):
-    les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
-    ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
-    sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
-    world = ues.get_editor_world()
-    info = ues.get_level_viewport_camera_info()
-    cam = None
-    if info:
-        loc, rot = info
-        cam = {"location": [loc.x, loc.y, loc.z], "rotation_pyr": [rot.pitch, rot.yaw, rot.roll]}
-    sel = sub.get_selected_level_actors()
-    return {
-        "current_level": world.get_name() if world else None,
-        "is_in_pie": les.is_in_play_in_editor(),
-        "viewport_camera": cam,
-        "selection": {"count": len(sel), "labels": [a.get_actor_label() for a in sel]},
-        "actor_count": len(sub.get_all_level_actors()),
-        "recorders": [s for s, r in _MCP_RECORDERS.items() if r["running"]],
-        "bridge_version": _MCP2_BRIDGE_VERSION,
-    }
 

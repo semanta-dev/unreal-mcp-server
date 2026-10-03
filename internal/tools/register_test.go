@@ -20,13 +20,6 @@ func (noEditorRunner) RunCommand(context.Context, string, uexec.ExecMode) (uexec
 	return uexec.CommandResult{}, uexec.ErrEditorNotFound
 }
 
-var parityToolNames = []string{
-	"delete_actor", "editor_status", "execute_console_command", "execute_python",
-	"get_actor", "import_assets", "list_actors", "list_assets", "live_coding_compile",
-	"open_level", "save_all", "set_actor_transform", "spawn_actor", "start_play",
-	"stop_play", "take_screenshot",
-}
-
 func listToolNames(t *testing.T, d Deps) map[string]bool {
 	t.Helper()
 	srv := mcp.NewServer(&mcp.Implementation{Name: "unreal", Version: "test"}, nil)
@@ -58,19 +51,6 @@ func listToolNames(t *testing.T, d Deps) map[string]bool {
 	return names
 }
 
-// TestServerListsParityTools is the P3 offline acceptance: the server boots over
-// an in-memory transport and advertises the 16 frozen parity tools (plus e2e
-// additions), without any editor running.
-func TestServerListsParityTools(t *testing.T) {
-	b := bridge.New(noEditorRunner{}, bridge.Options{})
-	names := listToolNames(t, Deps{Bridge: b})
-	for _, want := range parityToolNames {
-		if !names[want] {
-			t.Errorf("missing frozen parity tool: %q", want)
-		}
-	}
-}
-
 // TestBuildToolsRegisterWithJobs verifies the build/lifecycle tools appear only
 // when a jobs registry is provided.
 func TestBuildToolsRegisterWithJobs(t *testing.T) {
@@ -86,7 +66,7 @@ func TestBuildToolsRegisterWithJobs(t *testing.T) {
 		t.Error("build_compile should not register without a jobs registry")
 	}
 	// e2e tools that don't need jobs still register.
-	for _, name := range []string{"git_status", "pie_observe", "logs_mark", "apply_level_recipe"} {
+	for _, name := range []string{"git_status", "pie_observe", "logs_mark", "python"} {
 		if !withoutJobs[name] {
 			t.Errorf("expected %q to register without jobs", name)
 		}

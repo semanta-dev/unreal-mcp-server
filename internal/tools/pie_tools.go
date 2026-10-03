@@ -60,16 +60,6 @@ func registerPieTools(s *registrar, b *bridge.Bridge) {
 			return m
 		}))
 
-	add(s, "pie_exec",
-		"Invoke a UFUNCTION on a live PIE actor by reflection (FindFunction/ProcessEvent) — this dispatches BlueprintCallable functions AND, in single-standalone PIE with authority, Server RPCs. target is an actor label or 'gamestate'.",
-		structHandler[pieExecIn](b, "pie_exec", func(in pieExecIn) map[string]any {
-			m := map[string]any{"target": in.Target, "ufunction": in.UFunction}
-			if in.Args != nil {
-				m["args"] = in.Args
-			}
-			return m
-		}))
-
 	add(s, "pie_screenshot",
 		"Capture an exposure-correct PNG of the running PIE backbuffer via HighResShot. Only valid during PIE (use take_screenshot for the editor world).",
 		pieScreenshot(b))

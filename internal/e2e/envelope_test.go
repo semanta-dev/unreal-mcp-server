@@ -13,7 +13,8 @@ import (
 func TestEnvelopeInvalidArgument(t *testing.T) {
 	h := startHarness(t, harnessOpts{})
 	// x must be a number; the schema rejects a string before the handler runs.
-	e := errorOf(t, h.call(t, "spawn_actor", map[string]any{"class_path": "/Script/Engine.Actor", "x": "far"}))
+	// location must be [x,y,z]; the schema rejects a string before the handler runs.
+	e := errorOf(t, h.call(t, "actor_edit", map[string]any{"op": "spawn", "world": "editor", "class": "/Script/Engine.Actor", "location": "far"}))
 	if e["code"] != "INVALID_ARGUMENT" {
 		t.Fatalf("code = %v", e["code"])
 	}
@@ -32,10 +33,10 @@ func TestEnvelopeUnknownOpFromEditor(t *testing.T) {
 
 func TestEnvelopePythonException(t *testing.T) {
 	h := startHarness(t, harnessOpts{})
-	h.emu.Handle("get_actor", func(map[string]any) (any, *bridgetest.OpError) {
+	h.emu.Handle("actor_query", func(map[string]any) (any, *bridgetest.OpError) {
 		return nil, &bridgetest.OpError{Code: "EDITOR_ERROR", Message: "boom"}
 	})
-	e := errorOf(t, h.call(t, "get_actor", map[string]any{"actor_label": "X"}))
+	e := errorOf(t, h.call(t, "actor_query", map[string]any{"op": "get", "actor": "X"}))
 	if e["code"] != "OPERATION_FAILED" {
 		t.Fatalf("code = %v", e["code"])
 	}
@@ -43,14 +44,14 @@ func TestEnvelopePythonException(t *testing.T) {
 
 func TestEnvelopeTimeoutIsUnknownOutcomeForMutatingCall(t *testing.T) {
 	h := startHarness(t, harnessOpts{cfg: func(c *uexec.Config) { c.CommandTimeout = 400 * time.Millisecond }})
-	if res := h.call(t, "editor_status", nil); res.IsError { // install the companion first
+	if res := h.call(t, "editor", map[string]any{"op": "status"}); res.IsError { // install the companion first
 		t.Fatal(text(res))
 	}
-	h.emu.Handle("spawn_actor", func(map[string]any) (any, *bridgetest.OpError) {
+	h.emu.Handle("actor_spawn", func(map[string]any) (any, *bridgetest.OpError) {
 		time.Sleep(1200 * time.Millisecond) // the editor is still working when the client gives up
 		return map[string]any{"label": "late"}, nil
 	})
-	e := errorOf(t, h.call(t, "spawn_actor", map[string]any{"class_path": "/Script/Engine.Actor"}))
+	e := errorOf(t, h.call(t, "actor_edit", map[string]any{"op": "spawn", "world": "editor", "class": "/Script/Engine.Actor"}))
 	if e["code"] != "TIMEOUT" || e["outcome"] != "unknown" || e["retryable"] != false {
 		t.Fatalf("want TIMEOUT/unknown/non-retryable, got %v", e)
 	}
@@ -77,7 +78,9 @@ func TestV1TimeoutSStaysWithHandler(t *testing.T) {
 // application.
 func TestNullArgumentsAreAnEmptyObject(t *testing.T) {
 	h := startHarness(t, harnessOpts{})
-	if res := h.call(t, "editor_status", nil); res.IsError {
-		t.Fatalf("editor_status with nil arguments failed: %s", text(res))
+	// "arguments": null is an empty object: editor without its required op is an
+	// enveloped INVALID_ARGUMENT, never a recovered panic (INTERNAL).
+	if e := errorOf(t, h.call(t, "editor", nil)); e["code"] != "INVALID_ARGUMENT" {
+		t.Fatalf("null arguments: %v", e)
 	}
 }

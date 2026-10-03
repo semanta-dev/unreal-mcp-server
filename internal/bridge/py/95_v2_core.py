@@ -217,63 +217,74 @@ def _set_props(obj, props):
     return errors
 
 
-def _op_actor_edit(args):
+def _edit_world(args):
     if not args.get("world"):
-        raise _V2Error("BAD_VALUE", "actor_edit requires an explicit world: editor or pie")
-    world, name = _v2_world(args, None)
-    op = args.get("op")
-    if op == "spawn":
-        if name != "editor":
-            raise _V2Error("UNSUPPORTED", "spawning into PIE is not supported in v2.0; spawn in the editor world")
-        cls = _resolve_class_v2(args.get("class"))
-        loc = _vec(args.get("location"), [0.0, 0.0, 100.0])
-        rot = _vec(args.get("rotation"), [0.0, 0.0, 0.0])
-        sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
-        actor = sub.spawn_actor_from_class(cls, unreal.Vector(*loc), unreal.Rotator(rot[2], rot[0], rot[1]))
-        if not actor:
-            raise _V2Error("SPAWN_FAILED", "spawn failed for %s" % args.get("class"))
-        if args.get("label"):
-            actor.set_actor_label(args["label"])
-        if args.get("scale"):
-            actor.set_actor_scale3d(unreal.Vector(*_vec(args["scale"], [1.0, 1.0, 1.0])))
-        if args.get("static_mesh"):
-            mesh = unreal.load_asset(args["static_mesh"])
-            comp = actor.get_component_by_class(unreal.StaticMeshComponent)
-            if mesh and comp:
-                comp.set_static_mesh(mesh)
-        errors = _set_props(actor, args.get("properties"))
-        return {"world": name, "spawned": _actor_view(actor, name, True), "property_errors": errors}
+        raise _V2Error("BAD_VALUE", "actor edits require an explicit world: editor or pie")
+    return _v2_world(args, None)
 
+
+def _op_actor_spawn(args):
+    world, name = _edit_world(args)
+    if name != "editor":
+        raise _V2Error("UNSUPPORTED", "spawning into PIE is not supported in v2.0; spawn in the editor world")
+    cls = _resolve_class_v2(args.get("class"))
+    loc = _vec(args.get("location"), [0.0, 0.0, 100.0])
+    rot = _vec(args.get("rotation"), [0.0, 0.0, 0.0])
+    sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    actor = sub.spawn_actor_from_class(cls, unreal.Vector(*loc), unreal.Rotator(rot[2], rot[0], rot[1]))
+    if not actor:
+        raise _V2Error("SPAWN_FAILED", "spawn failed for %s" % args.get("class"))
+    if args.get("label"):
+        actor.set_actor_label(args["label"])
+    if args.get("scale"):
+        actor.set_actor_scale3d(unreal.Vector(*_vec(args["scale"], [1.0, 1.0, 1.0])))
+    if args.get("static_mesh"):
+        mesh = unreal.load_asset(args["static_mesh"])
+        comp = actor.get_component_by_class(unreal.StaticMeshComponent)
+        if mesh and comp:
+            comp.set_static_mesh(mesh)
+    errors = _set_props(actor, args.get("properties"))
+    return {"world": name, "spawned": _actor_view(actor, name, True), "property_errors": errors}
+
+
+def _op_actor_delete(args):
+    world, name = _edit_world(args)
     actor = _resolve_actor(world, name, args.get("actor"))
     view = _actor_view(actor, name)
-    if op == "delete":
-        if name == "editor":
-            unreal.get_editor_subsystem(unreal.EditorActorSubsystem).destroy_actor(actor)
-        else:
-            actor.destroy_actor()
-        return {"world": name, "deleted": view}
-    if op == "transform":
-        loc, rot, scale = args.get("location"), args.get("rotation"), args.get("scale")
-        if loc is None and rot is None and scale is None:
-            raise _V2Error("BAD_VALUE", "transform needs location, rotation and/or scale")
-        if name == "editor":
-            actor.modify()
-        if loc is not None:
-            actor.set_actor_location(unreal.Vector(*_vec(loc, None)), False, False)
-        if rot is not None:
-            r = _vec(rot, None)  # [pitch, yaw, roll] -> Rotator(roll, pitch, yaw)
-            actor.set_actor_rotation(unreal.Rotator(r[2], r[0], r[1]), False)
-        if scale is not None:
-            actor.set_actor_scale3d(unreal.Vector(*_vec(scale, None)))
-        return {"world": name, "actor": _actor_view(actor, name, True)}
-    if op == "set_properties":
-        if not args.get("properties"):
-            raise _V2Error("BAD_VALUE", "set_properties needs a properties map")
-        if name == "editor":
-            actor.modify()
-        errors = _set_props(actor, args["properties"])
-        return {"world": name, "actor": view, "property_errors": errors}
-    raise _V2Error("BAD_VALUE", "actor_edit op must be spawn, delete, transform or set_properties")
+    if name == "editor":
+        unreal.get_editor_subsystem(unreal.EditorActorSubsystem).destroy_actor(actor)
+    else:
+        actor.destroy_actor()
+    return {"world": name, "deleted": view}
+
+
+def _op_actor_transform(args):
+    world, name = _edit_world(args)
+    actor = _resolve_actor(world, name, args.get("actor"))
+    loc, rot, scale = args.get("location"), args.get("rotation"), args.get("scale")
+    if loc is None and rot is None and scale is None:
+        raise _V2Error("BAD_VALUE", "transform needs location, rotation and/or scale")
+    if name == "editor":
+        actor.modify()
+    if loc is not None:
+        actor.set_actor_location(unreal.Vector(*_vec(loc, None)), False, False)
+    if rot is not None:
+        r = _vec(rot, None)  # [pitch, yaw, roll] -> Rotator(roll, pitch, yaw)
+        actor.set_actor_rotation(unreal.Rotator(r[2], r[0], r[1]), False)
+    if scale is not None:
+        actor.set_actor_scale3d(unreal.Vector(*_vec(scale, None)))
+    return {"world": name, "actor": _actor_view(actor, name, True)}
+
+
+def _op_actor_set_properties(args):
+    world, name = _edit_world(args)
+    actor = _resolve_actor(world, name, args.get("actor"))
+    if not args.get("properties"):
+        raise _V2Error("BAD_VALUE", "set_properties needs a properties map")
+    if name == "editor":
+        actor.modify()
+    errors = _set_props(actor, args["properties"])
+    return {"world": name, "actor": _actor_view(actor, name), "property_errors": errors}
 
 
 def _op_actor_call(args):

@@ -1,11 +1,14 @@
 
 _OPS = {
+    # v2 core (95_v2_core.py)
+    "actor_query": _op_actor_query,
+    "actor_spawn": _op_actor_spawn,
+    "actor_delete": _op_actor_delete,
+    "actor_transform": _op_actor_transform,
+    "actor_set_properties": _op_actor_set_properties,
+    "actor_call": _op_actor_call,
     "editor_status": _op_editor_status,
     "list_actors": _op_list_actors,
-    "get_actor": _op_get_actor,
-    "spawn_actor": _op_spawn_actor,
-    "delete_actor": _op_delete_actor,
-    "set_actor_transform": _op_set_actor_transform,
     "open_level": _op_open_level,
     "save_all": _op_save_all,
     "list_assets": _op_list_assets,
@@ -50,7 +53,6 @@ _OPS = {
     "focus_actors": _op_focus_actors,
     "select_actors": _op_select_actors,
     "get_selection": _op_get_selection,
-    "editor_state": _op_editor_state,
     "console": _op_console,
     # P2 discovery
     "asset_query": _op_asset_query,
@@ -59,7 +61,6 @@ _OPS = {
     "reflect_class": _op_reflect_class,
     "enum_values": _op_enum_values,
     "map_gameplay": _op_map_gameplay,
-    "find_actors": _op_find_actors,
     # P3 structured authoring
     "blueprint_create": _op_blueprint_create,
     "blueprint_set_defaults": _op_blueprint_set_defaults,
@@ -75,7 +76,6 @@ _OPS = {
     "widget_describe": _op_widget_describe,
     "set_world_gamemode": _op_set_world_gamemode,
     "pie_set_property": _op_pie_set_property,
-    "pie_destroy": _op_pie_destroy,
     # P4 spatial verification
     "world_query": _op_world_query,
     # PW instanced content

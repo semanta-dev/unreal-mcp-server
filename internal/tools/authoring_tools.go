@@ -22,18 +22,6 @@ type createMatIn struct {
 }
 
 func registerAuthoringTools(s *registrar, b *bridge.Bridge) {
-	add(s, "apply_level_recipe",
-		"Run an idempotent level-recipe .py in the editor (optionally clean-slating first), then save. Returns actor counts before/after and any MISSING/errors.",
-		structHandler[applyRecipeIn](b, "apply_level_recipe", func(in applyRecipeIn) map[string]any {
-			m := map[string]any{"script_path": in.ScriptPath}
-			if in.Save != nil {
-				m["save"] = *in.Save
-			}
-			if in.CleanSlate != nil {
-				m["clean_slate"] = *in.CleanSlate
-			}
-			return m
-		}))
 
 	add(s, "level_snapshot",
 		"Capture a snapshot of the current level's actors; returns a token for a later level_diff.",

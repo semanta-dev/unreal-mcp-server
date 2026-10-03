@@ -51,7 +51,7 @@ def _op_level_diff(args):
 def _op_apply_level_recipe(args):
     path = args["script_path"]
     save = args.get("save", True)
-    clean = args.get("clean_slate", True)
+    clean = args.get("clean_slate", False)  # v1 defaulted True and wiped the level
     sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
     before = len(sub.get_all_level_actors())
     if clean:

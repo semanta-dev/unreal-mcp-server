@@ -7,44 +7,8 @@ package tools
 
 type noArgs struct{}
 
-type executePythonIn struct {
-	Code     string `json:"code" jsonschema:"Python code to run in the editor (full unreal module access)"`
-	Evaluate bool   `json:"evaluate,omitempty" jsonschema:"evaluate a single expression and return its value instead of running a script"`
-}
-
-type consoleIn struct {
-	Command string `json:"command" jsonschema:"the console command, e.g. 'stat fps', 'r.ScreenPercentage 50', 'LiveCoding.Compile'"`
-}
-
-type openLevelIn struct {
-	LevelPath string `json:"level_path" jsonschema:"level asset path, e.g. /Game/Maps/L_Arena (unsaved changes are saved first)"`
-}
-
-type listActorsIn struct {
-	NameFilter string `json:"name_filter,omitempty" jsonschema:"case-insensitive filter matching actor label or class name"`
-}
-
 type actorLabelIn struct {
 	ActorLabel string `json:"actor_label" jsonschema:"the actor's editor label"`
-}
-
-type spawnActorIn struct {
-	ClassPath      string   `json:"class_path" jsonschema:"native class (/Script/Engine.PointLight) or Blueprint asset path (/Game/BP_Thing); for a mesh prop use /Script/Engine.StaticMeshActor + static_mesh_path"`
-	X              float64  `json:"x,omitempty"`
-	Y              float64  `json:"y,omitempty"`
-	Z              *float64 `json:"z,omitempty" jsonschema:"Z location; defaults to 100 when omitted"`
-	Pitch          float64  `json:"pitch,omitempty"`
-	Yaw            float64  `json:"yaw,omitempty"`
-	Roll           float64  `json:"roll,omitempty"`
-	Label          string   `json:"label,omitempty"`
-	StaticMeshPath string   `json:"static_mesh_path,omitempty" jsonschema:"e.g. /Engine/BasicShapes/Cube for a StaticMeshActor"`
-}
-
-type setTransformIn struct {
-	ActorLabel  string    `json:"actor_label"`
-	Location    []float64 `json:"location,omitempty" jsonschema:"[x,y,z]"`
-	RotationPyr []float64 `json:"rotation_pyr,omitempty" jsonschema:"[pitch,yaw,roll]"`
-	Scale       []float64 `json:"scale,omitempty" jsonschema:"[x,y,z]"`
 }
 
 type listAssetsIn struct {

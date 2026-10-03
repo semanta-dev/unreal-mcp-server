@@ -177,11 +177,11 @@ func TestDaemonTwoSessionsTwoProjectsNoCrossTalk(t *testing.T) {
 	if out := callTool(t, b, "project_attach", map[string]any{"project": pb}); out["attached"] != true {
 		t.Fatalf("attach b: %v", out)
 	}
-	callTool(t, a, "spawn_actor", map[string]any{"class_path": "/Script/Engine.Actor", "label": "OnlyInA"})
-	if out := callTool(t, b, "get_actor", map[string]any{"actor_label": "OnlyInA"}); out["_error"] == nil {
+	callTool(t, a, "actor_edit", map[string]any{"op": "spawn", "world": "editor", "class": "/Script/Engine.Actor", "label": "OnlyInA"})
+	if out := callTool(t, b, "actor_query", map[string]any{"op": "get", "actor": "OnlyInA"}); out["_error"] == nil {
 		t.Fatalf("session b saw session a's actor: %v", out)
 	}
-	if out := callTool(t, a, "get_actor", map[string]any{"actor_label": "OnlyInA"}); out["_error"] != nil {
+	if out := callTool(t, a, "actor_query", map[string]any{"op": "get", "actor": "OnlyInA"}); out["_error"] != nil {
 		t.Fatalf("session a lost its actor: %v", out)
 	}
 }

@@ -2,6 +2,216 @@
   "tools": [
     {
       "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "title": "Call a UFUNCTION"
+      },
+      "description": "Call a UFUNCTION on an actor in the running game (PIE) and return its result. With `until`, poll the function until a predicate over {result} holds → {met, result, elapsed_s, calls}; met=false on timeout is a normal outcome, not an error. The function runs again on every poll.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "description": "a label, an object path, @gamestate or @pawn",
+            "type": "string"
+          },
+          "args": {
+            "additionalProperties": true,
+            "description": "parameter name -\u003e value",
+            "type": "object"
+          },
+          "function": {
+            "description": "the UFUNCTION name to call",
+            "type": "string"
+          },
+          "interval_s": {
+            "description": "until: seconds between polls (default 0.25)",
+            "type": "number"
+          },
+          "timeout_s": {
+            "description": "until: give up after this many seconds (default 20, max 27)",
+            "type": "number"
+          },
+          "until": {
+            "description": "poll: call repeatedly until this predicate over {result} holds, e.g. 'result \u003e= 3'. The function RE-RUNS every poll: use side-effect-free getters only",
+            "type": "string"
+          },
+          "world": {
+            "description": "pie (default). editor is UNSUPPORTED in v2.0",
+            "enum": [
+              "pie",
+              "editor"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor",
+          "function"
+        ],
+        "type": "object"
+      },
+      "name": "actor_call",
+      "title": "Call a UFUNCTION"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "title": "Edit actors"
+      },
+      "description": "Change actors. `world` is REQUIRED (editor = the saved level, pie = the running game, gone when PIE stops).\n| op | editor | pie |\n|---|---|---|\n| spawn | yes | UNSUPPORTED |\n| delete | yes (destructive) | yes |\n| transform | yes | yes |\n| set_properties | yes | yes |\n`actor` = label, object path, @gamestate or @pawn; a shared label is a CONFLICT.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "description": "delete/transform/set_properties: a label, an object path, @gamestate or @pawn",
+            "type": "string"
+          },
+          "class": {
+            "description": "spawn: /Script path, /Game Blueprint path, or short class name",
+            "type": "string"
+          },
+          "label": {
+            "description": "spawn: the new actor's label",
+            "type": "string"
+          },
+          "location": {
+            "description": "[x, y, z]",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "op": {
+            "description": "spawn | delete | transform | set_properties",
+            "enum": [
+              "spawn",
+              "delete",
+              "transform",
+              "set_properties"
+            ],
+            "type": "string"
+          },
+          "properties": {
+            "additionalProperties": true,
+            "description": "spawn/set_properties: property -\u003e value (asset paths load as objects)",
+            "type": "object"
+          },
+          "rotation": {
+            "description": "[pitch, yaw, roll] in degrees",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "scale": {
+            "description": "[x, y, z]",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "static_mesh": {
+            "description": "spawn: static mesh asset for a StaticMeshActor",
+            "type": "string"
+          },
+          "world": {
+            "description": "REQUIRED: editor (the level) or pie (the running game)",
+            "enum": [
+              "editor",
+              "pie"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "op",
+          "world"
+        ],
+        "type": "object"
+      },
+      "name": "actor_edit",
+      "title": "Edit actors"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Find actors"
+      },
+      "description": "Read actors in the editor level (world=editor, default) or the running game (world=pie). Every result echoes the world it read.\n- op=list: label/path/class/location of each actor (filter, class to narrow).\n- op=get: one actor (`actor` = label, object path, @gamestate or @pawn) with transform, tags, components. A label shared by several actors is a CONFLICT listing their paths.\n- op=find: like list, plus `where` {prop: value} filtering and `properties` to include.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "description": "get: a label, an object path, @gamestate or @pawn",
+            "type": "string"
+          },
+          "class": {
+            "description": "list/find: only actors of this class (/Script path, /Game Blueprint path, or short name)",
+            "type": "string"
+          },
+          "filter": {
+            "description": "list/find: case-insensitive substring of label or class",
+            "type": "string"
+          },
+          "limit": {
+            "description": "max actors returned (default 200; count is always the full total)",
+            "type": "integer"
+          },
+          "op": {
+            "description": "list | get | find",
+            "enum": [
+              "list",
+              "get",
+              "find"
+            ],
+            "type": "string"
+          },
+          "properties": {
+            "description": "list/find: reflected properties to include per actor",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "where": {
+            "additionalProperties": true,
+            "description": "find: property -\u003e value equality filter on reflected properties",
+            "type": "object"
+          },
+          "world": {
+            "description": "editor (default) | pie | auto (PIE when running)",
+            "enum": [
+              "editor",
+              "pie",
+              "auto"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "type": "object"
+      },
+      "name": "actor_query",
+      "title": "Find actors"
+    },
+    {
+      "annotations": {
         "openWorldHint": true,
         "readOnlyHint": true
       },
@@ -21,41 +231,6 @@
         "type": "object"
       },
       "name": "affordances"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true
-      },
-      "description": "Run an idempotent level-recipe .py in the editor (optionally clean-slating first), then save. Returns actor counts before/after and any MISSING/errors.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "clean_slate": {
-            "description": "destroy non-WorldSettings actors first; default true",
-            "type": [
-              "null",
-              "boolean"
-            ]
-          },
-          "save": {
-            "description": "save after; default true",
-            "type": [
-              "null",
-              "boolean"
-            ]
-          },
-          "script_path": {
-            "description": "path to an idempotent level-recipe .py (run in the editor)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "script_path"
-        ],
-        "type": "object"
-      },
-      "name": "apply_level_recipe"
     },
     {
       "annotations": {
@@ -975,6 +1150,37 @@
     },
     {
       "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "title": "Console command"
+      },
+      "description": "Run an Unreal console command. world=editor (default) runs it in the editor context (viewport/show/stat commands); world=pie routes it through the player controller so cheat/exec commands like 'slomo' apply to the running game.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "description": "console command, e.g. 'stat fps', 'r.ScreenPercentage 50', 'slomo 4'",
+            "type": "string"
+          },
+          "world": {
+            "description": "editor (default: the editor viewport context) | pie (the player controller)",
+            "enum": [
+              "editor",
+              "pie"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "type": "object"
+      },
+      "name": "console",
+      "title": "Console command"
+    },
+    {
+      "annotations": {
         "destructiveHint": false,
         "openWorldHint": true
       },
@@ -1133,27 +1339,6 @@
         "type": "object"
       },
       "name": "decision_audit"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true
-      },
-      "description": "Delete an actor from the current level by its editor label.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "actor_label": {
-            "description": "the actor's editor label",
-            "type": "string"
-          }
-        },
-        "required": [
-          "actor_label"
-        ],
-        "type": "object"
-      },
-      "name": "delete_actor"
     },
     {
       "annotations": {
@@ -1376,6 +1561,42 @@
     {
       "annotations": {
         "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Editor status"
+      },
+      "description": "Inspect the connected Unreal Editor.\n- op=status: engine version, project, current level, is_in_pie, viewport camera, selection, actor count.\n- op=ping: cheap liveness probe.\n- op=health: ping, then check expect_version and for crashes since `since` → {healthy, problems[]}.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "expect_version": {
+            "description": "health: fail if the companion version is below this (catches a stale module)",
+            "type": "integer"
+          },
+          "op": {
+            "description": "status | ping | health",
+            "enum": [
+              "status",
+              "ping",
+              "health"
+            ],
+            "type": "string"
+          },
+          "since": {
+            "description": "health: RFC3339 time; crashes at or after it count (default: the last 10 minutes)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "type": "object"
+      },
+      "name": "editor",
+      "title": "Editor status"
+    },
+    {
+      "annotations": {
+        "openWorldHint": true,
         "readOnlyHint": true
       },
       "description": "Tail the editor's structured event stream (issues, PIE transitions) by byte offset — observable even while a long op holds the command channel. Returns events + a new offset to poll from.",
@@ -1401,18 +1622,6 @@
     },
     {
       "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Cheap liveness probe: is the editor reachable, what bridge version, is it in PIE. A fast heartbeat that doesn't touch assets.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "type": "object"
-      },
-      "name": "editor_ping"
-    },
-    {
-      "annotations": {
         "destructiveHint": true,
         "openWorldHint": true
       },
@@ -1430,30 +1639,6 @@
         "type": "object"
       },
       "name": "editor_restart"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Rich editor state in one call: current level, PIE state, viewport camera, selection, actor count, and active capture recorders (a superset of editor_status).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "type": "object"
-      },
-      "name": "editor_state"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Check whether the Unreal Editor is reachable and report engine version, project, current level, and PIE state.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "type": "object"
-      },
-      "name": "editor_status"
     },
     {
       "annotations": {
@@ -1511,52 +1696,6 @@
         "type": "object"
       },
       "name": "env_preset_apply"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true
-      },
-      "description": "Run an Unreal console command in the editor (e.g. 'stat fps', 'r.ScreenPercentage 50', 'LiveCoding.Compile'). Returns the command's captured editor log output.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "command": {
-            "description": "the console command, e.g. 'stat fps', 'r.ScreenPercentage 50', 'LiveCoding.Compile'",
-            "type": "string"
-          }
-        },
-        "required": [
-          "command"
-        ],
-        "type": "object"
-      },
-      "name": "execute_console_command"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true
-      },
-      "description": "Execute arbitrary Python in the Unreal Editor (full `unreal` module access). Set evaluate=true to evaluate a single expression and get its value.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "code": {
-            "description": "Python code to run in the editor (full unreal module access)",
-            "type": "string"
-          },
-          "evaluate": {
-            "description": "evaluate a single expression and return its value instead of running a script",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "code"
-        ],
-        "type": "object"
-      },
-      "name": "execute_python"
     },
     {
       "annotations": {
@@ -1625,49 +1764,6 @@
         "type": "object"
       },
       "name": "feel_audit"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Find live actors by class with an optional where-filter and selected reflected props (find a runtime-spawned actor by class+property).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "class_path": {
-            "description": "filter to this actor class (/Script or Blueprint path); default all actors",
-            "type": "string"
-          },
-          "limit": {
-            "description": "max results; default 100",
-            "type": "integer"
-          },
-          "reflect": {
-            "description": "property names to include per matched actor",
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "where": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "description": "filter to actors whose property equals a value (string-compared), e.g. Archetype maps to Caster",
-            "type": "object"
-          },
-          "world": {
-            "description": "auto|editor|game; default auto",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "find_actors"
     },
     {
       "annotations": {
@@ -1751,27 +1847,6 @@
         "type": "object"
       },
       "name": "gameplay_tag_add"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Get details for one actor by its editor label: transform, class, components.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "actor_label": {
-            "description": "the actor's editor label",
-            "type": "string"
-          }
-        },
-        "required": [
-          "actor_label"
-        ],
-        "type": "object"
-      },
-      "name": "get_actor"
     },
     {
       "annotations": {
@@ -1930,28 +2005,6 @@
         "type": "object"
       },
       "name": "headless_run"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Post-rebuild/relaunch health gate: editor reachable (with the EXPECTED bridge version so a stale DLL is caught), and no crash since a given time. Use before trusting an editor after a compile.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "expect_version": {
-            "description": "fail if the live bridge version is below this (catches a stale/rolled-back module)",
-            "type": "integer"
-          },
-          "since": {
-            "description": "treat crashes at/after this time as failures; default: last 10 min",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "health_check"
     },
     {
       "annotations": {
@@ -2355,6 +2408,42 @@
     },
     {
       "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "title": "Level"
+      },
+      "description": "Open and save levels.\n- op=open: saves all dirty packages FIRST, then loads `level`.\n- op=save_all: saves every dirty package.\n- op=set_world_gamemode: sets the open level's GameMode override to `class` and saves.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "class": {
+            "description": "set_world_gamemode: GameMode class (/Script path, /Game Blueprint path, or short name)",
+            "type": "string"
+          },
+          "level": {
+            "description": "open: level asset path, e.g. /Game/Maps/L_Arena",
+            "type": "string"
+          },
+          "op": {
+            "description": "open | save_all | set_world_gamemode",
+            "enum": [
+              "open",
+              "save_all",
+              "set_world_gamemode"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "type": "object"
+      },
+      "name": "level",
+      "title": "Level"
+    },
+    {
+      "annotations": {
         "openWorldHint": true,
         "readOnlyHint": true
       },
@@ -2382,24 +2471,6 @@
         "type": "object"
       },
       "name": "level_snapshot"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "List actors in the current level (label, class, location) as a JSON array. Optional case-insensitive filter matching label or class.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "name_filter": {
-            "description": "case-insensitive filter matching actor label or class name",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "list_actors"
     },
     {
       "annotations": {
@@ -2725,27 +2796,6 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Open a level in the editor by asset path, e.g. '/Game/Maps/L_Arena'. Unsaved changes in the current level are saved first.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "level_path": {
-            "description": "level asset path, e.g. /Game/Maps/L_Arena (unsaved changes are saved first)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "level_path"
-        ],
-        "type": "object"
-      },
-      "name": "open_level"
-    },
-    {
-      "annotations": {
         "openWorldHint": true,
         "readOnlyHint": true
       },
@@ -2788,57 +2838,6 @@
         "type": "object"
       },
       "name": "perf_parse"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Destroy a live actor in the game world by label.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "target": {
-            "description": "actor label in the live game world",
-            "type": "string"
-          }
-        },
-        "required": [
-          "target"
-        ],
-        "type": "object"
-      },
-      "name": "pie_destroy"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true
-      },
-      "description": "Invoke a UFUNCTION on a live PIE actor by reflection (FindFunction/ProcessEvent) — this dispatches BlueprintCallable functions AND, in single-standalone PIE with authority, Server RPCs. target is an actor label or 'gamestate'.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "args": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "target": {
-            "description": "actor label, or 'gamestate'",
-            "type": "string"
-          },
-          "ufunction": {
-            "description": "a BlueprintCallable UFUNCTION name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "target",
-          "ufunction"
-        ],
-        "type": "object"
-      },
-      "name": "pie_exec"
     },
     {
       "annotations": {
@@ -2952,32 +2951,6 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Set properties on a LIVE actor in the game world (arrange a test precondition).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "properties": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "target": {
-            "description": "actor label in the live game world",
-            "type": "string"
-          }
-        },
-        "required": [
-          "target",
-          "properties"
-        ],
-        "type": "object"
-      },
-      "name": "pie_set_property"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
       "description": "Arrange a gameplay source value in the running game so a widget_bind_field pull can be verified: set a dotted actor/component property (HealthComponent.Health) or a GAS attribute base. The test-arrange verb for component + GAS binding sources.",
       "inputSchema": {
         "additionalProperties": false,
@@ -3010,49 +2983,6 @@
         "type": "object"
       },
       "name": "pie_set_source"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true
-      },
-      "description": "Poll a BlueprintCallable getter that returns a JSON snapshot (e.g. GetVerificationJSON) until a predicate over the returned JSON holds — functional verification for sim state that pie_observe can't see (subsystems, HISM).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "args": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "interval_s": {
-            "description": "poll interval; default 0.25",
-            "type": "number"
-          },
-          "predicate": {
-            "description": "a comparison over the returned JSON, e.g. nodes.0.SupplyRatio \u003c 0.5",
-            "type": "string"
-          },
-          "target": {
-            "description": "actor label or 'gamestate'",
-            "type": "string"
-          },
-          "timeout_s": {
-            "description": "default 20",
-            "type": "number"
-          },
-          "ufunction": {
-            "description": "a BlueprintCallable getter that returns a JSON STRING snapshot (e.g. GetVerificationJSON)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "target",
-          "ufunction",
-          "predicate"
-        ],
-        "type": "object"
-      },
-      "name": "pie_verify"
     },
     {
       "annotations": {
@@ -3496,6 +3426,56 @@
     },
     {
       "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "title": "Run Python in the editor"
+      },
+      "description": "Run Python inside the Unreal Editor (arbitrary code: gated when approval is required).\n- op=run: execute `code` and return its captured output; evaluate=true returns one expression's value.\n- op=recipe: run a level-recipe file at `path`; clean_slate=true first destroys every actor except WorldSettings; save defaults true.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "clean_slate": {
+            "description": "recipe: FIRST DESTROY every actor except WorldSettings (default false)",
+            "type": "boolean"
+          },
+          "code": {
+            "description": "run: Python source executed in the editor (full unreal module access)",
+            "type": "string"
+          },
+          "evaluate": {
+            "description": "run: evaluate a single expression and return its value",
+            "type": "boolean"
+          },
+          "op": {
+            "description": "run | recipe",
+            "enum": [
+              "run",
+              "recipe"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "description": "recipe: path to an idempotent level-recipe .py file",
+            "type": "string"
+          },
+          "save": {
+            "description": "recipe: save dirty packages afterwards (default true)",
+            "type": [
+              "null",
+              "boolean"
+            ]
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "type": "object"
+      },
+      "name": "python",
+      "title": "Run Python in the editor"
+    },
+    {
+      "annotations": {
         "openWorldHint": true,
         "readOnlyHint": true
       },
@@ -3704,18 +3684,6 @@
         "type": "object"
       },
       "name": "render_health"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Save all dirty packages (levels and assets).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "type": "object"
-      },
-      "name": "save_all"
     },
     {
       "annotations": {
@@ -4065,56 +4033,6 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Move/rotate/scale an actor by label. Each of location [x,y,z], rotation_pyr [pitch,yaw,roll], scale [x,y,z] is optional.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "actor_label": {
-            "type": "string"
-          },
-          "location": {
-            "description": "[x,y,z]",
-            "items": {
-              "type": "number"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "rotation_pyr": {
-            "description": "[pitch,yaw,roll]",
-            "items": {
-              "type": "number"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "scale": {
-            "description": "[x,y,z]",
-            "items": {
-              "type": "number"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          }
-        },
-        "required": [
-          "actor_label"
-        ],
-        "type": "object"
-      },
-      "name": "set_actor_transform"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
       "description": "Set the project's default GameMode in DefaultEngine.ini (offline, idempotent).",
       "inputSchema": {
         "additionalProperties": false,
@@ -4181,76 +4099,6 @@
         "type": "object"
       },
       "name": "set_input_mode"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Set the current level's WorldSettings GameMode override (a per-map override; use set_gamemode for the project default).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "class_path": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "class_path"
-        ],
-        "type": "object"
-      },
-      "name": "set_world_gamemode"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Spawn an actor in the current level from a native class or Blueprint asset path.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "class_path": {
-            "description": "native class (/Script/Engine.PointLight) or Blueprint asset path (/Game/BP_Thing); for a mesh prop use /Script/Engine.StaticMeshActor + static_mesh_path",
-            "type": "string"
-          },
-          "label": {
-            "type": "string"
-          },
-          "pitch": {
-            "type": "number"
-          },
-          "roll": {
-            "type": "number"
-          },
-          "static_mesh_path": {
-            "description": "e.g. /Engine/BasicShapes/Cube for a StaticMeshActor",
-            "type": "string"
-          },
-          "x": {
-            "type": "number"
-          },
-          "y": {
-            "type": "number"
-          },
-          "yaw": {
-            "type": "number"
-          },
-          "z": {
-            "description": "Z location; defaults to 100 when omitted",
-            "type": [
-              "null",
-              "number"
-            ]
-          }
-        },
-        "required": [
-          "class_path"
-        ],
-        "type": "object"
-      },
-      "name": "spawn_actor"
     },
     {
       "annotations": {

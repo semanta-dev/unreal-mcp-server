@@ -122,21 +122,6 @@ func registerAuthoring2Tools(s *registrar, d Deps) {
 		structHandler[dataassetCreateIn](b, "dataasset_create", func(in dataassetCreateIn) map[string]any {
 			return map[string]any{"dest": in.Dest, "class": in.Class}
 		}))
-	add(s, "set_world_gamemode",
-		"Set the current level's WorldSettings GameMode override (a per-map override; use set_gamemode for the project default).",
-		structHandler[classPathIn](b, "set_world_gamemode", func(in classPathIn) map[string]any {
-			return map[string]any{"class_path": in.ClassPath}
-		}))
-	add(s, "pie_set_property",
-		"Set properties on a LIVE actor in the game world (arrange a test precondition).",
-		structHandler[pieSetPropertyIn](b, "pie_set_property", func(in pieSetPropertyIn) map[string]any {
-			return map[string]any{"target": in.Target, "properties": in.Properties}
-		}))
-	add(s, "pie_destroy",
-		"Destroy a live actor in the game world by label.",
-		structHandler[pieTargetIn](b, "pie_destroy", func(in pieTargetIn) map[string]any {
-			return map[string]any{"target": in.Target}
-		}))
 
 	// --- pure-Go .ini editors (offline, no editor) ---
 	configDir := func(ctx context.Context) (string, bool) {

@@ -97,7 +97,4 @@ func registerViewportTools(s *registrar, b *bridge.Bridge) {
 		"Get the currently selected editor actors (labels + classes).",
 		structHandler[noArgs](b, "get_selection", func(noArgs) map[string]any { return map[string]any{} }))
 
-	add(s, "editor_state",
-		"Rich editor state in one call: current level, PIE state, viewport camera, selection, actor count, and active capture recorders (a superset of editor_status).",
-		structHandler[noArgs](b, "editor_state", func(noArgs) map[string]any { return map[string]any{} }))
 }

@@ -221,6 +221,28 @@ func (b *Bridge) Call(ctx context.Context, op string, args any) (json.RawMessage
 	return env.Result, nil
 }
 
+// CallLog is Call plus the Warning/Error lines the editor logged while the op ran
+// (formatted "[Warning] ...", excluding the result marker) — what v1's text tools
+// surfaced, so a v2 tool can report e.g. a package that failed to save.
+func (b *Bridge) CallLog(ctx context.Context, op string, args any) (json.RawMessage, []string, error) {
+	env, res, err := b.dispatch(ctx, op, args)
+	var log []string
+	for _, e := range res.Output {
+		if (e.Type == "Warning" || e.Type == "Error") && !strings.Contains(e.Output, jsonMarker) {
+			if t := strings.TrimRight(e.Output, "\n"); t != "" {
+				log = append(log, "["+e.Type+"] "+t)
+			}
+		}
+	}
+	if err != nil {
+		return nil, log, err
+	}
+	if !env.OK {
+		return nil, log, &OpError{Op: op, Message: env.Error, Code: env.Code, Retryable: env.Retryable, Traceback: env.Traceback, Details: env.Details}
+	}
+	return env.Result, log, nil
+}
+
 // CallText invokes a text-style op and returns the op's "message" PLUS any
 // captured editor output entries (Info/Warning/Error) EXCEPT the __MCP_JSON__
 // envelope line — matching the Python server's format_output, which surfaced

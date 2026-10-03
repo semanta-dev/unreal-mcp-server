@@ -5,13 +5,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strconv"
-	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/jdziat/unreal-mcp-server/internal/bridge"
-	"github.com/jdziat/unreal-mcp-server/internal/crash"
 	"github.com/jdziat/unreal-mcp-server/internal/logs"
 )
 
@@ -62,10 +58,6 @@ func registerRobustnessTools(s *registrar, d Deps) {
 			}
 			return nil, map[string]any{"events": out, "offset": off, "count": len(out)}, nil
 		})
-
-	add(s, "editor_ping",
-		"Cheap liveness probe: is the editor reachable, what bridge version, is it in PIE. A fast heartbeat that doesn't touch assets.",
-		structHandler[noArgs](b, "editor_ping", func(noArgs) map[string]any { return map[string]any{} }))
 
 	add(s, "scene_snapshot",
 		"Save the current level's actor transforms (by label) to a named snapshot file so a MOVE/rotate/scale experiment can be undone with scene_restore. Scope is transforms only — it does not record spawns/deletes.",
@@ -121,56 +113,6 @@ func registerRobustnessTools(s *registrar, d Deps) {
 			return nil, out, nil
 		})
 
-	add(s, "health_check",
-		"Post-rebuild/relaunch health gate: editor reachable (with the EXPECTED bridge version so a stale DLL is caught), and no crash since a given time. Use before trusting an editor after a compile.",
-		healthCheck(b, d))
-}
-
-type healthCheckIn struct {
-	ExpectVersion int    `json:"expect_version,omitempty" jsonschema:"fail if the live bridge version is below this (catches a stale/rolled-back module)"`
-	SinceRFC3339  string `json:"since,omitempty" jsonschema:"treat crashes at/after this time as failures; default: last 10 min"`
-}
-
-func healthCheck(b *bridge.Bridge, d Deps) mcp.ToolHandlerFor[healthCheckIn, map[string]any] {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, in healthCheckIn) (*mcp.CallToolResult, map[string]any, error) {
-		res := map[string]any{"healthy": true}
-		var problems []string
-
-		pingCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-		defer cancel()
-		raw, err := bridgeFromCtx(ctx, b).Call(pingCtx, "editor_ping", map[string]any{})
-		if err != nil {
-			return nil, map[string]any{"healthy": false, "problems": []string{"editor unreachable: " + err.Error()}}, nil
-		}
-		var ping struct {
-			Version int  `json:"version"`
-			PIE     bool `json:"pie"`
-		}
-		_ = json.Unmarshal(raw, &ping)
-		res["version"] = ping.Version
-		res["pie"] = ping.PIE
-		if in.ExpectVersion > 0 && ping.Version < in.ExpectVersion {
-			problems = append(problems, "bridge version "+strconv.Itoa(ping.Version)+" < expected "+strconv.Itoa(in.ExpectVersion)+" (stale module — rebuild/redeploy the bridge)")
-		}
-
-		since := time.Now().Add(-10 * time.Minute)
-		if in.SinceRFC3339 != "" {
-			if t, perr := time.Parse(time.RFC3339, in.SinceRFC3339); perr == nil {
-				since = t
-			}
-		}
-		if resolveDeps(ctx, d).ProjectDir != "" {
-			if rep, _ := crash.FromCrashDir(resolveDeps(ctx, d).ProjectDir, since); rep != nil {
-				problems = append(problems, "crash detected: "+rep.Summary)
-				res["crash"] = rep
-			}
-		}
-		if len(problems) > 0 {
-			res["healthy"] = false
-			res["problems"] = problems
-		}
-		return nil, res, nil
-	}
 }
 
 func snapshotPath(projectDir, name string) string {

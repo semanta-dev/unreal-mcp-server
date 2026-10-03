@@ -3,14 +3,11 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
-	"github.com/jdziat/unreal-mcp-server/internal/eval"
 	"github.com/jdziat/unreal-mcp-server/internal/snapshot"
 	"github.com/jdziat/unreal-mcp-server/internal/visual"
 )
@@ -31,15 +28,6 @@ type sceneDigestIn struct {
 	PosBucket   float64 `json:"pos_bucket,omitempty" jsonschema:"position quantization in world units; default 1"`
 	RotBucket   float64 `json:"rot_bucket,omitempty" jsonschema:"rotation quantization in degrees; default 1"`
 	Limit       int     `json:"limit,omitempty" jsonschema:"instances scope: max instances to hash; default 5,000,000 (raise for a huge HISM city)"`
-}
-
-type pieVerifyIn struct {
-	Target    string         `json:"target" jsonschema:"actor label or 'gamestate'"`
-	UFunction string         `json:"ufunction" jsonschema:"a BlueprintCallable getter that returns a JSON STRING snapshot (e.g. GetVerificationJSON)"`
-	Args      map[string]any `json:"args,omitempty"`
-	Predicate string         `json:"predicate" jsonschema:"a comparison over the returned JSON, e.g. nodes.0.SupplyRatio < 0.5"`
-	TimeoutS  float64        `json:"timeout_s,omitempty" jsonschema:"default 20"`
-	IntervalS float64        `json:"interval_s,omitempty" jsonschema:"poll interval; default 0.25"`
 }
 
 type imageCompareIn struct {
@@ -68,9 +56,6 @@ func registerPWTools(s *registrar, d Deps) {
 	add(s, "scene_digest",
 		"Deterministic quantize+SHA1 hash over actor OR HISM/ISM instance transforms — the authored-content oracle (verify a map hashes to an expected value; instance-aware where level_diff is not).",
 		sceneDigest(b))
-	add(s, "pie_verify",
-		"Poll a BlueprintCallable getter that returns a JSON snapshot (e.g. GetVerificationJSON) until a predicate over the returned JSON holds — functional verification for sim state that pie_observe can't see (subsystems, HISM).",
-		pieVerify(b))
 	add(s, "image_compare",
 		"Perceptually compare two images (a capture frame vs a golden baseline): dHash/aHash distance + luma delta, with a pass verdict. For visual-regression / golden gates.",
 		imageCompare())
@@ -150,73 +135,6 @@ func sceneDigest(b *bridge.Bridge) mcp.ToolHandlerFor[sceneDigestIn, map[string]
 			"scope": scope, "hash": res.Hash, "count": res.Count,
 			"worst_pos_margin_uu": res.WorstPosMargin, "worst_rot_margin_deg": res.WorstRotMargin,
 		}, nil
-	}
-}
-
-func pieVerify(b *bridge.Bridge) mcp.ToolHandlerFor[pieVerifyIn, map[string]any] {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, in pieVerifyIn) (*mcp.CallToolResult, map[string]any, error) {
-		pred, err := eval.ParsePredicate(in.Predicate)
-		if err != nil {
-			return nil, nil, err
-		}
-		timeout := 20 * time.Second
-		if in.TimeoutS > 0 {
-			timeout = secs(in.TimeoutS)
-		}
-		interval := 250 * time.Millisecond
-		if in.IntervalS > 0 {
-			interval = secs(in.IntervalS)
-		}
-		start := time.Now()
-		deadline := start.Add(timeout)
-		var last map[string]any
-		var lastErr *bridge.OpError
-		var lastTransportErr string
-		for {
-			raw, cerr := bridgeFromCtx(ctx, b).Call(ctx, "pie_exec", map[string]any{"target": in.Target, "ufunction": in.UFunction, "args": in.Args})
-			if cerr != nil {
-				// A non-retryable op error (bad ufunction, malformed target) won't
-				// fix itself — fail fast with the diagnostic instead of polling to
-				// timeout. Retryable errors (e.g. NOT_IN_PIE while PIE spins up) keep
-				// polling, and the last one is surfaced if we do time out.
-				var oe *bridge.OpError
-				if errors.As(cerr, &oe) {
-					lastErr = oe
-					if !oe.Retryable {
-						return nil, map[string]any{"met": false, "error": oe.Message, "code": oe.Code, "elapsed_s": time.Since(start).Seconds()}, nil
-					}
-				} else {
-					// A transport-level failure (protocol, editor gone) isn't an
-					// unmet predicate — record it so a timeout reports the real cause.
-					lastTransportErr = cerr.Error()
-				}
-			} else {
-				var r struct {
-					Result string `json:"result"`
-				}
-				if json.Unmarshal(raw, &r) == nil && r.Result != "" {
-					var state map[string]any
-					if json.Unmarshal([]byte(r.Result), &state) == nil {
-						last = state
-						if ok, _ := pred.Eval(state); ok {
-							return nil, map[string]any{"met": true, "elapsed_s": time.Since(start).Seconds(), "state": last}, nil
-						}
-					}
-				}
-			}
-			if time.Now().After(deadline) {
-				res := map[string]any{"met": false, "elapsed_s": time.Since(start).Seconds(), "state": last}
-				if lastErr != nil {
-					res["last_error"] = map[string]any{"code": lastErr.Code, "message": lastErr.Message}
-				} else if lastTransportErr != "" {
-					res["last_error"] = map[string]any{"message": lastTransportErr}
-				}
-				return nil, res, nil
-			}
-			if sleepCtx(ctx, interval) != nil {
-				return nil, nil, ctx.Err()
-			}
-		}
 	}
 }
 
