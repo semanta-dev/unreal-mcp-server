@@ -59,7 +59,8 @@ func writeUmcp(t *testing.T, body string) string {
 }
 
 // TestDaemonRefusesARequireProject: the daemon cannot ask for approval either, so a
-// project with gate_policy "require" is not attached (no lease, no editor kept).
+// project with gate_policy "require" — or an invalid .umcp.json, which might have meant
+// it — is refused before any editor is leased or spawned.
 func TestDaemonRefusesARequireProject(t *testing.T) {
 	e := startDaemon(t, time.Minute, nil)
 	cs := e.connect(t, nil)
@@ -72,5 +73,14 @@ func TestDaemonRefusesARequireProject(t *testing.T) {
 	}
 	if leasedBy(e.dm, proj) != "" {
 		t.Fatal("a refused attach must not keep the lease")
+	}
+	for _, body := range []string{`{"gate_policy":"Require"}`, `{not json`} {
+		out := callTool(t, cs, "project", map[string]any{"op": "attach", "project": writeUmcp(t, body)})
+		if errObj, _ := out["error"].(map[string]any); out["_error"] == nil || errObj["code"] != "PRECONDITION" {
+			t.Fatalf("attach with .umcp.json %s = %v", body, out)
+		}
+	}
+	if n := e.sp.spawned(); n != 0 {
+		t.Fatalf("refused attaches spawned %d editor(s)", n)
 	}
 }

@@ -936,3 +936,9 @@ Non-blocking notes, also fixed:
 - the paid eval sits under its own heading in operations.md;
 - the package-count deviation is recorded (29 top-level vs the plan's 28: `calibration` and `version` stayed separate
   leaf packages).
+
+**Gate P6 after fixes: A-.** The last fail-open path is closed: daemon `project op=attach` now loads `.umcp.json`
+**before** leasing an editor. An invalid file (e.g. `"gate_policy": "Require"` or broken JSON) or a `require` policy
+is a PRECONDITION. No editor is spawned or adopted, the session's bookkeeping is untouched, and the check no longer
+depends on the toolsets context. T1 covers all three files and asserts nothing was spawned. The README states that
+the daemon takes toolsets only from `.umcp.json`.

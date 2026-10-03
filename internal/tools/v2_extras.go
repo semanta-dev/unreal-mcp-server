@@ -189,30 +189,32 @@ func projectSpec(pm session.ProjectManager) *spec.Spec {
 				return &spec.Result{Data: map[string]any{"released": true}, Summary: "released"}, nil
 			}
 			project, _ := c.Args["project"].(string)
+			// The project's .umcp.json is checked BEFORE leasing an editor: an unreadable
+			// or invalid file, or gate_policy "require" (no approval surface here), is
+			// refused — fail closed, and no editor is spawned or adopted for it.
+			pf, perr := session.LoadProjectFile(project)
+			if perr != nil {
+				return nil, envelope.New(envelope.Precondition, "the project's .umcp.json is invalid: %v", perr).
+					WithHint("fix the file (gate_policy must be \"off\" or \"require\")")
+			}
+			if pf.GatePolicy == "require" {
+				return nil, envelope.New(envelope.Precondition, "%s", spec.NoApprovalSurface).
+					WithHint("set gate_policy to \"off\" in the project's .umcp.json, or use a server version with approvals")
+			}
 			id, err := pm.Attach(ctx, sid, project)
 			if err != nil {
 				return nil, err
 			}
 			out := map[string]any{"attached": true, "instance": id, "project": project}
 			if ts, ok := spec.ToolsetsFrom(ctx); ok {
-				pf, perr := session.LoadProjectFile(project)
-				if perr == nil && pf.GatePolicy == "require" {
-					pm.Release(sid) // fail closed: this server cannot ask a human for approval
-					return nil, envelope.New(envelope.Precondition, "%s", spec.NoApprovalSurface).
-						WithHint("set gate_policy to \"off\" in the project's .umcp.json, or use a server version with approvals")
+				want := []spec.Toolset{spec.Daemon}
+				for _, t := range pf.Toolsets {
+					want = append(want, spec.Toolset(t))
 				}
-				if perr != nil {
-					out["project_file_error"] = perr.Error()
-				} else {
-					want := []spec.Toolset{spec.Daemon}
-					for _, t := range pf.Toolsets {
-						want = append(want, spec.Toolset(t))
-					}
-					if aerr := ts.Apply(want); aerr != nil {
-						out["toolsets_error"] = aerr.Error()
-					}
-					out["toolsets"] = ts.Enabled()
+				if aerr := ts.Apply(want); aerr != nil {
+					out["toolsets_error"] = aerr.Error()
 				}
+				out["toolsets"] = ts.Enabled()
 			}
 			return &spec.Result{Data: out, Summary: "attached " + project}, nil
 		},

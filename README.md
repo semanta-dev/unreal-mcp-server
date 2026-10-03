@@ -76,7 +76,7 @@ Per project, `<project>/.umcp.json`:
 { "toolsets": ["design", "ui"], "gate_policy": "require", "keep_package_recovery": false }
 ```
 
-`toolsets` are enabled at startup (stdio) or on `project op=attach` (daemon). `keep_package_recovery: true` stops the server from passing `-AutoDeclinePackageRecovery` when it launches the
+`toolsets` are enabled at startup (stdio, together with `-toolsets`) or on `project op=attach` (daemon, which takes toolsets only from `.umcp.json`; an invalid file refuses the attach). `keep_package_recovery: true` stops the server from passing `-AutoDeclinePackageRecovery` when it launches the
 editor (keep it for projects also edited by hand; see operations.md).
 
 ## Developing
