@@ -154,9 +154,11 @@ def test_restore_unloaded_is_unknown_and_parents_first(v2, ue):
         return lambda v, sweep, teleport: seq.append(label)
 
     parent.set_actor_location, child.set_actor_location = mover("Parent"), mover("Child")
-    far = "/Game/Maps/L.L:PersistentLevel.Far_9"
+    far = "/Game/Maps/L.L:PersistentLevel.Far_9"  # exists, but its cell is not loaded NOW
+    gone = "/Game/Maps/L.L:PersistentLevel.Gone_1"
+    ue.wp_descs = [parent.get_path_name(), child.get_path_name(), far]
     snap = [{"path": child.get_path_name(), "loc": [1, 1, 1]}, {"path": parent.get_path_name(), "loc": [2, 2, 2]},
-            {"path": far, "loc": [0, 0, 0]}]
-    res = ok(v2, "snapshot_restore", {"actors": snap, "unloaded": [far]})
+            {"path": far, "loc": [0, 0, 0]}, {"path": gone, "loc": [0, 0, 0]}]
+    res = ok(v2, "snapshot_restore", {"actors": snap})
     assert seq == ["Parent", "Child"]
-    assert res["not_restored"]["removed"] == [] and res["not_restored"]["unknown"] == [far]
+    assert res["not_restored"]["removed"] == [gone] and res["not_restored"]["unknown"] == [far]

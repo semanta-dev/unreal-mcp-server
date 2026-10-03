@@ -22,11 +22,9 @@ type Deps struct {
 	ProjectDir string
 	EngineDir  string
 	// Restart, when non-nil (daemon mode), performs a CONTROLLED editor restart that
-	// PRESERVES this session's lease: it tears down the leased editor, runs buildStep
-	// with no editor up (nil for a plain restart), relaunches with the same instance
-	// token, and re-pins the lease. In single-project stdio mode it is nil and tools
-	// relaunch the editor directly (a fresh process is fine — no lease to keep).
-	Restart func(ctx context.Context, buildStep func(context.Context) error) error
+	// PRESERVES this session's lease (see RestartPlan). In single-project stdio mode it
+	// is nil and tools relaunch the editor directly (no lease to keep).
+	Restart func(ctx context.Context, plan RestartPlan) error
 
 	// CockpitURL, when non-nil, returns the current browser-cockpit URL and whether it
 	// is live. Nil when the cockpit launcher isn't wired.
@@ -84,4 +82,17 @@ func InstallMiddleware(s *mcp.Server, resolve Resolver) {
 			return next(ctx, method, req)
 		}
 	})
+}
+
+// RestartPlan is one controlled editor restart (§3.1, §2.5).
+type RestartPlan struct {
+	// Stop, when set, closes the editor gracefully once the lease is marked
+	// Restarting. An error aborts the restart: nothing is killed, the lease returns to
+	// Leased on the still-running editor, and the error is returned. Nil = kill.
+	Stop func(ctx context.Context) error
+	// Build runs with no editor up (nil for a plain restart). The editor is relaunched
+	// even when it fails; its error is returned after the relaunch.
+	Build func(ctx context.Context) error
+	// Map is reopened in the relaunched editor (best effort).
+	Map string
 }

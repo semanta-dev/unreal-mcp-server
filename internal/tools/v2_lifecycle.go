@@ -12,12 +12,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"github.com/jdziat/unreal-mcp-server/internal/build"
 	"github.com/jdziat/unreal-mcp-server/internal/lifecycle"
 	"github.com/jdziat/unreal-mcp-server/internal/logs"
+	"github.com/jdziat/unreal-mcp-server/internal/session"
 	"github.com/jdziat/unreal-mcp-server/internal/tools/envelope"
 	"github.com/jdziat/unreal-mcp-server/internal/tools/spec"
-	"github.com/jdziat/unreal-mcp-server/internal/uexec"
 )
 
 // v2 editor lifecycle, build and git_revert (OVERHAUL_PLAN.md §2.3 rows 28, 34, 35;
@@ -108,31 +109,58 @@ type shutdownReport struct {
 	DirtyAtKill  []string `json:"dirty_at_kill,omitempty"`
 }
 
-// closeEditorSafely is the second half (stdio): nothing dirty ⇒ a graceful
-// quit_editor (the command channel drops mid-call by design; success is the PID
-// exiting), killed after 30 s if it hangs; dirty + discard ⇒ kill (a graceful quit
-// would raise the save-changes modal).
-func closeEditorSafely(ctx context.Context, c *spec.Call, st *pkgState, progress func(string)) shutdownReport {
+// quitGracefully asks a clean editor to exit and waits for its PID. quit_editor
+// refuses (PRECONDITION) if anything turned dirty since the re-check: that aborts the
+// shutdown — nothing is killed. If the editor has not exited after gracefulQuitWait,
+// the dirty set is re-queried: an editor that still answers with unsaved packages is
+// left alone (PRECONDITION); otherwise killFallback=true tells the caller to kill it.
+func quitGracefully(ctx context.Context, c *spec.Call, pid int, progress func(string)) (killFallback bool, err error) {
+	progress("quitting the editor")
+	_, qerr := v2Op(ctx, c, "quit_editor", nil)
+	var oe *bridge.OpError
+	if errors.As(qerr, &oe) && oe.Code == "PRECONDITION" {
+		dirty, _ := oe.Details["dirty"].([]any)
+		names := make([]string, 0, len(dirty))
+		for _, d := range dirty {
+			names = append(names, fmt.Sprint(d))
+		}
+		return false, dirtyError(names, "the shutdown (packages became dirty during it)")
+	}
+	if qerr != nil {
+		progress("quit_editor: " + qerr.Error() + " (expected while the editor exits)")
+	}
+	if waitExit(pid, gracefulQuitWait) {
+		return false, nil
+	}
+	if st, perr := packagesState(ctx, c, nil); perr == nil && len(st.Dirty) > 0 {
+		return false, dirtyError(st.Dirty, "killing the editor that did not quit")
+	}
+	progress(fmt.Sprintf("the editor did not exit within %s; killing it", gracefulQuitWait))
+	return true, nil
+}
+
+// closeEditorSafely is the second half (stdio): nothing dirty ⇒ a graceful quit
+// (killed only after it hangs with nothing unsaved); dirty + discard ⇒ kill (a
+// graceful quit would raise the save-changes modal).
+func closeEditorSafely(ctx context.Context, c *spec.Call, st *pkgState, progress func(string)) (shutdownReport, error) {
 	rep := shutdownReport{Map: st.Map, PID: st.PID}
 	if len(st.Dirty) == 0 {
-		progress("quitting the editor")
-		_, err := v2Op(ctx, c, "quit_editor", nil)
-		if err != nil && !errors.Is(err, uexec.ErrOutcomeUnknown) {
-			progress("quit_editor: " + err.Error() + " (expected while the editor exits)")
-		}
 		rep.Graceful = true
-		if waitExit(st.PID, gracefulQuitWait) {
-			return rep
+		fallback, err := quitGracefully(ctx, c, st.PID, progress)
+		if err != nil {
+			return rep, err
 		}
-		rep.KillFallback, rep.DirtyAtKill = true, st.Dirty
-		progress("the editor did not exit within 30s; killing it")
+		if !fallback {
+			return rep, nil
+		}
+		rep.KillFallback = true
 	} else {
 		rep.Discarded = st.Dirty
 		progress(fmt.Sprintf("discarding %d unsaved package(s) and killing the editor", len(st.Dirty)))
 	}
 	_ = killPID(st.PID)
 	waitExit(st.PID, 20*time.Second)
-	return rep
+	return rep, nil
 }
 
 func waitExit(pid int, d time.Duration) bool {
@@ -168,14 +196,32 @@ func waitReady(ctx context.Context, c *spec.Call, timeout time.Duration, progres
 }
 
 // restartWith closes the editor safely, runs step with no editor up, and brings it
-// back on the same map. Daemon: the controlled restart (lease preserved, same
-// instance token) does the close/relaunch — after the dirty check above, its kill
-// loses nothing. Stdio: graceful quit + relaunch here.
-func restartWith(ctx context.Context, c *spec.Call, st *pkgState, step func(context.Context) error, progress func(string)) (shutdownReport, error) {
+// back on the same map (mapOverride, when set, replaces it — "" keeps st.Map; use
+// "-" for the default map). Daemon: the controlled restart keeps the session's lease
+// and runs the same graceful stop. A failing step never leaves the editor down: it is
+// relaunched and the step's error returned.
+func restartWith(ctx context.Context, c *spec.Call, st *pkgState, step func(context.Context) error, mapOverride string, progress func(string)) (shutdownReport, error) {
+	reopen := st.Map
+	if mapOverride == "-" {
+		reopen = ""
+	} else if mapOverride != "" {
+		reopen = mapOverride
+	}
 	if c.Deps.Restart != nil {
-		rep := shutdownReport{Map: st.Map, PID: st.PID, Discarded: st.Dirty}
+		rep := shutdownReport{Map: reopen, PID: st.PID}
+		plan := session.RestartPlan{Build: step, Map: reopen}
+		if len(st.Dirty) == 0 {
+			rep.Graceful = true
+			plan.Stop = func(sctx context.Context) error {
+				fallback, err := quitGracefully(sctx, c, st.PID, progress)
+				rep.KillFallback = fallback // the controlled restart kills whatever is left
+				return err
+			}
+		} else {
+			rep.Discarded = st.Dirty
+		}
 		progress("controlled restart (lease preserved)")
-		return rep, c.Deps.Restart(ctx, step)
+		return rep, c.Deps.Restart(ctx, plan)
 	}
 	if c.Deps.EngineDir == "" {
 		return shutdownReport{}, envelope.New(envelope.Precondition, "restarting the editor needs the engine directory (-engine / UMCP_ENGINE_DIR)")
@@ -184,14 +230,18 @@ func restartWith(ctx context.Context, c *spec.Call, st *pkgState, step func(cont
 	if uproject == "" {
 		return shutdownReport{}, envelope.New(envelope.Precondition, "no .uproject in %s", c.Deps.ProjectDir)
 	}
-	rep := closeEditorSafely(ctx, c, st, progress)
+	rep, err := closeEditorSafely(ctx, c, st, progress)
+	if err != nil {
+		return rep, err // refused: the editor is still up, nothing was changed
+	}
+	rep.Map = reopen
 	var stepErr error
 	if step != nil {
 		stepErr = step(ctx)
 	}
 	args := []string{"-nosplash"}
-	if st.Map != "" {
-		args = append(args, st.Map)
+	if reopen != "" {
+		args = append(args, reopen)
 	}
 	progress("relaunching the editor")
 	if _, err := launchEditor(c.Deps.EngineDir, uproject, args...); err != nil {
@@ -285,7 +335,7 @@ func editorLifecycle(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		if err != nil {
 			return nil, err
 		}
-		rep, err := restartWith(jctx, c, st, nil, progress)
+		rep, err := restartWith(jctx, c, st, nil, "", progress)
 		if err != nil {
 			return nil, err
 		}
@@ -402,7 +452,7 @@ func runBuild(ctx context.Context, c *spec.Call, dir, requested string, progress
 	if err != nil {
 		return res, err
 	}
-	if _, err := restartWith(ctx, c, st, step, progress); err != nil {
+	if _, err := restartWith(ctx, c, st, step, "", progress); err != nil {
 		if res.Strategy != "" {
 			// The build itself ran: keep its diagnostics and report the relaunch failure.
 			res.Reason = strings.TrimSpace(reason + "; editor relaunch failed: " + err.Error())
@@ -478,7 +528,8 @@ func gitRevertSpec() *spec.Spec {
 		Ops: []spec.OpSpec{{Tier: spec.Destructive, Async: true, Required: []string{"to"}, Reaches: []string{"packages_state", "pie_stop", "editor_ping", "quit_editor"}}},
 		Description: "Put the project's files back exactly as they were at a git op=checkpoint (umcp/cp/<n> only; anything " +
 			"else is PRECONDITION). Files changed since are restored, files added since are deleted, untracked files are kept " +
-			"(listed). Editor-aware: if the editor has any of those assets loaded, it is closed safely first (PRECONDITION " +
+			"(listed). History is not rewritten: HEAD stays where it is, so the revert shows as working-tree changes (commit " +
+			"them, e.g. with git op=checkpoint, to keep them). Editor-aware: if the editor has any of those assets loaded, it is closed safely first (PRECONDITION " +
 			"listing unsaved packages unless discard_dirty=true) and relaunched on the same map after; otherwise it stays up " +
 			"and those assets are reported possibly_stale. All-or-nothing: the previous files are backed up under " +
 			"Saved/MCP/revert-backup and restored on failure. Result: reverted_files, deleted_files, editor_restarted, " +
@@ -535,17 +586,21 @@ func gitRevert(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		return nil, envelope.New(envelope.NotFound, "no checkpoint %s", tag).WithHint("git op=log lists the checkpoints")
 	}
 	// Working tree (staged + unstaged) vs the checkpoint, excluding generated trees.
-	out, err := build.Run(ctx, dir, append([]string{"diff", "--name-status", "--no-renames", tag, "--", "."}, gitExcludes...)...)
+	// --relative: paths relative to the project dir even when it is a subdirectory of
+	// the repository (that is where they are removed/checked out from); -z: no quoting.
+	out, err := build.Run(ctx, dir, append([]string{"diff", "--name-status", "--no-renames", "--relative", "-z", tag, "--", "."}, gitExcludes...)...)
 	if err != nil {
 		return nil, gitFail("diff", err)
 	}
 	var changes []fileChange
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		if st, path, ok := strings.Cut(line, "\t"); ok {
-			changes = append(changes, fileChange{Status: st[:1], Path: path})
+	fields := strings.Split(strings.TrimRight(out, "\x00"), "\x00")
+	for i := 0; i+1 < len(fields); i += 2 {
+		if fields[i] != "" {
+			changes = append(changes, fileChange{Status: fields[i][:1], Path: filepath.FromSlash(fields[i+1])})
 		}
 	}
-	untracked, _ := build.Run(ctx, dir, append([]string{"ls-files", "--others", "--exclude-standard", "--", "."}, gitExcludes...)...)
+	untrackedOut, _ := build.Run(ctx, dir, append([]string{"ls-files", "-z", "--others", "--exclude-standard", "--", "."}, gitExcludes...)...)
+	untracked := strings.Join(strings.Split(strings.TrimRight(untrackedOut, "\x00"), "\x00"), " ")
 	var pkgs []string
 	rebuild := false
 	for _, ch := range changes {
@@ -559,6 +614,12 @@ func gitRevert(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	}
 	plan := map[string]any{"checkpoint": tag, "changes": len(changes), "rebuild_required": rebuild,
 		"untracked_kept": strings.Fields(untracked)}
+	deletedPkgs := map[string]bool{} // packages the revert removes (added since the checkpoint)
+	for _, ch := range changes {
+		if pkg, ok := contentPackage(ch.Path); ok && ch.Status == "A" {
+			deletedPkgs[pkg] = true
+		}
+	}
 	if len(changes) == 0 {
 		plan["reverted_files"], plan["editor_restarted"] = []string{}, false
 		return &spec.Result{Data: plan, Summary: "already at " + tag}, nil
@@ -621,7 +682,11 @@ func gitRevert(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			if err != nil {
 				return nil, err
 			}
-			rep, err := restartWith(jctx, c, st, step, progress)
+			reopen := ""
+			if deletedPkgs[st.Map] {
+				reopen = "-" // the open map did not exist at the checkpoint: relaunch on the default map
+			}
+			rep, err := restartWith(jctx, c, st, step, reopen, progress)
 			res["shutdown"], res["discarded_dirty"] = rep, rep.Discarded
 			if err != nil {
 				return nil, err

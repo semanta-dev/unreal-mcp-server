@@ -15,8 +15,8 @@ const (
 var gateGrid = Grid{SSteps: 5, ESteps: 5, SplashSteps: 5}
 
 type Genotype struct {
-	Policy   Policy
-	Scaffold Scaffold
+	Policy   Policy   `json:"policy"`
+	Scaffold Scaffold `json:"scaffold"`
 }
 
 type Cell struct {

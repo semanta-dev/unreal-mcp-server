@@ -533,7 +533,7 @@ func snapshotRestoreSpec() *spec.Spec {
 			if err != nil {
 				return nil, err
 			}
-			args := map[string]any{"name": name, "actors": f.Actors, "unloaded": f.Unloaded}
+			args := map[string]any{"name": name, "actors": f.Actors}
 			if in.Save != nil {
 				args["save"] = *in.Save
 			}

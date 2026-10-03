@@ -133,7 +133,8 @@ def _op_snapshot_restore(args):
     by_path = {_norm_path(a.get_path_name()): a for a in _world_actors(world, name)}
     snap = args.get("actors") or []
     snap_paths = {t.get("path") for t in snap}
-    unloaded = set(args.get("unloaded") or [])
+    known = _wp_actor_paths(world)  # World Partition: actors that exist, loaded or not
+    unloaded = (known - set(by_path)) if known is not None else set()
     restored, removed, unknown = 0, [], []
 
     def depth(t):

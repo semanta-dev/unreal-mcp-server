@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"github.com/jdziat/unreal-mcp-server/internal/session"
 	"github.com/jdziat/unreal-mcp-server/internal/supervisor"
 	"testing"
 	"time"
@@ -15,10 +16,10 @@ func TestRestartLeasePreservesLeaseAndRepins(t *testing.T) {
 	oldPID := oldInst.PID
 
 	var buildRan bool
-	err := dm.RestartLease(context.Background(), "sessA", func(context.Context) error {
+	err := dm.RestartLease(context.Background(), "sessA", session.RestartPlan{Build: func(context.Context) error {
 		buildRan = true
 		return nil
-	})
+	}})
 	if err != nil {
 		t.Fatalf("RestartLease: %v", err)
 	}
@@ -41,24 +42,43 @@ func TestRestartLeasePreservesLeaseAndRepins(t *testing.T) {
 	}
 }
 
-func TestRestartLeaseBuildFailureDropsLease(t *testing.T) {
+func TestRestartLeaseBuildFailureStillRelaunches(t *testing.T) {
 	dm := newTestDaemon()
-	dm.Router.Attach(context.Background(), "sessA", "/A")
-	err := dm.RestartLease(context.Background(), "sessA", func(context.Context) error {
+	id, _ := dm.Router.Attach(context.Background(), "sessA", "/A")
+	err := dm.RestartLease(context.Background(), "sessA", session.RestartPlan{Build: func(context.Context) error {
 		return errors.New("Build.bat could not run")
+	}})
+	if err == nil {
+		t.Fatal("a build failure must surface as an error")
+	}
+	// The editor comes back and the holder keeps the lease (a failed build or revert
+	// step must not leave the session without an editor).
+	if inst, _ := dm.Pool.Get(id); inst.State != supervisor.Leased || inst.LeasedBy != "sessA" {
+		t.Fatalf("after a failed build step the lease must be re-pinned: %+v", inst)
+	}
+}
+
+func TestRestartLeaseRefusedStopAbortsWithoutKilling(t *testing.T) {
+	dm := newTestDaemon()
+	id, _ := dm.Router.Attach(context.Background(), "sessA", "/A")
+	before, _ := dm.Pool.Get(id)
+	sp := dm.spawner.(*wireFakeSpawner)
+	err := dm.RestartLease(context.Background(), "sessA", session.RestartPlan{
+		Stop:  func(context.Context) error { return errors.New("unsaved packages appeared") },
+		Build: func(context.Context) error { t.Fatal("build must not run after a refused stop"); return nil },
 	})
 	if err == nil {
-		t.Fatal("a build infra failure should surface as an error")
+		t.Fatal("a refused stop must be returned")
 	}
-	// The lease is torn down so the holder cleanly re-attaches (not stuck mid-restart).
-	if _, _, e := dm.Router.Resolve("sessA"); e != ErrLeaseLost {
-		t.Fatalf("after a failed restart the holder should get LEASE_LOST, got %v", e)
+	inst, _ := dm.Pool.Get(id)
+	if len(sp.kills) != 0 || inst.State != supervisor.Leased || inst.PID != before.PID {
+		t.Fatalf("a refused stop must leave the editor running and the lease Leased: %+v kills=%v", inst, sp.kills)
 	}
 }
 
 func TestRestartLeaseUnattachedErrors(t *testing.T) {
 	dm := newTestDaemon()
-	if err := dm.RestartLease(context.Background(), "ghost", nil); err != ErrNoProjectAttached {
+	if err := dm.RestartLease(context.Background(), "ghost", session.RestartPlan{}); err != ErrNoProjectAttached {
 		t.Fatalf("restart with no lease should be NO_PROJECT_ATTACHED, got %v", err)
 	}
 }
@@ -71,10 +91,10 @@ func TestRestartLeaseAbortsIfOldEditorWontDie(t *testing.T) {
 	sp := dm.spawner.(*wireFakeSpawner)
 	spawnsBefore := sp.pid
 
-	err := dm.RestartLease(context.Background(), "sessA", func(context.Context) error {
+	err := dm.RestartLease(context.Background(), "sessA", session.RestartPlan{Build: func(context.Context) error {
 		t.Fatal("buildStep must NOT run while the old editor is still alive (DLL lock)")
 		return nil
-	})
+	}})
 	if err == nil {
 		t.Fatal("restart must abort when the old editor won't die")
 	}

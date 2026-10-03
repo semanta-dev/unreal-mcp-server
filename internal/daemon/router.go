@@ -268,6 +268,14 @@ func (r *Router) BeginRestart(sessionID string) (RestartInfo, error) {
 	return RestartInfo{ID: id, Token: inst.Token, Project: inst.Project, OldPID: inst.PID, OldEditor: r.editors[id]}, nil
 }
 
+// AbortRestart returns a Restarting lease to Leased on the editor it already had
+// (a graceful stop refused, nothing was killed).
+func (r *Router) AbortRestart(id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.pool.RepinSucceeded(id)
+}
+
 // EndRestart re-pins the lease onto the freshly-relaunched editor: swap in the new
 // bridge and complete the pool transition (RestartEnd + RepinSucceeded → Leased). The
 // holder's lease survives the whole rebuild with no LEASE_LOST.

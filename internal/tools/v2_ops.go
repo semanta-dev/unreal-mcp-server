@@ -432,9 +432,13 @@ func gitHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		return nil, gitFail("add", err)
 	}
 	committed := true
+	commit := []string{"commit", "-m", in.Message}
+	if len(in.Paths) > 0 {
+		commit = append(append(commit, "--"), in.Paths...) // only these, not whatever else is staged
+	}
 	if staged, _ := build.Run(ctx, dir, "diff", "--cached", "--name-only"); strings.TrimSpace(staged) == "" {
 		committed = false // nothing new: checkpoint the current HEAD
-	} else if _, err := build.Run(ctx, dir, "commit", "-m", in.Message); err != nil {
+	} else if _, err := build.Run(ctx, dir, commit...); err != nil {
 		return nil, gitFail("commit", err)
 	}
 	head, err := build.Run(ctx, dir, "rev-parse", "HEAD")
@@ -446,9 +450,17 @@ func gitHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	if len(cps) > 0 {
 		n = cpNum(cps[0]) + 1
 	}
-	tag := "umcp/cp/" + strconv.Itoa(n)
-	if _, err := build.Run(ctx, dir, "tag", "-a", tag, "-m", in.Message); err != nil {
-		return nil, gitFail("tag", err)
+	// A concurrent checkpoint may take n first: the tag creation is the arbiter.
+	var tag string
+	for attempt := 0; ; attempt++ {
+		tag = "umcp/cp/" + strconv.Itoa(n+attempt)
+		_, terr := build.Run(ctx, dir, "tag", "-a", tag, "-m", in.Message)
+		if terr == nil {
+			break
+		}
+		if attempt == 4 || !strings.Contains(terr.Error(), "already exists") {
+			return nil, gitFail("tag", terr)
+		}
 	}
 	return &spec.Result{Data: map[string]any{"commit": strings.TrimSpace(head), "tag": tag, "committed": committed, "message": in.Message},
 		Summary: "checkpoint " + tag}, nil
@@ -642,6 +654,15 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 		}
 	}
 	playing := mode == "pie" || mode == "simulate"
+	var setupErrs []string
+	crashed := func(err error) (map[string]any, error) {
+		// A PIE that dies on start (bad Blueprint, null access) is the common case:
+		// diagnose it instead of returning a bare transport error.
+		if rep := detectCrash(pd, marker, runStart); rep != nil {
+			return map[string]any{"scenario": sc.Name, "verdict": "FAIL", "crash": rep, "error": err.Error()}, nil
+		}
+		return nil, err
+	}
 	stop := func() {
 		if playing {
 			cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
@@ -652,18 +673,19 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 	if playing {
 		progress("starting " + mode)
 		if _, err := v2Op(ctx, c, "pie_start", map[string]any{"simulate": mode == "simulate"}); err != nil {
-			return nil, err
+			return crashed(err)
 		}
 		if err := waitPIE(ctx, c, true, 20*time.Second); err != nil {
 			stop()
-			return nil, err
+			return crashed(err)
 		}
 		if sc.TimeDilation > 0 && sc.TimeDilation != 1 {
 			_, _ = v2Op(ctx, c, "console", map[string]any{"command": fmt.Sprintf("slomo %g", sc.TimeDilation), "world": "pie"})
 		}
 		for _, sp := range sc.Setup.SetProps {
 			if _, err := v2Op(ctx, c, "actor_set_properties", map[string]any{"world": "pie", "actor": beatTarget(sp.Target), "properties": sp.Properties}); err != nil {
-				progress("setup " + sp.Target + ": " + err.Error())
+				setupErrs = append(setupErrs, "setup "+sp.Target+": "+err.Error())
+				progress(setupErrs[len(setupErrs)-1])
 			}
 		}
 	}
@@ -682,11 +704,11 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 	started, err := v2Op(ctx, c, "capture_start", startArgs)
 	if err != nil {
 		stop()
-		return nil, err
+		return crashed(err)
 	}
 	session, _ := started["session"].(string)
 	progress(fmt.Sprintf("recording %s for %.0fs", session, duration))
-	beatErrs := runBeatsV2(ctx, c, sc.Beats, duration, progress)
+	beatErrs := append(setupErrs, runBeatsV2(ctx, c, sc.Beats, duration, progress)...)
 
 	// Tear down on a detached context so a cancelled job still stops the recorder and PIE.
 	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)

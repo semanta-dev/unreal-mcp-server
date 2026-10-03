@@ -3,30 +3,30 @@ package design
 import "math"
 
 type Wave struct {
-	Count int
-	HP    float64
-	Spike bool
+	Count int     `json:"count"`
+	HP    float64 `json:"hp"`
+	Spike bool    `json:"spike"`
 }
 
 type Scaffold struct {
-	Waves        []Wave
-	BaseDamage   float64
-	Focus        int
-	Spread       int
-	SplashMin    float64
-	ExpandGrowth float64
+	Waves        []Wave  `json:"waves"`
+	BaseDamage   float64 `json:"base_damage"`
+	Focus        int     `json:"focus"`
+	Spread       int     `json:"spread"`
+	SplashMin    float64 `json:"splash_min"`
+	ExpandGrowth float64 `json:"expand_growth"`
 }
 
 type Policy struct {
-	S      float64
-	Splash float64
-	E      float64
+	S      float64 `json:"s"`
+	Splash float64 `json:"splash"`
+	E      float64 `json:"e"`
 }
 
 type Outcome struct {
-	Survived     bool
-	Margin       float64
-	WavesCleared int
+	Survived     bool    `json:"survived"`
+	Margin       float64 `json:"margin"`
+	WavesCleared int     `json:"waves_cleared"`
 }
 
 func Simulate(sc Scaffold, p Policy) Outcome {

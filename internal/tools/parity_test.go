@@ -28,6 +28,8 @@ type scriptedRunner struct {
 	dispatchExtra []uexec.OutputEntry
 	// raw handles PROTO snippets (execute_python / execute_console_command).
 	raw func(code string) uexec.CommandResult
+	// fail, when it returns a code, turns the op into an ok:false envelope.
+	fail func(op string) (code, msg string, details map[string]any)
 }
 
 func (scriptedRunner) Generation() uint64 { return 1 }
@@ -46,6 +48,11 @@ func (r *scriptedRunner) RunCommand(_ context.Context, code string, mode uexec.E
 		op, args := splitDispatch(body)
 		result := r.dispatch(op, args)
 		env, _ := json.Marshal(map[string]any{"ok": true, "result": result})
+		if r.fail != nil {
+			if code, msg, details := r.fail(op); code != "" {
+				env, _ = json.Marshal(map[string]any{"ok": false, "error": msg, "code": code, "details": details})
+			}
+		}
 		out := append([]uexec.OutputEntry{}, r.dispatchExtra...)
 		out = append(out, uexec.OutputEntry{Type: "Info", Output: "__MCP_JSON__" + string(env)})
 		return uexec.CommandResult{Success: true, Output: out}, nil

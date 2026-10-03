@@ -3,9 +3,9 @@ package design
 import "math"
 
 type Grid struct {
-	SSteps      int
-	ESteps      int
-	SplashSteps int
+	SSteps      int `json:"s_steps"`
+	ESteps      int `json:"e_steps"`
+	SplashSteps int `json:"splash_steps"`
 }
 
 type SweepReport struct {

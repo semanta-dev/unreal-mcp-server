@@ -157,6 +157,29 @@ func (t *Toolsets) knownLocked() []Toolset {
 	return out
 }
 
+// Spec returns a catalog tool (enabled or not) and its toolset.
+func (t *Toolsets) Spec(name string) (*Spec, Toolset, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	ts, ok := t.toolTS[name]
+	if !ok {
+		return nil, "", false
+	}
+	for _, s := range t.byTS[ts] {
+		if s.Name == name {
+			return s, ts, true
+		}
+	}
+	return nil, "", false
+}
+
+// IsEnabled reports whether a toolset is enabled.
+func (t *Toolsets) IsEnabled(ts Toolset) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.enabled[ts]
+}
+
 // Tools lists the tool names in a toolset.
 func (t *Toolsets) Tools(ts Toolset) []string {
 	t.mu.Lock()

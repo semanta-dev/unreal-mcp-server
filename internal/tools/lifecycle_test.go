@@ -2,7 +2,9 @@ package tools
 
 import (
 	"os"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -78,6 +80,12 @@ func withProcessStubs(t *testing.T, sim *editorSim) {
 		sim.launched = append(sim.launched, append([]string{filepath.Base(uproject)}, args...))
 		return 5151, nil
 	}
+}
+
+func lifecycleDepsFail(t *testing.T, sim *editorSim, fail func(string) (string, string, map[string]any)) Deps {
+	d := lifecycleDeps(t, sim)
+	d.Bridge = bridge.New(&scriptedRunner{dispatch: sim.dispatch, fail: fail}, bridge.Options{})
+	return d
 }
 
 func lifecycleDeps(t *testing.T, sim *editorSim) Deps {
@@ -180,5 +188,38 @@ func TestReclaimNeedsAChannel(t *testing.T) {
 	out := restartResult(t, lifecycleDeps(t, sim), map[string]any{"op": "reclaim"})
 	if e, _ := out["error"].(map[string]any); e == nil || e["code"] != "UNSUPPORTED" {
 		t.Fatalf("reclaim on a runner without a channel = %v", out)
+	}
+}
+
+func TestRefusedGracefulQuitAbortsWithoutKilling(t *testing.T) {
+	// Clean at both checks, but a package turns dirty before quit_editor runs: the
+	// companion refuses, and the shutdown must stop there (never the kill fallback).
+	sim := &editorSim{dirty: [][]string{{}}, exitOnQit: false}
+	withProcessStubs(t, sim)
+	d := lifecycleDepsFail(t, sim, func(op string) (string, string, map[string]any) {
+		if op == "quit_editor" {
+			return "PRECONDITION", "1 unsaved package(s)", map[string]any{"dirty": []any{"/Game/Maps/L_Arena"}}
+		}
+		return "", "", nil
+	})
+	out := restartResult(t, d, map[string]any{"op": "restart", "wait_s": 20})
+	if out["state"] != "failed" || !strings.Contains(fmt.Sprint(out["error"]), "unsaved") {
+		t.Fatalf("a refused quit must fail the restart: %v", out)
+	}
+	if len(sim.killed) != 0 || len(sim.launched) != 0 {
+		t.Fatalf("a refused quit must not kill or relaunch: killed=%v launched=%v", sim.killed, sim.launched)
+	}
+}
+
+func TestHungQuitWithUnsavedWorkIsNotKilled(t *testing.T) {
+	// The quit hangs, and by then the editor reports unsaved work: leave it alone.
+	sim := &editorSim{dirty: [][]string{{}, {}, {}, {"/Game/BP/BP_New"}}, exitOnQit: false}
+	withProcessStubs(t, sim)
+	w := gracefulQuitWait
+	gracefulQuitWait = 200 * time.Millisecond
+	t.Cleanup(func() { gracefulQuitWait = w })
+	out := restartResult(t, lifecycleDeps(t, sim), map[string]any{"op": "restart", "wait_s": 20})
+	if out["state"] != "failed" || len(sim.killed) != 0 {
+		t.Fatalf("a hung editor with unsaved work must not be killed: %v killed=%v", out, sim.killed)
 	}
 }

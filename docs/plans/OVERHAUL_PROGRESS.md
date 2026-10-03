@@ -715,3 +715,37 @@ result with `image_path` gets that PNG attached as image content** by `job statu
 - `quit_editor` with a clean editor exits without any modal;
 - restart and git_revert with `discard_dirty` and the open map dirty finish unattended with no modal after relaunch;
 - `get_dirty_content_packages` includes never-saved new assets in 5.7.
+
+**Gate P5c-fixes + P5d, round 1: P5c-fixes A-, P5d B+.** Fixed:
+1. *A refused graceful quit became a kill.* If a package turned dirty after the re-check, `quit_editor` refused, and
+   `closeEditorSafely` treated that as "expected while exiting", waited out the 30 s and killed: the very loss §2.5
+   prevents. Now (`quitGracefully`):
+   - a refusal aborts with PRECONDITION and the dirty list, and nothing is killed;
+   - before any fallback kill the dirty set is re-queried, and an editor that still answers with unsaved work is
+     left alone.
+
+   Unit-tested, using a scripted-runner error hook.
+2. *git_revert in a project nested inside the repository.* `diff --name-status` printed repo-relative paths, but
+   files are removed and checked out relative to the project. Now `--relative -z`, which also keeps non-ASCII names
+   unquoted. T1 runs a revert of `My Game/` inside a repo with a non-ASCII, space-containing untracked asset.
+3. *restore's `unknown` could never fill.* Python now computes the WP-known-but-unloaded set **at restore time**.
+   The test models a far actor that exists but is not loaded, plus a genuinely gone one.
+
+Daemon mode (the rejected "its kill loses nothing" claim): `Deps.Restart` takes a `session.RestartPlan{Stop, Build,
+Map}`. `RestartLease` now:
+- marks the lease Restarting, then runs the graceful `Stop`; a refusal aborts with the lease back on the running
+  editor (`Router.AbortRestart`) and nothing killed;
+- kills only what is left, runs `Build`, then **always relaunches** (a failed build or revert step no longer
+  strands the session without an editor) and returns the step's error after;
+- reopens `Map`.
+
+Daemon tests cover the build-failure relaunch and the refused-stop abort.
+
+Non-blocking findings, also fixed:
+- checkpoint tag numbering retries on "already exists" (concurrent checkpoints);
+- `checkpoint paths` commits only those paths;
+- git_revert says that history is not rewritten, and relaunches on the default map when the open map was added
+  since the checkpoint;
+- `job status/wait` reports `image_error` when the playtest image is unreadable;
+- playtest setup failures land in `beat_errors`, and a PIE that dies on start or `capture_start` is diagnosed from
+  the crash dump.

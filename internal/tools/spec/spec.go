@@ -79,6 +79,10 @@ type OpSpec struct {
 	Required     []string // params that must be present for this op
 	Rejects      []string // params that must be absent for this op
 	Reaches      []string // Python ops this op may dispatch (tier lint)
+	// Needs lists runtime preconditions beyond a live editor (which every non-Offline
+	// tool needs): "pie" (a running play session), "plugin" (the UnrealMCP C++
+	// plugin), "navmesh", "project" (a configured project directory), "engine".
+	Needs []string
 }
 
 // Handler runs one call. A returned error is classified onto the envelope.
@@ -393,26 +397,31 @@ func awaitJob(ctx context.Context, c *Call, j *jobs.Job) *mcp.CallToolResult {
 			}
 		})
 	}
-	return envelope.Result(JobView(snap), fmt.Sprintf("job %s %s", snap.ID, snap.Status), jobImage(snap)...)
+	view := JobView(snap)
+	img, imgErr := jobImage(snap)
+	if imgErr != "" {
+		view["image_error"] = imgErr
+	}
+	return envelope.Result(view, fmt.Sprintf("job %s %s", snap.ID, snap.Status), img...)
 }
 
 // jobImage attaches the PNG a finished job's result names in "image_path" (e.g. a
 // playtest contact sheet) as image content, so it reaches the agent through job
 // status/wait like a sync tool's image would.
-func jobImage(sn jobs.Snapshot) []mcp.Content {
+func jobImage(sn jobs.Snapshot) ([]mcp.Content, string) {
 	m, ok := sn.Result.(map[string]any)
 	if !ok {
-		return nil
+		return nil, ""
 	}
 	p, _ := m["image_path"].(string)
 	if p == "" {
-		return nil
+		return nil, ""
 	}
 	img, err := os.ReadFile(p)
 	if err != nil || len(img) == 0 {
-		return nil
+		return nil, fmt.Sprintf("could not read %s: %v", p, err)
 	}
-	return []mcp.Content{&mcp.ImageContent{Data: img, MIMEType: "image/png"}}
+	return []mcp.Content{&mcp.ImageContent{Data: img, MIMEType: "image/png"}}, ""
 }
 
 // JobView is the structured form of a job snapshot in tool results.

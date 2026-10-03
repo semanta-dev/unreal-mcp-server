@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -135,24 +136,32 @@ func (dm *Daemon) jobsForProject(key string) *jobs.Registry {
 
 // RestartLease runs the §3.1 controlled restart for a session's lease: transition to
 // Restarting (lease PRESERVED — the holder gets RESTART_IN_PROGRESS, not LEASE_LOST),
-// close+kill the old editor so it releases the module DLL before the build, run
-// buildStep with NO editor up, relaunch the editor with the SAME token (so it's
-// reattach-tracked and identity-continuous), and re-pin the lease onto it. buildStep
-// may be nil (a plain editor restart). On any failure the lease is torn down so the
-// holder cleanly re-attaches rather than being stuck mid-restart.
-func (dm *Daemon) RestartLease(ctx context.Context, sessionID string, buildStep func(context.Context) error) error {
+// stop the old editor (plan.Stop gracefully, else kill) and confirm it is dead so it
+// releases the module DLL, run plan.Build with NO editor up, relaunch the editor with
+// the SAME token (reattach-tracked, identity-continuous), re-pin the lease and reopen
+// plan.Map. A refused Stop aborts with the editor untouched and the lease Leased; a
+// failed Build still relaunches (its error is returned after); only an editor that
+// will not die or cannot be relaunched tears the lease down.
+func (dm *Daemon) RestartLease(ctx context.Context, sessionID string, plan session.RestartPlan) error {
 	info, err := dm.Router.BeginRestart(sessionID)
 	if err != nil {
 		return err
+	}
+	if plan.Stop != nil {
+		if serr := plan.Stop(ctx); serr != nil {
+			if aerr := dm.Router.AbortRestart(info.ID); aerr != nil {
+				dm.Router.Teardown(info.ID)
+			}
+			return serr
+		}
 	}
 	if info.OldEditor != nil {
 		_ = info.OldEditor.Close()
 	}
 	_ = dm.spawner.Kill(info.OldPID)
-	// §3.1 step 2: CONFIRM the old editor is dead before rebuilding/relaunching. Kill
-	// is async (TerminateProcess), so a still-alive editor would (a) hold the module
-	// DLL / Live Coding lock and fail Build.bat, or (b) be duplicated by the same-token
-	// relaunch and leaked. If it won't die, take the failure path — never relaunch.
+	// CONFIRM the old editor is dead before rebuilding/relaunching: a live one would
+	// hold the module DLL / Live Coding lock, or be duplicated by the same-token
+	// relaunch. If it won't die, take the failure path — never relaunch.
 	killWait := dm.restartKillWait
 	if killWait <= 0 {
 		killWait = 30 * time.Second
@@ -161,16 +170,14 @@ func (dm *Daemon) RestartLease(ctx context.Context, sessionID string, buildStep 
 		dm.Router.Teardown(info.ID)
 		return fmt.Errorf("restart aborted: old editor pid %d did not exit before rebuild", info.OldPID)
 	}
-	if buildStep != nil {
-		if berr := buildStep(ctx); berr != nil {
-			dm.Router.Teardown(info.ID) // build infra failed -> drop lease -> re-attach
-			return berr
-		}
+	var buildErr error
+	if plan.Build != nil {
+		buildErr = plan.Build(ctx)
 	}
 	newEd, newPID, newIdentity, serr := dm.spawner.Spawn(ctx, info.Project, info.Token)
 	if serr != nil {
 		dm.Router.Teardown(info.ID)
-		return fmt.Errorf("relaunch after restart failed: %w", serr)
+		return errors.Join(buildErr, fmt.Errorf("relaunch after restart failed: %w", serr))
 	}
 	if eerr := dm.Router.EndRestart(info.ID, newEd, newPID, newIdentity); eerr != nil {
 		// The pool instance may already be gone (e.g. a concurrent project_release), so
@@ -179,9 +186,16 @@ func (dm *Daemon) RestartLease(ctx context.Context, sessionID string, buildStep 
 		_ = newEd.Close()
 		_ = dm.spawner.Kill(newPID)
 		dm.Router.Teardown(info.ID)
-		return eerr
+		return errors.Join(buildErr, eerr)
 	}
-	return nil
+	if plan.Map != "" {
+		if eh, ok := newEd.(*supervisor.EditorHandle); ok {
+			if _, oerr := eh.Bridge().Call(ctx, "open_level", map[string]any{"level_path": plan.Map}); oerr != nil {
+				dm.logger.Warn("reopening the map after a restart failed", "map", plan.Map, "err", oerr)
+			}
+		}
+	}
+	return buildErr
 }
 
 // confirmDead polls until the pid is confirmed dead or the wait elapses.
@@ -237,8 +251,8 @@ func (dm *Daemon) DepsResolver() func(ctx context.Context, req mcp.Request) (ses
 		return session.Deps{
 			Bridge: eh.Bridge(), ProjectDir: project, EngineDir: dm.EngineDir,
 			Jobs: dm.jobsForProject(session.ProjectKey(project)), Projects: dm,
-			Restart: func(rctx context.Context, buildStep func(context.Context) error) error {
-				return dm.RestartLease(rctx, sid, buildStep)
+			Restart: func(rctx context.Context, plan session.RestartPlan) error {
+				return dm.RestartLease(rctx, sid, plan)
 			},
 		}, true
 	}

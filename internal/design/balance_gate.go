@@ -1,10 +1,10 @@
 package design
 
 type GateReport struct {
-	Pass     bool
-	Liveness float64
-	Fenced   []string
-	Reasons  []string
+	Pass     bool     `json:"pass"`
+	Liveness float64  `json:"liveness"`
+	Fenced   []string `json:"fenced"`
+	Reasons  []string `json:"reasons"`
 }
 
 func Gate(sc Scaffold, grid Grid) GateReport {
