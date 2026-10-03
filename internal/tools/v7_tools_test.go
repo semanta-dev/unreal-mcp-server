@@ -10,8 +10,7 @@ import (
 // v7ToolNames are the tools added for playtest capture, high-level design, and
 // tighter editor integration. Registration must not need a live editor.
 var v7ToolNames = []string{
-	"capture_start", "capture_status", "capture_stop", "scene_contact_sheet",
-	"scene_apply", "scene_plan", "scene_clear", "env_preset_apply", "design_check", "layout_preview",
+	"capture", "screenshot", "scene", "scene_clear",
 	"playtest_capture", "playtest_evaluate",
 }
 

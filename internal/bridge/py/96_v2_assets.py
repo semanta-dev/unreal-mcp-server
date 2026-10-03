@@ -21,65 +21,84 @@ def _class_path(ref):
     return _resolve_class_v2(ref).get_path_name()
 
 
-def _create_blueprint(args, dest):
-    return _op_blueprint_create({"parent_class_path": _class_path(args.get("class")), "dest": dest})
+# Each kind's preparer resolves and validates every input and returns the creation
+# step; nothing is touched (in particular, op=replace deletes nothing) until all of
+# them succeeded.
+
+def _prep_blueprint(args, dest):
+    parent = _class_path(args.get("class"))
+    return lambda: _op_blueprint_create({"parent_class_path": parent, "dest": dest})
 
 
-def _create_data_asset(args, dest):
-    return _op_dataasset_create({"class": _class_path(args.get("class")), "dest": dest})
+def _prep_data_asset(args, dest):
+    cls = _class_path(args.get("class"))
+    return lambda: _op_dataasset_create({"class": cls, "dest": dest})
 
 
-def _create_data_table(args, dest):
-    if not args.get("row_struct"):
-        raise _V2Error("BAD_VALUE", "kind=data_table requires row_struct")
-    return _op_datatable_create({"row_struct": args["row_struct"], "dest": dest})
+def _prep_data_table(args, dest):
+    rs = args.get("row_struct") or ""
+    struct = unreal.load_object(None, rs) if rs.startswith("/Script/") else unreal.load_asset(rs) if rs else None
+    if not struct:
+        raise _V2Error("NOT_FOUND", "kind=data_table needs a loadable row_struct (got %r)" % (rs,))
+    return lambda: _op_datatable_create({"row_struct": rs, "dest": dest})
 
 
-def _create_material_instance(args, dest):
+def _prep_material_instance(args, dest):
     parent = args.get("parent")
     if not parent or not unreal.EditorAssetLibrary.does_asset_exist(parent):
         raise _V2Error("NOT_FOUND", "kind=material_instance requires an existing parent material (got %r)" % (parent,))
-    out = _op_create_material_instance({"parent": parent, "dest": dest, "params": args.get("params") or {}})
-    if not unreal.EditorAssetLibrary.does_asset_exist(dest):
-        raise _V2Error("SPAWN_FAILED", "material instance %s was not created" % dest)
-    return out
+    params = args.get("params") or {}
+    for name, tex in (params.get("texture") or {}).items():
+        if not unreal.EditorAssetLibrary.does_asset_exist(tex):
+            raise _V2Error("NOT_FOUND", "texture parameter %s: no asset %s" % (name, tex))
+
+    def make():
+        out = _op_create_material_instance({"parent": parent, "dest": dest, "params": params})
+        if not unreal.EditorAssetLibrary.does_asset_exist(dest):
+            raise _V2Error("SPAWN_FAILED", "material instance %s was not created" % dest)
+        return out
+    return make
 
 
-def _create_widget_blueprint(args, dest):
+def _prep_widget_blueprint(args, dest):
     a = {"dest": dest, "root_panel": args.get("root_panel") or "CanvasPanel"}
     if args.get("class"):
         a["parent_class"] = _class_path(args["class"])
-    return _op_widget_create(a)
+    return lambda: _op_widget_create(a)
 
 
 _ASSET_KINDS = {
-    "blueprint": _create_blueprint,
-    "data_asset": _create_data_asset,
-    "data_table": _create_data_table,
-    "material_instance": _create_material_instance,
-    "widget_blueprint": _create_widget_blueprint,
+    "blueprint": _prep_blueprint,
+    "data_asset": _prep_data_asset,
+    "data_table": _prep_data_table,
+    "material_instance": _prep_material_instance,
+    "widget_blueprint": _prep_widget_blueprint,
 }
 
 
 def _op_asset_create(args):
     """Create an asset of `kind` at `dest`. An existing asset is a CONFLICT unless
-    replace=true (the replace op), which deletes it first — never UE's interactive
-    overwrite prompt."""
+    replace=true (the replace op), which deletes it — only after every input has
+    been validated — and never via UE's interactive overwrite prompt."""
     kind = args.get("kind")
-    make = _ASSET_KINDS.get(kind)
-    if make is None:
+    prep = _ASSET_KINDS.get(kind)
+    if prep is None:
         raise _V2Error("BAD_VALUE", "kind must be one of %s (got %r)" % (", ".join(sorted(_ASSET_KINDS)), kind))
     dest = _v2_dest(args)
     eal = unreal.EditorAssetLibrary
+    exists = eal.does_asset_exist(dest)
+    if exists and not args.get("replace"):
+        raise _V2Error("CONFLICT", "%s already exists (op=replace overwrites it)" % dest, asset=dest)
+    make = prep(args, dest)  # raises before anything is deleted
     replaced = False
-    if eal.does_asset_exist(dest):
-        if not args.get("replace"):
-            raise _V2Error("CONFLICT", "%s already exists (op=replace overwrites it)" % dest, asset=dest)
+    if exists:
         if not eal.delete_asset(dest):
             raise _V2Error("EDITOR_ERROR", "could not delete the existing %s (referenced or checked out?)" % dest)
         replaced = True
-    out = make(args, dest)
+    out = make()
     if isinstance(out, dict) and "error" in out:
+        if replaced:
+            out = dict(out, details={"deleted": dest})
         return out
     out = dict(out or {})
     out.update({"asset": dest, "kind": kind, "replaced": replaced})
@@ -131,9 +150,9 @@ def _op_widget_render_v2(args):
     wc = args.get("widget_class") or ""
     if not wc:
         raise _V2Error("BAD_VALUE", "widget_class is required")
-    out_dir = os.path.join(unreal.Paths.project_saved_dir(), "MCP", "WidgetRenders")
-    os.makedirs(out_dir, exist_ok=True)
+    out_dir = _saved_mcp_dir("WidgetRenders")
     stem = re.sub(r"[^A-Za-z0-9_]+", "_", wc.strip("/")) or "widget"
+    stem += "_%d" % int(time.time() * 1000)  # render -> edit -> render keeps the "before" image
     out = _op_widget_render({"widget_class": wc, "out_path": os.path.join(out_dir, stem + ".png"),
                              "width": int(args.get("width", 1280)), "height": int(args.get("height", 720))})
     if "error" in out:

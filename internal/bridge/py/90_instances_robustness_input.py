@@ -3,7 +3,11 @@
 def _iter_ism_components(world_sel, tag, mesh_filter):
     """Yield (actor, component) for every Instanced/Hierarchical-ISM component,
     optionally filtered by a component tag and/or static-mesh path substring."""
-    if world_sel == "game":
+    if world_sel == "auto":
+        world_sel = "pie" if _game_world() else "editor"
+    elif world_sel not in ("editor", "game", "pie"):
+        raise _V2Error("BAD_VALUE", "world must be editor, pie or auto (got %r)" % (world_sel,))
+    if world_sel in ("game", "pie"):
         world = _game_world()
         actors = unreal.GameplayStatics.get_all_actors_of_class(world, unreal.Actor) if world else []
     else:

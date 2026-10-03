@@ -22,17 +22,20 @@ func assetSpecs() []*spec.Spec {
 		reflectSpec(), projectConfigSpec(), projectMapSpec(), widgetQuerySpec(), widgetEditSpec()}
 }
 
-// pngContent reads a PNG the editor wrote (same machine) as image content; a file
-// that cannot be read yields no image (the result still carries its path).
-func pngContent(path string) []mcp.Content {
+// attachPNG adds the PNG the editor wrote (same machine) to the result as image
+// content. A file that cannot be read is reported as data["image_error"] rather than
+// silently omitted.
+func attachPNG(res *spec.Result, data map[string]any, path string) {
 	if path == "" {
-		return nil
+		data["image_error"] = "the editor reported no image path"
+		return
 	}
-	data, err := os.ReadFile(path)
-	if err != nil || len(data) == 0 {
-		return nil
+	img, err := os.ReadFile(path)
+	if err != nil || len(img) == 0 {
+		data["image_error"] = fmt.Sprintf("could not read %s: %v", path, err)
+		return
 	}
-	return []mcp.Content{&mcp.ImageContent{Data: data, MIMEType: "image/png"}}
+	res.Content = append(res.Content, &mcp.ImageContent{Data: img, MIMEType: "image/png"})
 }
 
 // rename copies args[from] to out[to] when present.
@@ -166,7 +169,11 @@ func assetQuerySpec() *spec.Spec {
 				res.Summary = fmt.Sprintf("%v assets", out["total"])
 			case "thumbnail":
 				p, _ := out["thumbnail_path"].(string)
-				res.Content = pngContent(p)
+				if out["rendered"] == false {
+					out["image_error"] = fmt.Sprint("the thumbnail did not render: ", out["render_error"])
+				} else {
+					attachPNG(res, out, p)
+				}
 				res.Summary = fmt.Sprintf("%v: %v tris, %v LODs", a["asset"], out["num_tris_lod0"], out["num_lods"])
 			default:
 				res.Summary = fmt.Sprintf("%s %v", c.Op.Name, a["asset"])
@@ -300,8 +307,12 @@ func assetImport(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	switch c.Op.Name {
 	case "files":
 		var missing []string
-		for _, f := range in.Files {
-			if st, err := os.Stat(f); err != nil || st.IsDir() {
+		for i, f := range in.Files {
+			abs, err := filepath.Abs(f) // the editor resolves relative paths from its own cwd
+			if err == nil {
+				in.Files[i] = abs
+			}
+			if st, err := os.Stat(in.Files[i]); err != nil || st.IsDir() {
 				missing = append(missing, f)
 			}
 		}
@@ -343,7 +354,7 @@ func assetImport(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 
 type reflectIn struct {
 	Op         string   `json:"op" jsonschema:"object | class | enum"`
-	Actor      string   `json:"actor,omitempty" jsonschema:"object: label, object path, @gamestate or @pawn"`
+	Actor      string   `json:"actor,omitempty" jsonschema:"object: label, object path, or in PIE @gamestate, @pawn or @controller"`
 	World      string   `json:"world,omitempty" jsonschema:"object: editor (default) | pie | auto"`
 	Class      string   `json:"class,omitempty" jsonschema:"class: /Script path, /Game Blueprint, Module.Class or short name"`
 	Enum       string   `json:"enum,omitempty" jsonschema:"enum: a UENUM(BlueprintType) name (e.g. EWaveState) or a UserDefinedEnum asset path"`
@@ -540,7 +551,9 @@ func widgetQuerySpec() *spec.Spec {
 				return nil, err
 			}
 			p, _ := out["path"].(string)
-			return &spec.Result{Data: out, Content: pngContent(p), Summary: "rendered " + fmt.Sprint(c.Args["class"])}, nil
+			res := &spec.Result{Data: out, Summary: "rendered " + fmt.Sprint(c.Args["class"])}
+			attachPNG(res, out, p)
+			return res, nil
 		},
 	}
 }

@@ -169,12 +169,18 @@ def _editor_world():
 
 
 def _pick_world(which):
-    """which in {auto, editor, game}. 'auto' prefers the running game world."""
+    """which in {editor, pie, auto} ("game" is the v1 spelling of pie). "auto"
+    prefers the running game world. An unknown value is an error, never a silent
+    fallback (plan §2.7 item 1). Returns None when that world is not open."""
+    if which == "game":
+        which = "pie"
     if which == "editor":
         return _editor_world()
-    if which == "game":
+    if which == "pie":
         return _game_world()
-    return _game_world() or _editor_world()
+    if which in (None, "", "auto"):
+        return _game_world() or _editor_world()
+    raise _V2Error("BAD_VALUE", "world must be editor, pie or auto (got %r)" % (which,))
 
 
 def _actor_bounds_aabb(actors):

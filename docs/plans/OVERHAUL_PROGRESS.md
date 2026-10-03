@@ -466,3 +466,109 @@ Behaviour fixes riding along:
 - `go test ./...` all pass; `-race` on tools/e2e/bridge passes.
 - pytest: 35 passed. ruff in the CI form: clean.
 - Golden regenerated (97 tools).
+
+**Gate P5a-fixes + P5b, round 2: P5a-fixes A-, P5b B.** Fixed:
+1. *`asset_create op=replace` deleted the asset before validating its inputs.* A mistyped class would cost the
+   user the asset. Each kind is now a *preparer* that resolves every class, parent material, texture parameter and
+   row struct and returns the creation step. The delete happens only after all of them succeed. pytest pins
+   `deleted == []` for a bad class, a bad parent and a bad row_struct.
+2. *A failed `static_mesh` spawn left the actor behind.* An editor transaction commits on an exception. The mesh is
+   now loaded before the spawn, and any failure after the spawn destroys the actor before re-raising. pytest asserts
+   the level is unchanged.
+3. *Image paths were likely relative.* `Paths.project_saved_dir()` is FPaths-relative to Engine/Binaries. All
+   server-owned output now goes through `_saved_mcp_dir` (`convert_relative_path_to_full`). If the Go side cannot
+   read a PNG it says so in `image_error` instead of silently returning no image.
+
+Non-blocking findings, also fixed:
+- widget renders get a timestamped name, so render → edit → render keeps the "before" image;
+- `@controller` alias (v1 reflect target `playercontroller`);
+- thumbnail reports the maps it `dirtied`;
+- stale pyops notes fixed and the dead `viewport_set` console escalation removed;
+- `asset_import files` passes absolute paths to the editor.
+
+Kept: `asset_query search` takes one `folder`. T4 checklist addition: replace → create at the same path in one tick
+(GC of the deleted object).
+
+## P5c — pie / pie_observe / pie_wait / world_query / snapshot* / screenshot / capture / scene* / audio
+
+**Landed** in `internal/tools/v2_play.go`, `internal/bridge/py/97_v2_play.py` and `internal/snapshot/store.go`. Eleven
+tools, listed below; `pie_observe` and `pie_wait` are single-op.
+
+| Tool | Ops | Notes |
+|---|---|---|
+| `pie` | start, stop, input | start/stop poll `editor_ping` until the state really flips; TIMEOUT has a hint |
+| `pie_observe` | — | + `pawn` and `missing` |
+| `pie_wait` | — | |
+| `world_query` | line_trace, sphere_overlap, nav_path, project_point, instances_count, instances_list | |
+| `snapshot` | take, diff, list, digest | |
+| `snapshot_restore` | — | |
+| `screenshot` | viewport, pie, orbit | |
+| `capture` | start, status, stop, read, clear | |
+| `scene` | apply, check, preview, env_preset | |
+| `scene_clear` | all, prune | |
+| `audio` | capture_start, capture_stop, play | |
+
+31 v1 tools are retired (`scene_clear` keeps its name). The stdio surface is **77 tools**.
+
+**§2.5 snapshot store.** Snapshots are Go-owned files at `Saved/MCP/snapshots/<name>.json`, written atomically.
+Names are validated with no separators, so a name cannot become a path.
+- `snapshot_actors` (§2.7 item 5) returns path, label, class, tags and the full transform.
+- *World Partition* (§2.7 item 10): the snapshot also records the actors World Partition knows about
+  (`WorldPartitionBlueprintLibrary.get_actor_descs`) but had not loaded. `Diff` (`internal/snapshot`, unit-tested)
+  matches by **object path**, so a relabel is not an add/remove and a reused label is not "unchanged". An actor
+  whose counterpart sat in an unloaded cell is `unknown`, never `removed`/`added`. Rotation differences wrap at
+  360°, and changes under the tolerance are not moves.
+- `snapshot_restore` restores transforms matched by path, as **one undo step** (`_transaction` + `modify`). It
+  reports `not_restored {added, removed}`; v1 matched by label and silently picked one of two "Twin"s.
+- The in-memory `level_snapshot` token mechanism and the label-keyed `scene_snapshot` files are deleted.
+
+**Hazards closed (P3a list):**
+- *scene_apply label collision.* `scene apply` matches only actors tagged `mcp_scene:<id>`. A hand-placed actor that
+  shares a spec label is never adopted or overwritten: the scene actor is spawned beside it, with a warning.
+- *prune split out* (§2.7 item 11). `scene apply` never deletes; `scene_clear op=prune` (Destructive) is its own
+  transaction, plus `dry_run`.
+- *Output paths.* Capture sessions and snapshot names are validated in Go and in Python. Screenshot filenames must be
+  bare `.png` names. Audio writes to `Saved/MCP/audio`. `capture clear` needs exactly one of `session` / `all=true`
+  and only touches `Saved/MCP/capture` plus `Saved/Screenshots/mcp_*`.
+- *Capture actors dirty the level.* Screenshots, captures, orbit and thumbnails report the map packages they
+  dirtied (`dirtied`).
+- *`_pick_world` silent fallback* (§2.7 item 1, everywhere now). An unknown world is `BAD_VALUE`, `pie` is the
+  canonical name, and instance queries understand `auto`.
+
+**Deviations, each justified:**
+- `world_query` op names are the ones v1 actually implemented: `line_trace`, `sphere_overlap`, `nav_path`,
+  `project_point` (the table's raycast/los/overlap were placeholders).
+- `screenshot op=orbit` is editor-world only. Its capture actors are spawned through the editor subsystem, so the
+  v1 `world` parameter never worked for PIE.
+- `screenshot`/`capture` are Ephemeral, not RO: they spawn capture actors and write files.
+- `capture clear` requires an explicit `all=true` to delete everything.
+- `pie_wait` keeps polling through `NOT_IN_PIE` (PIE starting up) and fails fast on any other non-retryable error.
+
+**Tests.**
+- Go unit (`internal/snapshot`): path matching, relabel vs reuse, tolerance and wrap, WP unknown, store round trip,
+  name validation.
+- pytest (47 passing) covers:
+  - strict `_pick_world`; idempotent pie start/stop; `pie_observe` NOT_IN_PIE and `missing`;
+  - `snapshot_actors`, including the WP unloaded list;
+  - restore by path for duplicate labels, as one undo step;
+  - scene apply never adopting a hand-placed actor; tag-scoped prune;
+  - confined output names; the absolute saved dir; audio being PIE-only.
+- T1 (`v2_play_test.go`) covers:
+  - pie start/stop waiting for the state flip;
+  - `pie_wait` met:false without PIE, met:true in PIE, and a bad predicate;
+  - snapshot take → move + spawn → diff (moved A, added C) → restore → diff clean → list;
+  - snapshot guards (path-like name, missing name, no project);
+  - `capture clear` confinement (a file outside the dir survives);
+  - scene_clear prune with dry run and the keep set; scene apply rejecting prune and a bad spec;
+  - preview offline.
+- The v1 `timeout_s` test now pins that `pie_wait timeout_s:1` answers `met:false`, not TIMEOUT.
+
+**Noted for P5d:** `eval.ParsePredicate` accepts `a >>> 1` (it parses as `>`). The predicate grammar should reject
+unknown operators. The playtest/scenario tools still dispatch `pie_exec`, which stays registered until P5d moves
+their beats to `actor_call`.
+
+**Evidence.**
+- `go vet ./...` clean; gofmt clean.
+- `go test ./...` all pass; `-race` on tools/e2e/bridge/snapshot passes.
+- pytest: 47 passed. ruff in the CI form: clean.
+- Golden regenerated (77 tools).

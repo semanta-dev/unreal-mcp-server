@@ -60,9 +60,16 @@ def test_editor_spawn_is_one_undo_step(v2, ue):
     assert [k for k, _ in ue.tx] == ["begin", "end"]
 
 
-def test_spawn_missing_static_mesh_is_not_found(v2, ue):
+def test_failed_spawn_leaves_the_level_unchanged(v2, ue):
     e = err(v2, "actor_spawn", {"world": "editor", "class": "StaticMeshActor", "static_mesh": "/Game/Nope"})
-    assert e["code"] == "NOT_FOUND"
+    assert e["code"] == "NOT_FOUND" and ue.editor_actors == []
+    ue.assets["/Game/SM_Rock"] = object()
+    # A class with no StaticMeshComponent: spawned, then destroyed before the error.
+    e = err(v2, "actor_spawn", {"world": "editor", "class": "Actor", "static_mesh": "/Game/SM_Rock", "label": "X"})
+    assert e["code"] == "BAD_VALUE" and ue.editor_actors == []
+    res = ok(v2, "actor_spawn", {"world": "editor", "class": "StaticMeshActor", "static_mesh": "/Game/SM_Rock"})
+    assert len(ue.editor_actors) == 1 and ue.editor_actors[0].comp.mesh is ue.assets["/Game/SM_Rock"]
+    assert res["spawned"]["class"] == "StaticMeshActor"
 
 
 def test_pie_spawn_unsupported(v2, ue):
@@ -158,7 +165,8 @@ def test_class_resolver_branches(v2, ue):
 def test_asset_create_conflict_and_replace(v2, ue):
     m = v2["_mcp2"]
     made = []
-    m._ASSET_KINDS["blueprint"] = lambda args, dest: made.append(dest) or ue.assets.__setitem__(dest, object()) or {"created": dest}
+    m._ASSET_KINDS["blueprint"] = lambda args, dest: (
+        lambda: made.append(dest) or ue.assets.__setitem__(dest, object()) or {"created": dest})
     ue.assets["/Game/BP/BP_A"] = object()
     e = err(v2, "asset_create", {"kind": "blueprint", "dest": "/Game/BP/BP_A", "class": "Actor"})
     assert e["code"] == "CONFLICT" and made == [] and ue.deleted == []
@@ -166,6 +174,18 @@ def test_asset_create_conflict_and_replace(v2, ue):
     assert res["replaced"] is True and ue.deleted == ["/Game/BP/BP_A"] and made == ["/Game/BP/BP_A"]
     res = ok(v2, "asset_create", {"kind": "blueprint", "dest": "/Game/BP/BP_B", "class": "Actor"})
     assert res["replaced"] is False and res["asset"] == "/Game/BP/BP_B"
+
+
+def test_replace_validates_everything_before_deleting(v2, ue):
+    ue.assets["/Game/BP/BP_Hero"] = object()
+    e = err(v2, "asset_create", {"kind": "blueprint", "dest": "/Game/BP/BP_Hero", "class": "BP_Heroo", "replace": True})
+    assert e["code"] == "CLASS_UNRESOLVED" and ue.deleted == [] and "/Game/BP/BP_Hero" in ue.assets
+    ue.assets["/Game/M/MI"] = object()
+    e = err(v2, "asset_create", {"kind": "material_instance", "dest": "/Game/M/MI", "parent": "/Game/M/Nope", "replace": True})
+    assert e["code"] == "NOT_FOUND" and ue.deleted == []
+    ue.assets["/Game/DT/DT"] = object()
+    e = err(v2, "asset_create", {"kind": "data_table", "dest": "/Game/DT/DT", "row_struct": "/Script/Game.Nope", "replace": True})
+    assert e["code"] == "NOT_FOUND" and ue.deleted == []
 
 
 def test_asset_create_validates_dest_and_kind(v2, ue):

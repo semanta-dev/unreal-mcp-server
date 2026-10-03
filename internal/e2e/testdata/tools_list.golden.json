@@ -522,6 +522,46 @@
     {
       "annotations": {
         "destructiveHint": false,
+        "openWorldHint": true,
+        "title": "Game audio"
+      },
+      "description": "Listen to the running game (PIE only; audio renders only in play; needs the UnrealMCP plugin).\n- op=capture_start: record the main submix's RMS/peak envelope.\n- op=capture_stop: stop → {path, points, max_rms, duration} (feeds design_audit kind=audio_audit).\n- op=play: play `sound` as a known test signal.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "description": "capture_start | capture_stop | play",
+            "enum": [
+              "capture_start",
+              "capture_stop",
+              "play"
+            ],
+            "type": "string"
+          },
+          "session": {
+            "description": "capture_start: a session name",
+            "type": "string"
+          },
+          "sound": {
+            "description": "play: a sound asset path",
+            "type": "string"
+          },
+          "volume": {
+            "description": "play: volume multiplier (default 1)",
+            "type": "number"
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "type": "object"
+      },
+      "name": "audio",
+      "title": "Game audio"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
         "openWorldHint": true
       },
       "description": "Run the audio Layer-A deterministic audit (readonly) against an RMS track and gameplay events.",
@@ -607,46 +647,6 @@
         "type": "object"
       },
       "name": "audio_audit"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Start tapping the game's main audio submix during PIE, recording an RMS/peak envelope. Requires a running play session. Pair with audio_capture_stop; the envelope feeds audio_audit to certify a build is not silent.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "session": {
-            "type": "string"
-          },
-          "world": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "audio_capture_start"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Stop the audio submix tap and write \u003csession\u003e_audio.jsonl ({t,rms,peak} per buffer) to out_dir. Returns {path,points,max_rms,duration}.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "out_dir": {
-            "type": "string"
-          },
-          "world": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "audio_capture_stop"
     },
     {
       "annotations": {
@@ -761,72 +761,52 @@
     {
       "annotations": {
         "destructiveHint": false,
-        "openWorldHint": true
+        "openWorldHint": true,
+        "title": "Record frames"
       },
-      "description": "Delete MCP capture files from disk (a specific session, or all of them) so runs don't accumulate frames. Clears both Saved/MCP/capture and the mcp_* pie_highres screenshots.",
+      "description": "Film the world: an in-editor recorder saves a frame + observed state every interval_s with no per-frame round trip.\n- op=start → session.  - op=status: frames so far.\n- op=stop: ONE contact-sheet image + a timeline (per-frame world time, state, cell).\n- op=read: a contact sheet of a past session or a `path` of frames.\n- op=clear: delete one session's files, or all=true for every MCP capture (Saved/MCP/capture only).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "session": {
-            "description": "a specific capture session to delete; empty = clear ALL MCP captures",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "capture_clear"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Start an in-editor recorder that captures a screenshot + observed game state every interval_s to disk (no per-frame round-trip). Use scene_capture for editor/simulate, pie_highres for possessed PIE. Stop with capture_stop.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
+          "all": {
+            "description": "clear: delete EVERY MCP capture (instead of one session)",
+            "type": "boolean"
+          },
           "camera_actor": {
-            "description": "actor label to ride when camera_mode=actor",
+            "description": "start camera_mode=actor: the actor label to ride",
             "type": "string"
           },
           "camera_fov": {
-            "description": "field of view for game_scene fixed/player capture; default 90",
+            "description": "start source=game_scene: field of view (default 90)",
             "type": "number"
           },
-          "camera_location": {
-            "description": "[x,y,z] for camera_mode=fixed",
-            "items": {
-              "type": "number"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
           "camera_mode": {
-            "description": "viewport (follow editor viewport; default) | fixed | actor",
+            "description": "start: viewport (default; follow the editor camera) | fixed | actor",
+            "enum": [
+              "viewport",
+              "fixed",
+              "actor"
+            ],
             "type": "string"
           },
-          "camera_rotation_pyr": {
-            "description": "[pitch,yaw,roll] for camera_mode=fixed",
-            "items": {
-              "type": "number"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
           "cell_height": {
-            "description": "per-frame height; default 270",
+            "description": "start: frame height (default 270)",
             "type": "integer"
           },
           "cell_width": {
-            "description": "per-frame width; default 480",
+            "description": "start: frame width (default 480)",
             "type": "integer"
           },
+          "cols": {
+            "description": "stop/read: contact-sheet columns (default 8 / 6)",
+            "type": "integer"
+          },
+          "draw_labels": {
+            "description": "stop: stamp each frame's world time",
+            "type": "boolean"
+          },
           "exclude": {
-            "description": "observe: property exclude globs",
+            "description": "start: observed property exclude globs",
             "items": {
               "type": "string"
             },
@@ -835,8 +815,12 @@
               "array"
             ]
           },
+          "glob": {
+            "description": "read: file pattern within the directory (default *)",
+            "type": "string"
+          },
           "include": {
-            "description": "observe: property include globs",
+            "description": "start: observed property include globs",
             "items": {
               "type": "string"
             },
@@ -846,23 +830,58 @@
             ]
           },
           "include_ui": {
-            "description": "game_scene only: capture the composited on-screen viewport INCLUDING the Slate/UMG HUD (needs a visible/rendering window). Default false = 3D scene only (backgrounded-safe, no HUD).",
+            "description": "start source=game_scene: include the HUD (needs a visible window)",
             "type": "boolean"
           },
           "interval_s": {
-            "description": "seconds between frames; default 0.25",
+            "description": "start: seconds between frames (default 0.25)",
             "type": "number"
           },
+          "location": {
+            "description": "start camera_mode=fixed: [x, y, z]",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "mark_cells": {
+            "description": "stop: frame indices to outline in red",
+            "items": {
+              "type": "integer"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "max_frames": {
-            "description": "auto-stop after this many frames; default 240",
+            "description": "start: auto-stop after this many frames (default 240)",
             "type": "integer"
           },
           "max_seconds": {
-            "description": "auto-stop after this many seconds; default 60",
+            "description": "start: auto-stop after this many seconds (default 60)",
             "type": "number"
           },
+          "op": {
+            "description": "start | status | stop | read | clear",
+            "enum": [
+              "start",
+              "status",
+              "stop",
+              "read",
+              "clear"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "description": "read: a directory of frames on disk instead of a session",
+            "type": "string"
+          },
           "properties": {
-            "description": "observe: exact property names",
+            "description": "start: exact observed properties",
             "items": {
               "type": "string"
             },
@@ -871,16 +890,31 @@
               "array"
             ]
           },
+          "rotation": {
+            "description": "start camera_mode=fixed: [pitch, yaw, roll]",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "session": {
-            "description": "a session id to reuse; omit to auto-generate",
+            "description": "start: a session id (default generated); status/stop/read/clear: the session",
             "type": "string"
           },
           "source": {
-            "description": "scene_capture (editor/simulate, backgrounded-safe; default) | pie_highres (possessed PIE, needs a foreground viewport) | game_scene (live PIE via the UnrealMCP C++ plugin — renders backgrounded)",
+            "description": "start: scene_capture (default; editor/simulate, works backgrounded) | pie_highres (possessed PIE, needs a visible viewport) | game_scene (live PIE via the UnrealMCP plugin, works backgrounded)",
+            "enum": [
+              "scene_capture",
+              "pie_highres",
+              "game_scene"
+            ],
             "type": "string"
           },
           "track_actors": {
-            "description": "actor labels to record detailed per-frame state for",
+            "description": "start: actor labels to record per-frame state for",
             "items": {
               "type": "string"
             },
@@ -890,73 +924,21 @@
             ]
           },
           "world": {
-            "description": "auto|editor|game; default auto (game world if in PIE)",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "capture_start"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "One-shot status of a running capture (frames captured so far, last world time). Does NOT block or poll — the recorder owns cadence.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "session": {
-            "description": "the capture session id",
+            "description": "start: editor (default) | pie",
+            "enum": [
+              "editor",
+              "pie"
+            ],
             "type": "string"
           }
         },
         "required": [
-          "session"
+          "op"
         ],
         "type": "object"
       },
-      "name": "capture_status"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Stop a capture recorder and return a single contact-sheet montage image plus a synchronized timeline (per-frame world time + observed state, each mapped to a montage cell).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "cols": {
-            "description": "montage columns; default 8",
-            "type": "integer"
-          },
-          "draw_labels": {
-            "description": "stamp each frame's world time into its cell",
-            "type": "boolean"
-          },
-          "mark_cells": {
-            "description": "frame indices to flag with a red border",
-            "items": {
-              "type": "integer"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "session": {
-            "description": "the capture session id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "session"
-        ],
-        "type": "object"
-      },
-      "name": "capture_stop"
+      "name": "capture",
+      "title": "Record frames"
     },
     {
       "annotations": {
@@ -1195,52 +1177,6 @@
         "type": "object"
       },
       "name": "decision_audit"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Lint the current level's design invariants (lighting, missing meshes, player start, nav bounds) via one probe. Catches the failures that make a level unplayable/black before a playtest.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "checks": {
-            "additionalProperties": false,
-            "description": "explicit invariants to require (overrides the spec's checks)",
-            "properties": {
-              "require_environment_lit": {
-                "type": "boolean"
-              },
-              "require_nav_bounds": {
-                "type": "boolean"
-              },
-              "require_no_missing_meshes": {
-                "type": "boolean"
-              },
-              "require_player_start": {
-                "type": "boolean"
-              },
-              "spawns_within_bounds": {
-                "type": "boolean"
-              }
-            },
-            "type": [
-              "null",
-              "object"
-            ]
-          },
-          "spec_json": {
-            "type": "string"
-          },
-          "spec_path": {
-            "description": "a spec whose checks block to evaluate",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "design_check"
     },
     {
       "annotations": {
@@ -1495,42 +1431,6 @@
         "type": "object"
       },
       "name": "editor_restart"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Apply a lighting/sky/exposure preset (daytime_clear|overcast|dusk|night|studio) as scene-managed actors, with the sun always correctly pitched down so the level is lit (not black).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "overrides": {
-            "additionalProperties": true,
-            "description": "e.g. {sun_rotation_pyr:[-45,30,0], sun_intensity_lux:75000, exposure_ev100:11}",
-            "type": "object"
-          },
-          "preset": {
-            "description": "daytime_clear|overcast|dusk|night|studio",
-            "type": "string"
-          },
-          "save": {
-            "type": [
-              "null",
-              "boolean"
-            ]
-          },
-          "scene_id": {
-            "description": "scene id to namespace the env actors; default 'env'",
-            "type": "string"
-          }
-        },
-        "required": [
-          "preset"
-        ],
-        "type": "object"
-      },
-      "name": "env_preset_apply"
     },
     {
       "annotations": {
@@ -1862,66 +1762,6 @@
     },
     {
       "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Count HISM/ISM instances (which list_actors and pie_observe.counts are blind to — a whole city can live as instances in ONE actor), grouped by mesh, filterable by component tag.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "limit": {
-            "description": "instances_list cap; default 8192",
-            "type": "integer"
-          },
-          "mesh": {
-            "description": "restrict to components whose static-mesh path contains this substring",
-            "type": "string"
-          },
-          "tag": {
-            "description": "restrict to ISM/HISM components carrying this component tag (e.g. 'static')",
-            "type": "string"
-          },
-          "world": {
-            "description": "editor|game; default editor",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "instances_count"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "List HISM/ISM instance transforms (mesh, loc, rot, scale) — the instance-level content list.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "limit": {
-            "description": "instances_list cap; default 8192",
-            "type": "integer"
-          },
-          "mesh": {
-            "description": "restrict to components whose static-mesh path contains this substring",
-            "type": "string"
-          },
-          "tag": {
-            "description": "restrict to ISM/HISM components carrying this component tag (e.g. 'static')",
-            "type": "string"
-          },
-          "world": {
-            "description": "editor|game; default editor",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "instances_list"
-    },
-    {
-      "annotations": {
         "destructiveHint": false,
         "openWorldHint": true
       },
@@ -1990,92 +1830,6 @@
     },
     {
       "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Preview where a layout (grid|ring|line|scatter) would place instances — a pure planning tool that returns locations/rotations without touching the editor.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "layout": {
-            "additionalProperties": false,
-            "description": "a layout block: {type:grid|ring|line|scatter, ...params}",
-            "properties": {
-              "align_to_center": {
-                "type": "boolean"
-              },
-              "center": {
-                "items": {
-                  "type": "number"
-                },
-                "maxItems": 3,
-                "minItems": 3,
-                "type": "array"
-              },
-              "cols": {
-                "type": "integer"
-              },
-              "count": {
-                "type": "integer"
-              },
-              "end": {
-                "items": {
-                  "type": "number"
-                },
-                "maxItems": 3,
-                "minItems": 3,
-                "type": "array"
-              },
-              "extent": {
-                "items": {
-                  "type": "number"
-                },
-                "maxItems": 3,
-                "minItems": 3,
-                "type": "array"
-              },
-              "radius": {
-                "type": "number"
-              },
-              "rows": {
-                "type": "integer"
-              },
-              "seed": {
-                "type": "integer"
-              },
-              "spacing": {
-                "type": "number"
-              },
-              "start": {
-                "items": {
-                  "type": "number"
-                },
-                "maxItems": 3,
-                "minItems": 3,
-                "type": "array"
-              },
-              "start_angle_deg": {
-                "type": "number"
-              },
-              "type": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "type"
-            ],
-            "type": "object"
-          }
-        },
-        "required": [
-          "layout"
-        ],
-        "type": "object"
-      },
-      "name": "layout_preview"
-    },
-    {
-      "annotations": {
         "destructiveHint": false,
         "openWorldHint": true,
         "title": "Level"
@@ -2109,36 +1863,6 @@
       },
       "name": "level",
       "title": "Level"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Diff the current level against a snapshot token: added, removed, and moved actors (verify a recipe did what was intended).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "before_token": {
-            "description": "a token from level_snapshot; empty = diff vs the most recent snapshot",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "level_diff"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Capture a snapshot of the current level's actors; returns a token for a later level_diff.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "type": "object"
-      },
-      "name": "level_snapshot"
     },
     {
       "annotations": {
@@ -2417,26 +2141,6 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read the player pawn's location, velocity, and speed in the running PIE world. Sample it across an injected-input window (pie_input) to observe the verb responding — the frame-level feel read behind verb_response.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "player": {
-            "type": "integer"
-          },
-          "world": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "pawn_state"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
       "description": "Parse a CsvProfiler CSV into frame-time percentiles (p50/p95/p99/max, hitch count) or a memreport dump into memory buckets — perf as DATA for a rubric, not viewport text.",
       "inputSchema": {
         "additionalProperties": false,
@@ -2459,44 +2163,74 @@
     },
     {
       "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "title": "Play In Editor"
       },
-      "description": "Synthesize input into the running game (PIE): tap/hold a key or button so an agent can actually PLAY — hold W to walk the pawn, tap SpaceBar to jump, click to fire. Legacy action+axis mappings fire as if a human pressed the key. Needs the UnrealMCP plugin compiled in.",
+      "description": "Run the game inside the editor and drive it.\n- op=start: begin PIE (simulate=true: no possessed player); waits until it is running.\n- op=stop: end PIE; waits until it has stopped. Everything changed in the pie world is discarded.\n- op=input: tap/press/release/hold `key` as if a player did (needs the UnrealMCP plugin), e.g. hold W to walk.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "action": {
-            "description": "tap (press+auto-release) | press | release | hold | release_all; default tap",
+            "description": "input: tap (default) | press | release | hold | release_all",
+            "enum": [
+              "tap",
+              "press",
+              "release",
+              "hold",
+              "release_all"
+            ],
             "type": "string"
           },
           "duration_s": {
-            "description": "for action=hold: seconds to hold the key; default 1.0",
+            "description": "input action=hold: seconds (default 1)",
             "type": "number"
           },
           "key": {
-            "description": "UE key name: W, A, S, D, SpaceBar, LeftMouseButton, Gamepad_FaceButton_Bottom, etc.",
+            "description": "input: UE key name — W, A, S, D, SpaceBar, LeftMouseButton, Gamepad_FaceButton_Bottom, ...",
             "type": "string"
+          },
+          "op": {
+            "description": "start | stop | input",
+            "enum": [
+              "start",
+              "stop",
+              "input"
+            ],
+            "type": "string"
+          },
+          "simulate": {
+            "description": "start: Simulate In Editor (the world runs, no player is possessed)",
+            "type": "boolean"
+          },
+          "wait": {
+            "description": "start/stop: wait until PIE is actually running/stopped (default true)",
+            "type": [
+              "null",
+              "boolean"
+            ]
           }
         },
         "required": [
-          "key"
+          "op"
         ],
         "type": "object"
       },
-      "name": "pie_input"
+      "name": "pie",
+      "title": "Play In Editor"
     },
     {
       "annotations": {
         "openWorldHint": true,
-        "readOnlyHint": true
+        "readOnlyHint": true,
+        "title": "Observe the running game"
       },
-      "description": "Read live PIE game-world state: gamestate fields (allowlisted), a class histogram (counts), and detailed state for actors_of_interest. Only valid during PIE.",
+      "description": "Read the running game (PIE): gamestate properties (discovered by reflection), a class histogram `counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. The output schema is what pie_wait predicates address (gamestate.\u003cprop\u003e, counts.\u003cClass\u003e, pawn.speed).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "actors_of_interest": {
-            "description": "actor labels to read detailed state for",
+          "actors": {
+            "description": "actor labels to read detailed state for (unknown labels are listed in missing)",
             "items": {
               "type": "string"
             },
@@ -2516,7 +2250,7 @@
             ]
           },
           "include": {
-            "description": "glob patterns of gamestate/actor property names to include; default all (minus a noise list)",
+            "description": "glob patterns of property names to include (default all, minus engine noise)",
             "items": {
               "type": "string"
             },
@@ -2526,11 +2260,15 @@
             ]
           },
           "max_props": {
-            "description": "cap on discovered properties per object; default 48",
+            "description": "cap on properties per object (default 48)",
             "type": "integer"
           },
+          "pawn": {
+            "description": "include the player pawn's location, velocity and speed",
+            "type": "boolean"
+          },
           "properties": {
-            "description": "read exactly these gamestate/actor properties (preserves key names for predicate paths)",
+            "description": "read exactly these properties (keeps your key names for predicates)",
             "items": {
               "type": "string"
             },
@@ -2542,43 +2280,33 @@
         },
         "type": "object"
       },
-      "name": "pie_observe"
+      "name": "pie_observe",
+      "title": "Observe the running game"
     },
     {
       "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Wait for a game condition"
       },
-      "description": "Capture an exposure-correct PNG of the running PIE backbuffer via HighResShot. Only valid during PIE (use take_screenshot for the editor world).",
+      "description": "Poll pie_observe until `predicate` holds → {met, elapsed_s, polls, final_state}. met=false on timeout is a normal answer, not an error. Waits through PIE starting up. Read-only: to poll a UFUNCTION's result use actor_call with until.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "height": {
-            "type": "integer"
+          "interval_s": {
+            "description": "seconds between observations (default 0.25)",
+            "type": "number"
           },
-          "width": {
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "name": "pie_screenshot"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Poll pie_observe until a predicate holds or timeout. Makes PIE tests deterministic (vs sleeping). Predicate is a single comparison over the observe schema.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
+          "pawn": {
+            "description": "observe the pawn too (needed for pawn.* predicates)",
+            "type": "boolean"
+          },
           "predicate": {
-            "description": "a comparison over the pie_observe schema. gamestate keys are reflected snake_case, e.g. \"gamestate.wave_number \u003e= 2\"; counts keys are class names, e.g. \"counts.EnemyCharacter \u003e= 1\"",
+            "description": "one comparison over pie_observe output, e.g. 'gamestate.wave_number \u003e= 2', 'counts.EnemyCharacter \u003e= 1', 'pawn.speed \u003e 100'",
             "type": "string"
           },
           "properties": {
-            "description": "pin exact gamestate property key names so a predicate can use them verbatim (e.g. [\"WaveNumber\"] to match gamestate.WaveNumber)",
+            "description": "pin exact gamestate property names so the predicate can use them verbatim",
             "items": {
               "type": "string"
             },
@@ -2588,7 +2316,7 @@
             ]
           },
           "timeout_s": {
-            "description": "default 20",
+            "description": "give up after this many seconds (default 20, max 28)",
             "type": "number"
           }
         },
@@ -2597,33 +2325,8 @@
         ],
         "type": "object"
       },
-      "name": "pie_wait_until"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Play a sound cue into the running PIE world (a test signal for audio_capture / audio_audit validation).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "sound": {
-            "type": "string"
-          },
-          "volume": {
-            "type": "number"
-          },
-          "world": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "sound"
-        ],
-        "type": "object"
-      },
-      "name": "play_test_sound"
+      "name": "pie_wait",
+      "title": "Wait for a game condition"
     },
     {
       "annotations": {
@@ -3135,36 +2838,6 @@
     {
       "annotations": {
         "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "View an existing capture on disk as a contact-sheet montage — a session under Saved/MCP/capture, or an explicit dir of frames (e.g. your own capture output). Frames are decoded by content, so extensionless files work (no copy-to-.png needed).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "cols": {
-            "description": "montage columns; default 6",
-            "type": "integer"
-          },
-          "dir": {
-            "description": "an explicit directory of frames to view (overrides session)",
-            "type": "string"
-          },
-          "glob": {
-            "description": "file glob within the dir; default '*'",
-            "type": "string"
-          },
-          "session": {
-            "description": "a capture session dir under Saved/MCP/capture to view",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "read_capture"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
         "readOnlyHint": true,
         "title": "Reflect objects, classes, enums"
       },
@@ -3173,7 +2846,7 @@
         "additionalProperties": false,
         "properties": {
           "actor": {
-            "description": "object: label, object path, @gamestate or @pawn",
+            "description": "object: label, object path, or in PIE @gamestate, @pawn or @controller",
             "type": "string"
           },
           "class": {
@@ -3369,232 +3042,218 @@
     },
     {
       "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "title": "Declarative scenes"
       },
-      "description": "Realize a declarative unreal.scene/v1 spec (blockout, prefabs, layouts, lighting) idempotently in ONE editor transaction. Re-applying only updates; prune (tag-scoped) removes this scene's stale actors. dry_run returns the add/update/prune diff without mutating.",
+      "description": "Build levels from a declarative unreal.scene/v1 spec (`path` or `json`).\n- op=apply: create/update the spec's actors in one undo step and save; dry_run=true reports the diff only. ADDITIVE: actors are matched by the scene's tag (mcp_scene:\u003cid\u003e), never by label alone, and nothing is deleted (remove stale ones with scene_clear op=prune).\n- op=check: lint the level (lit, no missing meshes, PlayerStart, nav bounds).\n- op=preview: offline — where a layout would place things.\n- op=env_preset: lighting/sky/exposure preset as scene actors (the sun always points down).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "dry_run": {
-            "description": "compute the add/update/prune diff without mutating the level",
-            "type": "boolean"
-          },
-          "prune": {
-            "description": "destroy this scene's previously-applied actors that are no longer in the spec (tag-scoped; never touches hand-placed actors)",
-            "type": "boolean"
-          },
-          "save": {
-            "description": "save after applying; default true",
+          "checks": {
+            "additionalProperties": false,
+            "description": "check: invariants to require (default: lit, no missing meshes, a PlayerStart)",
+            "properties": {
+              "require_environment_lit": {
+                "type": "boolean"
+              },
+              "require_nav_bounds": {
+                "type": "boolean"
+              },
+              "require_no_missing_meshes": {
+                "type": "boolean"
+              },
+              "require_player_start": {
+                "type": "boolean"
+              },
+              "spawns_within_bounds": {
+                "type": "boolean"
+              }
+            },
             "type": [
               "null",
-              "boolean"
+              "object"
             ]
           },
-          "spec_json": {
-            "description": "the spec as inline JSON text (alternative to spec_path)",
+          "dry_run": {
+            "description": "apply: report add/update/missing assets without changing the level",
+            "type": "boolean"
+          },
+          "json": {
+            "description": "apply/check: the spec as inline JSON (instead of path)",
             "type": "string"
           },
-          "spec_path": {
-            "description": "path to a unreal.scene/v1 JSON spec file",
+          "layout": {
+            "additionalProperties": false,
+            "description": "preview: {type: grid|ring|line|scatter, ...}",
+            "properties": {
+              "align_to_center": {
+                "type": "boolean"
+              },
+              "center": {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 3,
+                "minItems": 3,
+                "type": "array"
+              },
+              "cols": {
+                "type": "integer"
+              },
+              "count": {
+                "type": "integer"
+              },
+              "end": {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 3,
+                "minItems": 3,
+                "type": "array"
+              },
+              "extent": {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 3,
+                "minItems": 3,
+                "type": "array"
+              },
+              "radius": {
+                "type": "number"
+              },
+              "rows": {
+                "type": "integer"
+              },
+              "seed": {
+                "type": "integer"
+              },
+              "spacing": {
+                "type": "number"
+              },
+              "start": {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 3,
+                "minItems": 3,
+                "type": "array"
+              },
+              "start_angle_deg": {
+                "type": "number"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": [
+              "null",
+              "object"
+            ]
+          },
+          "op": {
+            "description": "apply | check | preview | env_preset",
+            "enum": [
+              "apply",
+              "check",
+              "preview",
+              "env_preset"
+            ],
             "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "scene_apply"
-    },
-    {
-      "annotations": {
-        "destructiveHint": true,
-        "openWorldHint": true
-      },
-      "description": "Remove all actors a given scene_id previously applied (tag-scoped; leaves hand-placed actors untouched).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
+          },
+          "overrides": {
+            "additionalProperties": true,
+            "description": "env_preset: e.g. {sun_rotation_pyr: [-45, 30, 0], sun_intensity_lux: 75000, exposure_ev100: 11}",
+            "type": "object"
+          },
+          "path": {
+            "description": "apply/check: an unreal.scene/v1 spec file",
+            "type": "string"
+          },
+          "preset": {
+            "description": "env_preset: daytime_clear | overcast | dusk | night | studio",
+            "enum": [
+              "daytime_clear",
+              "overcast",
+              "dusk",
+              "night",
+              "studio"
+            ],
+            "type": "string"
+          },
           "save": {
-            "description": "save after; default true",
+            "description": "apply/env_preset: save afterwards (default true)",
             "type": [
               "null",
               "boolean"
             ]
           },
           "scene_id": {
-            "description": "the scene id whose actors to remove",
+            "description": "env_preset: scene id for the environment actors (default env)",
             "type": "string"
           }
         },
         "required": [
-          "scene_id"
+          "op"
         ],
         "type": "object"
       },
-      "name": "scene_clear"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Render a target (or the whole level) from N orbit angles into one contact-sheet montage — a quick multi-angle visual of a level/asset for design validation. Editor world (backgrounded-safe).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "cell_height": {
-            "description": "per-angle height; default 270",
-            "type": "integer"
-          },
-          "cell_width": {
-            "description": "per-angle width; default 480",
-            "type": "integer"
-          },
-          "cols": {
-            "description": "montage columns; default 4",
-            "type": "integer"
-          },
-          "elevation": {
-            "description": "camera elevation degrees above horizon; default 25 (0 = horizontal orbit)",
-            "type": [
-              "null",
-              "number"
-            ]
-          },
-          "fill": {
-            "description": "fraction of the frame the target fills; default 0.7",
-            "type": "number"
-          },
-          "fov": {
-            "description": "vertical field of view degrees; default 60",
-            "type": "number"
-          },
-          "num_angles": {
-            "description": "orbit angles to capture; default 8",
-            "type": "integer"
-          },
-          "target": {
-            "description": "actor labels/globs to frame; empty = whole level",
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "world": {
-            "description": "auto|editor|game; default editor",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "scene_contact_sheet"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Deterministic quantize+SHA1 hash over actor OR HISM/ISM instance transforms — the authored-content oracle (verify a map hashes to an expected value; instance-aware where level_diff is not).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "class_filter": {
-            "description": "actors scope: class/label substring filter",
-            "type": "string"
-          },
-          "limit": {
-            "description": "instances scope: max instances to hash; default 5,000,000 (raise for a huge HISM city)",
-            "type": "integer"
-          },
-          "mesh": {
-            "description": "instances scope: mesh-path substring filter",
-            "type": "string"
-          },
-          "pos_bucket": {
-            "description": "position quantization in world units; default 1",
-            "type": "number"
-          },
-          "rot_bucket": {
-            "description": "rotation quantization in degrees; default 1",
-            "type": "number"
-          },
-          "scope": {
-            "description": "instances (HISM/ISM) | actors; default instances",
-            "type": "string"
-          },
-          "tag": {
-            "description": "instances scope: component tag filter",
-            "type": "string"
-          },
-          "world": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "scene_digest"
-    },
-    {
-      "annotations": {
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Compile a scene spec and diff it against the current level (add/update/prune, missing asset refs) WITHOUT mutating — a dry run to review before scene_apply.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "spec_json": {
-            "type": "string"
-          },
-          "spec_path": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "scene_plan"
+      "name": "scene",
+      "title": "Declarative scenes"
     },
     {
       "annotations": {
         "destructiveHint": true,
-        "openWorldHint": true
+        "openWorldHint": true,
+        "title": "Remove scene actors"
       },
-      "description": "Reposition existing actors to their snapshot transforms (undo a move/rotate/scale experiment). Transform-only: it does NOT recreate actors deleted since the snapshot or remove ones spawned since (delete those with delete_actor / pie_destroy). Reports labels no longer present.",
+      "description": "Delete actors a scene created (only actors tagged mcp_scene:\u003cid\u003e; hand-placed actors are never touched), as one undo step, then save.\n- op=all: every actor of `scene_id`.\n- op=prune: the scene's actors whose label is not in the spec (`path` or `json`) — run after scene apply to drop stale ones. A separate step from apply, not atomic with it.\ndry_run=true lists what would go.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "name": {
-            "description": "snapshot name to restore; default 'auto'",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "scene_restore"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Save the current level's actor transforms (by label) to a named snapshot file so a MOVE/rotate/scale experiment can be undone with scene_restore. Scope is transforms only — it does not record spawns/deletes.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "class_filter": {
-            "description": "only snapshot actors matching this class/label substring",
+          "dry_run": {
+            "description": "list what would be deleted without deleting",
+            "type": "boolean"
+          },
+          "json": {
+            "description": "prune: the spec as inline JSON",
             "type": "string"
           },
-          "name": {
-            "description": "snapshot name; default 'auto'",
+          "op": {
+            "description": "all | prune",
+            "enum": [
+              "all",
+              "prune"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "description": "prune: the scene spec file (its scene_id and labels are kept)",
+            "type": "string"
+          },
+          "save": {
+            "description": "save afterwards (default true)",
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "scene_id": {
+            "description": "all: the scene whose actors to delete",
             "type": "string"
           }
         },
+        "required": [
+          "op"
+        ],
         "type": "object"
       },
-      "name": "scene_snapshot"
+      "name": "scene_clear",
+      "title": "Remove scene actors"
     },
     {
       "annotations": {
@@ -3637,32 +3296,197 @@
     {
       "annotations": {
         "destructiveHint": false,
-        "openWorldHint": true
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Screenshot"
       },
-      "description": "Start a play-in-editor session in the current level. simulate=true runs the world without possessing a player.",
+      "description": "Look at the world; returns PNG image content.\n- op=viewport: the editor world via a scene capture (works with the editor in the background).\n- op=pie: the running game's rendered screen (needs a visible game viewport).\n- op=orbit: `actors` (or the level) from num_angles angles in one contact sheet — a quick all-sides check.\nTransient capture actors may dirty the level; the result lists any map they dirtied.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "simulate": {
-            "description": "run the world without possessing a player pawn",
-            "type": "boolean"
+          "actors": {
+            "description": "orbit: actor labels or globs to frame (default: the whole level)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "cell_height": {
+            "description": "orbit: per-angle height (default 270)",
+            "type": "integer"
+          },
+          "cell_width": {
+            "description": "orbit: per-angle width (default 480)",
+            "type": "integer"
+          },
+          "cols": {
+            "description": "orbit: contact-sheet columns (default 4)",
+            "type": "integer"
+          },
+          "elevation": {
+            "description": "orbit: degrees above the horizon (default 25)",
+            "type": [
+              "null",
+              "number"
+            ]
+          },
+          "fill": {
+            "description": "orbit: fraction of the frame the target fills (default 0.7)",
+            "type": "number"
+          },
+          "fov": {
+            "description": "orbit: vertical field of view (default 60)",
+            "type": "number"
+          },
+          "height": {
+            "description": "viewport/pie: pixels (default 720 / 1080)",
+            "type": "integer"
+          },
+          "location": {
+            "description": "viewport: camera [x, y, z] (default: the editor viewport camera)",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "num_angles": {
+            "description": "orbit: angles around the target (default 8)",
+            "type": "integer"
+          },
+          "op": {
+            "description": "viewport | pie | orbit",
+            "enum": [
+              "viewport",
+              "pie",
+              "orbit"
+            ],
+            "type": "string"
+          },
+          "rotation": {
+            "description": "viewport: camera [pitch, yaw, roll]",
+            "items": {
+              "type": "number"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "width": {
+            "description": "viewport/pie: pixels (default 1280 / 1920)",
+            "type": "integer"
           }
         },
+        "required": [
+          "op"
+        ],
         "type": "object"
       },
-      "name": "start_play"
+      "name": "screenshot",
+      "title": "Screenshot"
     },
     {
       "annotations": {
         "destructiveHint": false,
-        "openWorldHint": true
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Level snapshots"
       },
-      "description": "Stop the current play-in-editor session.",
+      "description": "Record and compare the editor level (files under Saved/MCP/snapshots).\n- op=take: store `name` (default auto) — actors matched by object path, with class, tags, transform.\n- op=diff: `name` vs `against` (default: the level now) → added, removed, moved, retagged; under World Partition, actors in a cell that was not loaded are `unknown`, never removed.\n- op=list: stored snapshots.\n- op=digest: a quantized SHA1 over actor (scope=actors) or ISM/HISM instance transforms — verify a level hashes to an expected value. Does not store anything.\nUndo moves with snapshot_restore.",
       "inputSchema": {
         "additionalProperties": false,
+        "properties": {
+          "against": {
+            "description": "diff: the AFTER snapshot (default: the level right now)",
+            "type": "string"
+          },
+          "class_filter": {
+            "description": "take/digest scope=actors: only actors whose class or label contains this",
+            "type": "string"
+          },
+          "limit": {
+            "description": "digest scope=instances: max instances hashed (default 5,000,000; a larger set fails rather than hashing part of it)",
+            "type": "integer"
+          },
+          "mesh": {
+            "description": "digest scope=instances: mesh path substring filter",
+            "type": "string"
+          },
+          "name": {
+            "description": "take: snapshot name (default auto; overwrites); diff: the BEFORE snapshot",
+            "type": "string"
+          },
+          "op": {
+            "description": "take | diff | list | digest",
+            "enum": [
+              "take",
+              "diff",
+              "list",
+              "digest"
+            ],
+            "type": "string"
+          },
+          "pos_bucket": {
+            "description": "digest: position quantization in world units (default 1)",
+            "type": "number"
+          },
+          "rot_bucket": {
+            "description": "digest: rotation quantization in degrees (default 1)",
+            "type": "number"
+          },
+          "scope": {
+            "description": "digest: instances (ISM/HISM, default) | actors",
+            "enum": [
+              "instances",
+              "actors"
+            ],
+            "type": "string"
+          },
+          "tag": {
+            "description": "digest scope=instances: component tag filter",
+            "type": "string"
+          }
+        },
+        "required": [
+          "op"
+        ],
         "type": "object"
       },
-      "name": "stop_play"
+      "name": "snapshot",
+      "title": "Level snapshots"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "title": "Restore a snapshot"
+      },
+      "description": "Move every actor that still exists back to its transform in snapshot `name` (matched by object path), as one undo step, then save. TRANSFORMS ONLY: actors spawned since are not deleted and deleted actors are not recreated — both are listed in not_restored {added, removed}. For those use scene_clear or git_revert.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "the snapshot to restore (default auto)",
+            "type": "string"
+          },
+          "save": {
+            "description": "save the level afterwards (default true)",
+            "type": [
+              "null",
+              "boolean"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "name": "snapshot_restore",
+      "title": "Restore a snapshot"
     },
     {
       "annotations": {
@@ -3689,48 +3513,6 @@
         "type": "object"
       },
       "name": "style_cohesion"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "openWorldHint": true
-      },
-      "description": "Render the scene and return it as a PNG image. Uses a synchronous scene capture so it works even when the editor is backgrounded (editor world only, not during PIE).",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "camera_location": {
-            "description": "[x,y,z]; defaults to the viewport camera",
-            "items": {
-              "type": "number"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "camera_rotation_pyr": {
-            "description": "[pitch,yaw,roll]",
-            "items": {
-              "type": "number"
-            },
-            "type": [
-              "null",
-              "array"
-            ]
-          },
-          "height": {
-            "description": "default 720",
-            "type": "integer"
-          },
-          "width": {
-            "description": "default 1280",
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "name": "take_screenshot"
     },
     {
       "annotations": {
@@ -4092,14 +3874,15 @@
     {
       "annotations": {
         "openWorldHint": true,
-        "readOnlyHint": true
+        "readOnlyHint": true,
+        "title": "Spatial queries"
       },
-      "description": "Spatial verification in the game world (PIE): line_trace (is a shot/LOS clear?), sphere_overlap (what's near a point?), nav_path (can AI path A-\u003eB?), project_point (is a point on the navmesh?). Needs collision + a built navmesh.",
+      "description": "Ask the world spatial questions (world=editor default, pie, or auto). Every result echoes the world.\n- op=line_trace / sphere_overlap: collision (line of sight, what is near a point).\n- op=nav_path / project_point: navigation (needs a built navmesh).\n- op=instances_count / instances_list: ISM/HISM instances — a whole city can live as instances inside ONE actor, invisible to actor_query.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "center": {
-            "description": "[x,y,z] for sphere_overlap",
+            "description": "sphere_overlap: [x, y, z]",
             "items": {
               "type": "number"
             },
@@ -4109,7 +3892,7 @@
             ]
           },
           "end": {
-            "description": "[x,y,z] for line_trace/nav_path",
+            "description": "line_trace/nav_path: [x, y, z]",
             "items": {
               "type": "number"
             },
@@ -4118,12 +3901,28 @@
               "array"
             ]
           },
-          "kind": {
-            "description": "line_trace | sphere_overlap | nav_path | project_point",
+          "limit": {
+            "description": "instances_list: max instances (default 8192; truncated:true when cut)",
+            "type": "integer"
+          },
+          "mesh": {
+            "description": "instances_*: only components whose mesh path contains this",
+            "type": "string"
+          },
+          "op": {
+            "description": "line_trace | sphere_overlap | nav_path | project_point | instances_count | instances_list",
+            "enum": [
+              "line_trace",
+              "sphere_overlap",
+              "nav_path",
+              "project_point",
+              "instances_count",
+              "instances_list"
+            ],
             "type": "string"
           },
           "point": {
-            "description": "[x,y,z] for project_point",
+            "description": "project_point: [x, y, z]",
             "items": {
               "type": "number"
             },
@@ -4133,11 +3932,11 @@
             ]
           },
           "radius": {
-            "description": "sphere_overlap radius; default 100",
+            "description": "sphere_overlap: radius (default 100)",
             "type": "number"
           },
           "start": {
-            "description": "[x,y,z] for line_trace/nav_path",
+            "description": "line_trace/nav_path: [x, y, z]",
             "items": {
               "type": "number"
             },
@@ -4146,17 +3945,27 @@
               "array"
             ]
           },
+          "tag": {
+            "description": "instances_*: only ISM/HISM components with this component tag",
+            "type": "string"
+          },
           "world": {
-            "description": "auto|editor|game; default auto (game world in PIE)",
+            "description": "editor (default) | pie | auto",
+            "enum": [
+              "editor",
+              "pie",
+              "auto"
+            ],
             "type": "string"
           }
         },
         "required": [
-          "kind"
+          "op"
         ],
         "type": "object"
       },
-      "name": "world_query"
+      "name": "world_query",
+      "title": "Spatial queries"
     }
   ]
 }

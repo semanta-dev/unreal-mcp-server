@@ -139,8 +139,8 @@ def _op_asset_thumbnail(args):
     facts["bounds_origin"] = [b.origin.x, b.origin.y, b.origin.z]
     facts["bounds_extent"] = [b.box_extent.x, b.box_extent.y, b.box_extent.z]
 
-    out_dir = os.path.join(unreal.Paths.project_saved_dir(), "MCP", "AssetThumbs")
-    os.makedirs(out_dir, exist_ok=True)
+    out_dir = _saved_mcp_dir("AssetThumbs")
+    dirty_before = _dirty_map_names()
     fname = path.strip("/").replace("/", "_") + ".png"
     out_path = os.path.join(out_dir, fname)
 
@@ -210,6 +210,7 @@ def _op_asset_thumbnail(args):
                 pass
     facts["thumbnail_path"] = out_path
     facts["rendered"] = os.path.exists(out_path) and os.path.getsize(out_path) > 0
+    facts["dirtied"] = _dirtied_since(dirty_before)
     return facts
 
 

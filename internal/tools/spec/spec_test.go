@@ -158,19 +158,19 @@ func TestLintRules(t *testing.T) {
 		{Name: "BadName", Max: time.Second, Ops: []OpSpec{{Tier: ReadOnly}}},
 		{Name: "slow", Ops: []OpSpec{{Tier: ReadOnly}}}, // sync with no Max
 		{Name: "mixed", Max: time.Second, Ops: []OpSpec{{Name: "r", Tier: ReadOnly}, {Name: "d", Tier: Destructive}}},
-		{Name: "under", Max: time.Second, Ops: []OpSpec{{Tier: Mutating, Reaches: []string{"scene_apply"}}}}, // prune escalates
+		{Name: "under", Max: time.Second, Ops: []OpSpec{{Tier: Mutating, Reaches: []string{"widget_compose"}}}}, // prune escalates
 		{Name: "unk", Max: time.Second, Ops: []OpSpec{{Tier: Mutating, Reaches: []string{"no_such_op"}}}},
 		{Name: "autowrite", Max: time.Second, Ops: []OpSpec{{Tier: Mutating}},
 			Schema: &jsonschema.Schema{Type: "object", Properties: map[string]*jsonschema.Schema{"world": {Type: "string", Enum: []any{"editor", "auto"}}}}},
 	}
 	v := strings.Join(Lint(bad), "\n")
-	for _, want := range []string{"BadName: tool name", "slow op=\"\": sync op", "mixed: destructive/exec op mixed", "under op=\"\": declared mutating but reaches scene_apply", "unclassified python op", "autowrite: world=auto on a mutating tool"} {
+	for _, want := range []string{"BadName: tool name", "slow op=\"\": sync op", "mixed: destructive/exec op mixed", "under op=\"\": declared mutating but reaches widget_compose", "unclassified python op", "autowrite: world=auto on a mutating tool"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("lint missed %q in:\n%s", want, v)
 		}
 	}
-	// Rejecting the escalating arg makes a Mutating op that reaches scene_apply legal.
-	fixed := &Spec{Name: "fixed", Max: time.Second, Ops: []OpSpec{{Tier: Mutating, Reaches: []string{"scene_apply"}, Rejects: []string{"prune"}}}}
+	// Rejecting the escalating args makes a Mutating op that reaches widget_compose legal.
+	fixed := &Spec{Name: "fixed", Max: time.Second, Ops: []OpSpec{{Tier: Mutating, Reaches: []string{"widget_compose"}, Rejects: []string{"prune", "remove"}}}}
 	if v := Lint([]*Spec{fixed}); len(v) != 0 {
 		t.Fatalf("rejecting prune should satisfy the lint: %v", v)
 	}

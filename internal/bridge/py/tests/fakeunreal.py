@@ -110,11 +110,16 @@ class Actor(Object):
         return self.comp
 
     def get_editor_property(self, k):
+        if k == "tags":
+            return list(self.tags)
         if k not in self.props:
             raise Exception("no property %s" % k)
         return self.props[k]
 
     def set_editor_property(self, k, v):
+        if k == "tags":
+            self.tags = [str(t) for t in v]
+            return
         if k in self.readonly:
             raise Exception("property %s is read-only" % k)
         self.props[k] = v
@@ -148,6 +153,24 @@ class _Tx:
         return False
 
 
+class ActorDesc:
+    def __init__(self, path):
+        self.path = path
+
+    def get_editor_property(self, k):
+        if k != "actor_path":
+            raise Exception("no property %s" % k)
+        return self.path
+
+
+class Package:
+    def __init__(self, name):
+        self.name = name
+
+    def get_name(self):
+        return self.name
+
+
 class AssetData:
     def __init__(self, name, package):
         self.asset_name, self.package_name = name, package
@@ -174,8 +197,21 @@ class Fake:
         self.pawn = self.gamestate = None
         self.project = "MyGame"
         self.seq = 0
+        self.saved_dir = "../../../Proj/Saved/"  # FPaths style: relative to Engine/Binaries
+        self.dirty_maps = set()
+        self.saves = 0
+        self.wp_descs = None  # list of actor paths when the level is World Partition
+        self.pie_requests = []
+        self.Name = str
+        self.Paths = _NS(project_saved_dir=lambda: self.saved_dir,
+                         convert_relative_path_to_full=lambda p: "/abs/" + p.replace("../", ""))
+        self.EditorLoadingAndSavingUtils = _NS(
+            save_dirty_packages=self._save,
+            get_dirty_map_packages=lambda: [Package(n) for n in sorted(self.dirty_maps)])
         actor = self.add_class("Actor", "/Script/Engine.Actor")
-        self.add_class("StaticMeshActor", "/Script/Engine.StaticMeshActor", actor)
+        self.StaticMeshActor = self.add_class("StaticMeshActor", "/Script/Engine.StaticMeshActor", actor)
+        for n in ("DirectionalLight", "SkyLight", "SkyAtmosphere", "ExponentialHeightFog", "PostProcessVolume"):
+            setattr(self, n, self.add_class(n, "/Script/Engine." + n, actor))
         self.MathLibrary = _Math()
         self.SystemLibrary = _NS(get_project_name=lambda: self.project)
         self.GameplayStatics = _NS(
@@ -188,6 +224,17 @@ class Fake:
             save_asset=lambda p: True,
             load_asset=lambda p: self.assets.get(p))
         self.AssetRegistryHelpers = _NS(get_asset_registry=lambda: _NS(get_assets=self._registry_assets))
+
+    def _save(self, maps, content):
+        self.saves += 1
+        self.dirty_maps.clear()
+        return True
+
+    @property
+    def WorldPartitionBlueprintLibrary(self):
+        if self.wp_descs is None:
+            raise AttributeError("WorldPartitionBlueprintLibrary")
+        return _NS(get_actor_descs=lambda: [ActorDesc(p) for p in self.wp_descs])
 
     # --- builders ------------------------------------------------------------------
     def add_class(self, name, path, parent=None):
@@ -222,6 +269,9 @@ class Fake:
 
     def load_asset(self, path):
         return self.assets.get(path)
+
+    def load_object(self, outer, path):
+        return self.classes.get(path) or self.assets.get(path)
 
     def ARFilter(self, **kw):
         return kw
@@ -290,6 +340,18 @@ class _Subsystem:
         self.ue.editor_actors.remove(a)
         a.destroyed = True
         return True
+
+    def is_in_play_in_editor(self):
+        return self.ue.pie_actors is not None
+
+    def editor_request_begin_play(self):
+        self.ue.pie_requests.append("play")
+
+    def editor_play_simulate(self):
+        self.ue.pie_requests.append("simulate")
+
+    def editor_request_end_play(self):
+        self.ue.pie_requests.append("stop")
 
     def get_selected_level_actors(self):
         return list(self.ue.selected)

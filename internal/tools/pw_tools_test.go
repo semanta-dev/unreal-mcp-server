@@ -9,7 +9,7 @@ import (
 func TestPWToolsRegister(t *testing.T) {
 	b := bridge.New(noEditorRunner{}, bridge.Options{})
 	names := listToolNames(t, Deps{Bridge: b, ProjectDir: t.TempDir()})
-	for _, want := range []string{"instances_count", "instances_list", "scene_digest", "image_compare"} {
+	for _, want := range []string{"image_compare"} {
 		if !names[want] {
 			t.Errorf("missing PW tool: %q", want)
 		}

@@ -111,7 +111,7 @@ func playtestCapture(b *bridge.Bridge, d Deps) mcp.ToolHandlerFor[playtestCaptur
 		}
 		// 3. enter play (unless editor-world capture).
 		if mode == "pie" || mode == "simulate" {
-			if _, err := bridgeFromCtx(ctx, b).CallText(ctx, "start_play", map[string]any{"simulate": mode == "simulate"}); err != nil {
+			if _, err := bridgeFromCtx(ctx, b).Call(ctx, "pie_start", map[string]any{"simulate": mode == "simulate"}); err != nil {
 				return nil, nil, err
 			}
 			if err := sleepCtx(ctx, 1500*time.Millisecond); err != nil {
@@ -316,7 +316,7 @@ func detectCrash(projectDir string, marker int64, since time.Time) *crash.Report
 
 func stopPlay(ctx context.Context, b *bridge.Bridge, mode string) {
 	if mode == "pie" || mode == "simulate" {
-		_, _ = b.CallText(ctx, "stop_play", map[string]any{})
+		_, _ = b.Call(ctx, "pie_stop", map[string]any{})
 	}
 }
 

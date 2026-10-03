@@ -44,15 +44,18 @@ func TestEffectiveTierUsesDefaults(t *testing.T) {
 			t.Fatalf("clean_slate escalation = %+v, want default false → destructive", e)
 		}
 	}
-	scene := PyOps["scene_apply"]
-	if got := scene.EffectiveTier(map[string]any{}); got != Mutating {
-		t.Fatalf("scene_apply default = %v, want mutating", got)
+	wc := PyOps["widget_compose"]
+	if got := wc.EffectiveTier(map[string]any{}); got != Mutating {
+		t.Fatalf("widget_compose default = %v, want mutating", got)
 	}
-	if got := scene.EffectiveTier(map[string]any{"prune": true}); got != Destructive {
-		t.Fatalf("scene_apply prune = %v, want destructive", got)
+	if got := wc.EffectiveTier(map[string]any{"prune": true}); got != Destructive {
+		t.Fatalf("widget_compose prune = %v, want destructive", got)
 	}
-	if got := PyOps["viewport_set"].EffectiveTier(map[string]any{"console": []any{"stat fps"}}); got != Exec {
-		t.Fatalf("viewport_set console = %v, want exec", got)
+	if got := PyOps["datatable_import"].EffectiveTier(map[string]any{"json": "[]"}); got != Destructive {
+		t.Fatalf("datatable_import json = %v, want destructive", got)
+	}
+	if got := PyOps["asset_create"].EffectiveTier(map[string]any{"replace": true}); got != Destructive {
+		t.Fatalf("asset_create replace = %v, want destructive", got)
 	}
 	if got := PyOps["widget_compose"].WorstTier(); got != Destructive {
 		t.Fatalf("widget_compose worst = %v", got)

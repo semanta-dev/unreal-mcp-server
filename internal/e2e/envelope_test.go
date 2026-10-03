@@ -57,15 +57,15 @@ func TestEnvelopeTimeoutIsUnknownOutcomeForMutatingCall(t *testing.T) {
 	}
 }
 
-// TestV1TimeoutSStaysWithHandler: a v1 tool that implements timeout_s itself keeps
-// its domain result — the spec layer must not race it with a ctx deadline
-// (pie_wait_until reports met:false, not TIMEOUT).
-func TestV1TimeoutSStaysWithHandler(t *testing.T) {
+// TestPollingTimeoutIsADomainAnswer: timeout_s both bounds the call (spec layer)
+// and is the polling window; the poll must answer met:false before the call's own
+// deadline turns it into a TIMEOUT error.
+func TestPollingTimeoutIsADomainAnswer(t *testing.T) {
 	h := startHarness(t, harnessOpts{})
 	h.emu.Handle("pie_observe", func(map[string]any) (any, *bridgetest.OpError) {
 		return map[string]any{"gamestate": map[string]any{"wave_number": 1}}, nil
 	})
-	res := h.call(t, "pie_wait_until", map[string]any{"predicate": "gamestate.wave_number >= 2", "timeout_s": 1})
+	res := h.call(t, "pie_wait", map[string]any{"predicate": "gamestate.wave_number >= 2", "timeout_s": 1})
 	if res.IsError {
 		t.Fatalf("expected the domain negative met:false, got error: %s", text(res))
 	}

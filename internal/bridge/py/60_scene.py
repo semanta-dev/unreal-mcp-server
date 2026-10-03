@@ -166,14 +166,17 @@ def _apply_placement(sub, existing, placement, missing, errors, warnings):
 def _op_scene_apply(args):
     scene_id = args["scene_id"]
     placements = args.get("placements") or []
-    prune = args.get("prune", False)
     save = args.get("save", True)
-    tag = "mcp_scene:" + scene_id
     sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
     plan_labels = {p["label"] for p in placements}
-    existing = {a.get_actor_label(): a for a in sub.get_all_level_actors() if a}
-    spawned, updated, pruned = 0, 0, 0
-    missing, errors, warnings = [], [], []
+    # Match by the scene tag, never by a bare label: a hand-placed actor that shares a
+    # spec label is left alone (v1 adopted and overwrote it). Removal is scene_prune.
+    existing = _scene_actors(scene_id)
+    others = {a.get_actor_label() for a in sub.get_all_level_actors() if a} - set(existing)
+    spawned, updated = 0, 0
+    missing, errors = [], []
+    warnings = ["%s: a hand-placed actor already has this label; it was left untouched and the scene "
+                "actor was spawned beside it" % lbl for lbl in sorted(plan_labels & others)]
     with _transaction("MCP: scene " + scene_id):
         for p in placements:
             actor, created = _apply_placement(sub, existing, p, missing, errors, warnings)
@@ -184,17 +187,6 @@ def _op_scene_apply(args):
                 existing[p["label"]] = actor
             else:
                 updated += 1
-        if prune:
-            for label, a in list(existing.items()):
-                if label in plan_labels:
-                    continue
-                try:
-                    atags = [str(t) for t in a.get_editor_property("tags")]
-                except Exception:
-                    atags = []
-                if tag in atags:
-                    sub.destroy_actor(a)
-                    pruned += 1
     # Only HARD errors (spawn/class-resolution failures) block the save; soft
     # per-property warnings do not — a valid scene still persists.
     saved = False
@@ -204,7 +196,7 @@ def _op_scene_apply(args):
               + [_issue("SPAWN_ERROR", e.split(":", 1)[0], e) for e in errors]
               + [_issue("PROPERTY_WARNING", w.split(":", 1)[0], w) for w in warnings])
     return {
-        "scene_id": scene_id, "spawned": spawned, "updated": updated, "pruned": pruned,
+        "scene_id": scene_id, "spawned": spawned, "updated": updated,
         "missing_meshes": missing, "errors": errors, "warnings": warnings,
         "issues": issues, "saved": saved,
         "actors_after": len(sub.get_all_level_actors()),

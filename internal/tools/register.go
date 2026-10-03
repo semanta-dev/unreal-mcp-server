@@ -36,25 +36,19 @@ func Specs(d Deps) []*spec.Spec {
 		registerBuildTools(s, d)
 		registerLifecycleTools(s, d)
 	}
-	registerPieTools(s, d.Bridge)
 	registerLogTools(s, d)
 	registerGitTools(s, d)
-	registerAuthoringTools(s, d.Bridge)
 	// v7 additions: reflection, multi-frame capture, high-level design, tighter
 	// editor integration, and the playtest orchestrator.
-	registerCaptureTools(s, d)
 	registerDesignTools(s)
-	registerPerceptionTools(s, d.Bridge)
 	registerCompanyTools(s, d.Bridge)
 	registerDemolishTool(s, d.Bridge)
 	registerRoadTool(s, d.Bridge)
-	registerSceneTools(s, d.Bridge)
 	registerPlaytestTools(s, d)
 	registerVerificationTools(s, d)
 	registerPWTools(s, d)
 	registerRobustnessTools(s, d)
 	registerHeadlessTools(s, d)
-	registerControlTools(s, d)
 	registerDesktopTools(s, d)
 	registerCockpitTools(s, d)
 	registerProjectTools(s, d)
@@ -88,21 +82,7 @@ func registerParityTools(s *registrar, b *bridge.Bridge) {
 
 	// --- Assets ---
 	// --- Visual ---
-	add(s, "take_screenshot",
-		"Render the scene and return it as a PNG image. Uses a synchronous scene capture so it works even when the editor is backgrounded (editor world only, not during PIE).",
-		takeScreenshot(b))
-
 	// --- Play / build ---
-	add(s, "start_play",
-		"Start a play-in-editor session in the current level. simulate=true runs the world without possessing a player.",
-		textHandler[startPlayIn](b, "start_play", func(in startPlayIn) map[string]any {
-			return map[string]any{"simulate": in.Simulate}
-		}))
-
-	add(s, "stop_play",
-		"Stop the current play-in-editor session.",
-		textHandler[noArgs](b, "stop_play", func(noArgs) map[string]any { return map[string]any{} }))
-
 	add(s, "live_coding_compile",
 		"Trigger a Live Coding compile so C++ changes hot-reload into the running editor. Fire-and-forget; check the editor's Live Coding window for results.",
 		textHandler[noArgs](b, "live_coding_compile", func(noArgs) map[string]any { return map[string]any{} }))

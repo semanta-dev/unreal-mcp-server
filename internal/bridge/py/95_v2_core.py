@@ -57,7 +57,8 @@ def _norm_path(p):
 
 
 def _resolve_actor(world, name, ref):
-    """Resolve an actor reference: a label, an object path, @gamestate or @pawn.
+    """Resolve an actor reference: a label, an object path, or (PIE only) @gamestate,
+    @pawn or @controller.
     A label matching several actors is a CONFLICT listing them — never first-match."""
     if not ref:
         raise _V2Error("BAD_VALUE", "actor is required")
@@ -66,6 +67,11 @@ def _resolve_actor(world, name, ref):
         if not gs:
             raise _V2Error("NOT_FOUND", "@gamestate exists only in PIE")
         return gs
+    if ref == "@controller":
+        pc = unreal.GameplayStatics.get_player_controller(world, 0) if name == "pie" else None
+        if not pc:
+            raise _V2Error("NOT_FOUND", "@controller exists only in PIE")
+        return pc
     if ref == "@pawn":
         pawn = unreal.GameplayStatics.get_player_pawn(world, 0) if name == "pie" else None
         if not pawn:
@@ -259,23 +265,31 @@ def _op_actor_spawn(args):
     cls = _resolve_class_v2(args.get("class"))
     loc = _vec(args.get("location"), [0.0, 0.0, 100.0])
     rot = _vec(args.get("rotation"), [0.0, 0.0, 0.0])
+    scale = _vec(args.get("scale"), None) if args.get("scale") else None
+    mesh = None
+    if args.get("static_mesh"):
+        mesh = unreal.load_asset(args["static_mesh"])
+        if not mesh:
+            raise _V2Error("NOT_FOUND", "static_mesh %s did not load" % args["static_mesh"])
     sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
     with _undoable(name, "spawn " + str(args.get("class"))):
         actor = sub.spawn_actor_from_class(cls, unreal.Vector(*loc), unreal.Rotator(rot[2], rot[0], rot[1]))
         if not actor:
             raise _V2Error("SPAWN_FAILED", "spawn failed for %s" % args.get("class"))
-        if args.get("label"):
-            actor.set_actor_label(args["label"])
-        if args.get("scale"):
-            actor.set_actor_scale3d(unreal.Vector(*_vec(args["scale"], [1.0, 1.0, 1.0])))
-        if args.get("static_mesh"):
-            mesh = unreal.load_asset(args["static_mesh"])
-            comp = actor.get_component_by_class(unreal.StaticMeshComponent)
-            if not mesh or not comp:
-                raise _V2Error("NOT_FOUND", "static_mesh %s did not load (or %s has no StaticMeshComponent)"
-                               % (args["static_mesh"], args.get("class")))
-            comp.set_static_mesh(mesh)
-        errors = _set_props(actor, args.get("properties"))
+        try:
+            if args.get("label"):
+                actor.set_actor_label(args["label"])
+            if scale:
+                actor.set_actor_scale3d(unreal.Vector(*scale))
+            if mesh is not None:
+                comp = actor.get_component_by_class(unreal.StaticMeshComponent)
+                if not comp:
+                    raise _V2Error("BAD_VALUE", "%s has no StaticMeshComponent for static_mesh" % args.get("class"))
+                comp.set_static_mesh(mesh)
+            errors = _set_props(actor, args.get("properties"))
+        except Exception:
+            sub.destroy_actor(actor)  # a failed spawn leaves nothing behind
+            raise
     return {"world": name, "spawned": _actor_view(actor, name, True), "property_errors": errors}
 
 

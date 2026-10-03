@@ -45,6 +45,7 @@ func (w *World) Install(e *Emulator) {
 	e.Handle("actor_set_properties", w.actorSetProperties)
 	e.Handle("actor_call", w.actorCall)
 	w.installAssets(e)
+	w.installPlay(e)
 }
 
 // StartPIE copies the editor actors into a PIE world (paths gain UEDPIE_0_).

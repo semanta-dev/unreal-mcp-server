@@ -19,16 +19,6 @@ import (
 	"github.com/jdziat/unreal-mcp-server/internal/visual"
 )
 
-type worldQueryIn struct {
-	Kind   string    `json:"kind" jsonschema:"line_trace | sphere_overlap | nav_path | project_point"`
-	Start  []float64 `json:"start,omitempty" jsonschema:"[x,y,z] for line_trace/nav_path"`
-	End    []float64 `json:"end,omitempty" jsonschema:"[x,y,z] for line_trace/nav_path"`
-	Center []float64 `json:"center,omitempty" jsonschema:"[x,y,z] for sphere_overlap"`
-	Radius float64   `json:"radius,omitempty" jsonschema:"sphere_overlap radius; default 100"`
-	Point  []float64 `json:"point,omitempty" jsonschema:"[x,y,z] for project_point"`
-	World  string    `json:"world,omitempty" jsonschema:"auto|editor|game; default auto (game world in PIE)"`
-}
-
 type perfParseIn struct {
 	File    string  `json:"file" jsonschema:"path to a CsvProfiler .csv (Saved/Profiling) or a .memreport dump"`
 	HitchMs float64 `json:"hitch_ms,omitempty" jsonschema:"frames slower than this count as hitches; default 33.3"`
@@ -50,24 +40,6 @@ type scenarioListIn struct {
 // is enriched into the timeline so a rubric can gate black/broken frames.
 func registerVerificationTools(s *registrar, d Deps) {
 	b := d.Bridge
-
-	add(s, "world_query",
-		"Spatial verification in the game world (PIE): line_trace (is a shot/LOS clear?), sphere_overlap (what's near a point?), nav_path (can AI path A->B?), project_point (is a point on the navmesh?). Needs collision + a built navmesh.",
-		structHandler[worldQueryIn](b, "world_query", func(in worldQueryIn) map[string]any {
-			m := map[string]any{"kind": in.Kind}
-			for k, v := range map[string][]float64{"start": in.Start, "end": in.End, "center": in.Center, "point": in.Point} {
-				if len(v) > 0 {
-					m[k] = v
-				}
-			}
-			if in.Radius > 0 {
-				m["radius"] = in.Radius
-			}
-			if in.World != "" {
-				m["world"] = in.World
-			}
-			return m
-		}))
 
 	add(s, "perf_parse",
 		"Parse a CsvProfiler CSV into frame-time percentiles (p50/p95/p99/max, hitch count) or a memreport dump into memory buckets — perf as DATA for a rubric, not viewport text.",
@@ -162,7 +134,7 @@ func scenarioRun(b *bridge.Bridge, d Deps) mcp.ToolHandlerFor[scenarioRunIn, any
 			}
 		}
 		if mode == "pie" || mode == "simulate" {
-			if _, err := b.CallText(ctx, "start_play", map[string]any{"simulate": mode == "simulate"}); err != nil {
+			if _, err := b.Call(ctx, "pie_start", map[string]any{"simulate": mode == "simulate"}); err != nil {
 				return nil, nil, err
 			}
 			if sleepCtx(ctx, 1500*time.Millisecond) != nil {
