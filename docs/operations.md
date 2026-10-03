@@ -31,7 +31,9 @@ integration test and a Windows build, and the release packaging of every target 
 Verify a download (cosign 3.x; `[.]` instead of `\.` keeps the regex intact in any shell):
 
 ```bash
-cosign verify-blob --bundle SHA256SUMS.sigstore.json   --certificate-identity-regexp '^https://github[.]com/semanta-dev/unreal-mcp-server/[.]github/workflows/release[.]yml@refs/tags/v'   --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+cosign verify-blob --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity-regexp '^https://github[.]com/semanta-dev/unreal-mcp-server/[.]github/workflows/release[.]yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing          # then check the archive against the signed sums
 gh attestation verify unreal-mcp_<tag>_windows_amd64.zip -R semanta-dev/unreal-mcp-server   # provenance
 ```
