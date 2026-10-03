@@ -268,7 +268,8 @@ def test_asset_tags_accepts_a_package_path(v2, ue):
 
 # --- widget_query op=render ------------------------------------------------------
 
-def test_widget_render_resolves_a_blueprint_asset_path_to_its_class(v2, ue):
+def test_widget_render_resolves_a_blueprint_asset_path_to_its_class(v2, ue, tmp_path):
+    ue.Paths.convert_relative_path_to_full = lambda p: str(tmp_path / "Saved")  # writable on every OS
     from fakeunreal import _Subsystem
     ue.UserWidget = ue.add_class("UserWidget", "/Script/UMG.UserWidget")
     gen = ue.add_class("WBP_Banner_C", "/Game/UI/WBP_Banner.WBP_Banner_C", ue.UserWidget)
