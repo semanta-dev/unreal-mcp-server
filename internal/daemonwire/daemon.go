@@ -16,7 +16,7 @@ import (
 	"github.com/jdziat/unreal-mcp-server/internal/editorpool"
 	"github.com/jdziat/unreal-mcp-server/internal/jobs"
 	"github.com/jdziat/unreal-mcp-server/internal/lifecycle"
-	"github.com/jdziat/unreal-mcp-server/internal/tools"
+	"github.com/jdziat/unreal-mcp-server/internal/session"
 	"github.com/jdziat/unreal-mcp-server/internal/uexec"
 )
 
@@ -183,27 +183,27 @@ func (dm *Daemon) PruneLeaseJobs() {
 	dm.jobsMu.Unlock()
 }
 
-// DepsResolver returns the per-session Deps resolver for tools.InstallDepsMiddleware:
+// DepsResolver returns the per-session Deps resolver for session.InstallMiddleware:
 // it maps the request's MCP session to its editor lease's bridge/project/jobs. Returns
 // (Deps{}, false) for an unattached session (its tool calls then get NO_PROJECT_ATTACHED
 // via the nil bridge, prompting a project_attach).
-func (dm *Daemon) DepsResolver() func(ctx context.Context, req mcp.Request) (tools.Deps, bool) {
-	return func(ctx context.Context, req mcp.Request) (tools.Deps, bool) {
+func (dm *Daemon) DepsResolver() func(ctx context.Context, req mcp.Request) (session.Deps, bool) {
+	return func(ctx context.Context, req mcp.Request) (session.Deps, bool) {
 		sid := sessionID(req)
 		if sid == "" {
-			return tools.Deps{}, false
+			return session.Deps{}, false
 		}
 		dm.touch(sid) // mark activity so the idle-sweep doesn't reclaim a live session
 		ed, project, err := dm.Router.Resolve(sid)
 		if err != nil {
-			return tools.Deps{}, false
+			return session.Deps{}, false
 		}
 		eh, ok := ed.(*EditorHandle)
 		if !ok {
-			return tools.Deps{}, false
+			return session.Deps{}, false
 		}
 		id, _ := dm.Router.InstanceFor(sid)
-		return tools.Deps{
+		return session.Deps{
 			Bridge: eh.Bridge(), ProjectDir: project, EngineDir: dm.EngineDir, Jobs: dm.jobsFor(id),
 			Restart: func(rctx context.Context, buildStep func(context.Context) error) error {
 				return dm.RestartLease(rctx, sid, buildStep)

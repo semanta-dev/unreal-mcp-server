@@ -16,6 +16,7 @@ import (
 	"github.com/jdziat/unreal-mcp-server/internal/config"
 	"github.com/jdziat/unreal-mcp-server/internal/daemonwire"
 	"github.com/jdziat/unreal-mcp-server/internal/jobs"
+	"github.com/jdziat/unreal-mcp-server/internal/session"
 	"github.com/jdziat/unreal-mcp-server/internal/tools"
 	"github.com/jdziat/unreal-mcp-server/internal/version"
 )
@@ -66,11 +67,11 @@ func runDaemon(ctx context.Context, cfg config.Config, logger *slog.Logger) erro
 	// HTTP session, and the deps middleware routes each to its lease.
 	srv := mcp.NewServer(&mcp.Implementation{Name: "unreal", Version: version.Version}, &mcp.ServerOptions{Logger: logger})
 	tools.InstallMiddleware(srv, logger)
-	tools.InstallDepsMiddleware(srv, dm.DepsResolver())
+	session.InstallMiddleware(srv, dm.DepsResolver())
 	// Fallback Deps (engine dir + a jobs registry so build/lifecycle tools register);
 	// per-session Bridge/ProjectDir/Jobs are supplied by the middleware. An unattached
 	// session's tool calls get NO_PROJECT_ATTACHED (nil bridge) until project_attach.
-	tools.RegisterAll(srv, tools.Deps{EngineDir: cfg.EngineDir, Jobs: jobs.NewRegistry()})
+	tools.RegisterAll(srv, session.Deps{EngineDir: cfg.EngineDir, Jobs: jobs.NewRegistry()})
 	dm.RegisterProjectTools(srv)
 
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, nil)

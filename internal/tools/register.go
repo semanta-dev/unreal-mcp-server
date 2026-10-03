@@ -11,28 +11,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
-	"github.com/jdziat/unreal-mcp-server/internal/jobs"
+	"github.com/jdziat/unreal-mcp-server/internal/session"
 )
 
-// Deps are the collaborators the tools need. Bridge is required; the rest enable
-// the build/lifecycle/git/log tools (P7-P9).
-type Deps struct {
-	Bridge     *bridge.Bridge
-	Jobs       *jobs.Registry
-	ProjectDir string
-	EngineDir  string
-	// Restart, when non-nil (daemon mode), performs a §3.1 CONTROLLED editor restart
-	// that PRESERVES this session's lease: it tears down the leased editor, runs
-	// buildStep with no editor up (nil for a plain restart), relaunches with the same
-	// instance token, and re-pins the lease. In single-project stdio mode it is nil and
-	// tools relaunch the editor directly (a fresh process is fine — no lease to keep).
-	Restart func(ctx context.Context, buildStep func(context.Context) error) error
-
-	// CockpitURL, when non-nil, returns the current browser-cockpit URL and whether it is
-	// live (the cockpit_url tool surfaces it to the agent/user). Nil when the cockpit
-	// launcher isn't wired.
-	CockpitURL func() (string, bool)
-}
+// Deps are the collaborators the tools need (defined in package session so the
+// daemon can build them without importing tools).
+type Deps = session.Deps
 
 // RegisterAll adds all tools to the server: the 16 frozen parity tools plus the
 // e2e additions (build, PIE, logs, git, lifecycle) when their deps are present.
