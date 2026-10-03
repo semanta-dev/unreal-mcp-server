@@ -1,0 +1,9 @@
+{"note":"A attach (spawn)","tool":"project","args":{"op":"attach","project":"C:/Users/jorda/code/games/_p7scratch/aesir"}}
+{"tool":"editor","args":{"op":"status"}}
+{"note":"A restart (lease kept)","tool":"editor_lifecycle","args":{"op":"restart","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"note":"A after restart","tool":"editor","args":{"op":"status"}}
+{"tool":"project","args":{"op":"list"}}

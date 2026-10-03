@@ -269,14 +269,11 @@ class Fake:
             does_asset_exist=lambda p: p in self.assets,
             delete_asset=self._delete_asset,
             save_asset=lambda p: True,
-            load_asset=lambda p: self.assets.get(p),
-            find_asset_data=lambda p: AssetData(p.rsplit(".", 1)[-1], p.rsplit(".", 1)[0])
-            if p.rsplit(".", 1)[0] in self.assets and "." in p else None)
+            load_asset=lambda p: self.assets.get(p))
         self.AssetRegistryHelpers = _NS(get_asset_registry=lambda: _NS(
             get_assets=self._registry_assets,
-            get_asset_by_object_path=lambda p: AssetData(p.rsplit(".", 1)[-1], p.rsplit(".", 1)[0])
-            if p.rsplit(".", 1)[0] in self.assets and "." in p else None))
-        self.SoftObjectPath = str
+            get_assets_by_package_name=lambda pkg: [AssetData(pkg.rsplit("/", 1)[-1], pkg)]
+            if pkg in self.assets else []))
 
     def _save(self, maps, content):
         self.saves += 1

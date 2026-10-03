@@ -484,6 +484,9 @@ func headlessSpec() *spec.Spec {
 }
 
 func headlessRun(_ context.Context, c *spec.Call) (*spec.Result, error) {
+	if err := notWhileRestarting(c); err != nil {
+		return nil, err
+	}
 	var in headlessIn
 	if err := c.Decode(&in); err != nil {
 		return nil, err

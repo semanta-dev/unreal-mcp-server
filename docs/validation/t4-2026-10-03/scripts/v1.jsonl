@@ -1,0 +1,4 @@
+{"note":"v1 editor_status","tool":"editor_status","args":{}}
+{"note":"v1 get_actor","tool":"get_actor","args":{"actor_label":"Wall_North"}}
+{"note":"v1 spawn","tool":"spawn_actor","args":{"class_path":"/Script/Engine.PointLight","label":"V1_Rollback","x":10,"y":20,"z":300}}
+{"note":"v1 delete","tool":"delete_actor","args":{"actor_label":"V1_Rollback"}}

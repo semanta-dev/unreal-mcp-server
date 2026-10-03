@@ -129,13 +129,15 @@ func (s *ProcessSpawner) waitAccepting(ctx context.Context, sess *uexec.Session,
 				// not aged out yet (found live, P7).
 				if raw, perr := br.Call(dctx, "editor_status", map[string]any{}); perr == nil {
 					got := statusPID(raw)
-					if got == 0 || got == pid {
+					if got == pid {
 						return nil
 					}
-					s.logger().Warn("discovered editor is not the one launched; excluding it",
-						"node_id", node.ID, "its_pid", got, "launched_pid", pid)
-					sess.ExcludeNode(node.ID)
-					continue
+					if got != 0 { // 0: no pid reported yet — retry, never accept unverified
+						s.logger().Warn("discovered editor is not the one launched; excluding it",
+							"node_id", node.ID, "its_pid", got, "launched_pid", pid)
+						sess.ExcludeNode(node.ID)
+						continue
+					}
 				}
 			}
 		}

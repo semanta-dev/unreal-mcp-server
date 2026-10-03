@@ -111,6 +111,7 @@ func (dm *Daemon) Run(ctx context.Context) {
 	if dm.Disc != nil {
 		defer dm.Disc.Close()
 	}
+	defer dm.Router.Close() // in-flight cold starts end with the daemon
 	dm.Runtime.Run(ctx)
 }
 

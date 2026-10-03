@@ -1,0 +1,12 @@
+{"note":"7b checkpoint 2","tool":"git","args":{"op":"checkpoint","message":"t4 checkpoint B"}}
+{"note":"7b open BP in tab","tool":"python","args":{"op":"run","code":"import unreal\na=unreal.load_asset('/Game/T4/BP_T4')\nprint(unreal.get_editor_subsystem(unreal.AssetEditorSubsystem).open_editor_for_assets([a]))"}}
+{"note":"7b edit BP","tool":"asset_edit","args":{"op":"add_component","asset":"/Game/T4/BP_T4","class":"StaticMeshComponent","name":"T4Mesh"}}
+{"tool":"level","args":{"op":"save_all"}}
+{"tool":"git","args":{"op":"status"}}
+{"note":"7b dry","tool":"git_revert","args":{"to":"2","dry_run":true}}
+{"note":"7b revert","tool":"git_revert","args":{"to":"2","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"note":"7b component gone","tool":"python","args":{"op":"run","code":"import unreal\nbp=unreal.load_asset('/Game/T4/BP_T4')\nprint([str(h.get_editor_property('component_class')) for h in []], unreal.SubobjectDataSubsystem and len(unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem).k2_gather_subobject_data_for_blueprint(bp)))"}}
+{"tool":"git","args":{"op":"status"}}

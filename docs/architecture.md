@@ -55,7 +55,7 @@ when read.
 
 `internal/bridge` installs the companion — `internal/bridge/py/[0-9]*.py`, concatenated and embedded at build time —
 into the editor's Python as the module `__main__._mcp2` (its own namespace, so a v1 companion can stay resident; a
-version sentinel triggers a reinstall after an editor restart). Sections:
+version + source-digest sentinel triggers a reinstall when the module is missing or differs). Sections:
 
 | File | Contents |
 |---|---|
@@ -97,7 +97,7 @@ same identity, map reopened); a crashed editor's lease is dropped and the holder
 running job keeps its editor while the session drains; a new session of the same project adopts it.
 
 **cockpit** (`-cockpit on`, `internal/cockpit`): attaches to the UnrealMCP plugin's MCPCore channel — op results
-over a framed socket, a browser control panel for approvals and a live feed. The browser URL carries the human's
+over a framed socket, a browser control panel (its approval panel is not yet wired to tool calls) and a live feed. The browser URL carries the human's
 access token in its fragment; tools never return it.
 
 ## Safety mechanisms
@@ -110,11 +110,14 @@ access token in its fragment; tools never return it.
   safely when reverted assets are loaded, file revert all-or-nothing from a backup.
 - **Undo**: editor actor edits and scene/snapshot changes run inside a named `ScopedEditorTransaction`.
 - **Modal dialogs**: `pie op=start` pre-flights Blueprint compile errors through the plugin
-  (`PrepareBlueprintsForPIE`), and its wait polls with short pings; if the editor stops answering, a guard inspects
-  the editor process's windows (Windows), cancels PIE's Blueprint-errors dialog (`WM_CLOSE`) and reports any other
-  dialog that persists. A full build refuses while the project's editor runs but does not answer.
-- **Server-owned outputs**: screenshots, captures, renders, thumbnails and audio go under `Saved/MCP` or
-  `Saved/Screenshots`; caller-supplied names are validated.
+  (`PrepareBlueprintsForPIE`, which compiles what PIE would and collects garbage after), and its wait polls with short
+  pings; if the editor stops answering, it inspects the editor process's windows (Windows), cancels PIE's
+  Blueprint-errors dialog (`WM_CLOSE`) and, on timeout, lists the other windows without touching them. A full build
+  refuses while the project's editor runs but does not answer (Windows).
+- **Project binding**: a stdio server with `-project` selects nodes strictly (never another project's editor); the
+  daemon's spawner additionally excludes nodes known before its launch and any whose editor reports another pid.
+- **Server-owned outputs**: screenshots, captures, renders, thumbnails and audio go under `Saved/MCP` (HighResShots
+  are given absolute names there); caller-supplied names are validated.
 
 ## Package map
 

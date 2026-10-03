@@ -1,0 +1,14 @@
+{"note":"B attach","tool":"project","args":{"op":"attach","project":"C:/Users/jorda/code/games/_p7scratch/PolyWorld"}}
+{"tool":"level","args":{"op":"open","level":"/Game/PolyWorld/Maps/L_CompanyCity"}}
+{"tool":"asset_edit","args":{"op":"add_component","asset":"/Game/T4/BP_D","class":"StaticMeshComponent","name":"DMesh2"}}
+{"tool":"level","args":{"op":"save_all"}}
+{"note":"B dry","tool":"git_revert","args":{"to":"1","dry_run":true}}
+{"note":"B revert","tool":"git_revert","args":{"to":"1","wait_s":5}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"note":"B after revert","tool":"editor","args":{"op":"status"}}
+{"tool":"git","args":{"op":"status"}}
+{"tool":"project","args":{"op":"list"}}

@@ -1,0 +1,5 @@
+{"note":"8 smoke","tool":"playtest","args":{"op":"run","path":"C:/Users/jorda/code/games/_p7scratch/aesir/.mcp/scenarios/smoke.json","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"note":"8 crash","tool":"playtest","args":{"op":"run","path":"C:/Users/jorda/code/games/_p7scratch/aesir/.mcp/scenarios/crash.json","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-2","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-2","wait_s":25}}

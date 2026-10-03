@@ -289,7 +289,7 @@ func editorLifecycleSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "editor_lifecycle", Title: "Editor process", Toolset: spec.Core, Timeout: sync8, Max: sync28, Ops: ops,
-		Description: "Start, restart or reconnect the editor.\n- ensure_open (job): launch it if none answers.\n- restart (job): safe shutdown — PRECONDITION listing unsaved packages (save=true saves, discard_dirty=true drops them), stop PIE, graceful quit (kill after 30 s, reported), relaunch on the same map. Daemon: lease kept; other calls get RESTART_IN_PROGRESS meanwhile. Cancelling never escalates to a kill.\n- reclaim: retake a command channel another client took.",
+		Description: "Start, restart or reconnect the editor.\n- ensure_open (job): launch it if none answers.\n- restart (job): safe shutdown — PRECONDITION listing unsaved packages (save=true saves, discard_dirty=true drops them), stop PIE, graceful quit (kill after 30 s, reported), relaunch on the same map. Daemon: lease kept; editor calls get retryable EDITOR_BUSY meanwhile. Cancel never kills.\n- reclaim: retake a command channel another client took.",
 		Schema:      spec.SchemaFor[editorLifecycleIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces:    []string{"project_ensure_open", "editor_restart"},
 		Handler:     editorLifecycle,
@@ -297,6 +297,9 @@ func editorLifecycleSpec() *spec.Spec {
 }
 
 func editorLifecycle(ctx context.Context, c *spec.Call) (*spec.Result, error) {
+	if err := notWhileRestarting(c); err != nil {
+		return nil, err
+	}
 	var in editorLifecycleIn
 	if err := c.Decode(&in); err != nil {
 		return nil, err
@@ -391,10 +394,13 @@ func buildSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "build", Title: "Compile C++", Toolset: spec.Core, Timeout: sync8,
 		Ops:         []spec.OpSpec{{Tier: spec.Mutating, Async: true, Reaches: []string{"save_all", "packages_state", "pie_stop", "editor_ping", "quit_editor"}, Needs: []string{"project", "engine"}}},
-		Description: "Compile the project's C++ (async job). strategy=auto picks from the git diff: header/reflection/new files → ubt (save, safe editor shutdown, Build.bat, relaunch on the same map); body-only → livecoding (escalates to ubt if it cannot patch). Result: success, strategy, reason, diagnostics.",
+		Description: "Compile the project's C++ (async job). strategy=auto picks from the git diff: header/reflection/new files → ubt (save, safe editor shutdown, Build.bat, relaunch on the same map); body-only → livecoding (escalates to ubt if it cannot patch). A hung editor: EDITOR_UNREACHABLE. Result: success, strategy, reason, diagnostics.",
 		Schema:      spec.SchemaFor[buildIn](map[string][]any{"strategy": {"auto", "livecoding", "ubt"}}),
 		Replaces:    []string{"build_compile", "live_coding_compile"},
 		Handler: func(_ context.Context, c *spec.Call) (*spec.Result, error) {
+			if err := notWhileRestarting(c); err != nil {
+				return nil, err
+			}
 			var in buildIn
 			if err := c.Decode(&in); err != nil {
 				return nil, err
@@ -448,7 +454,8 @@ func runBuild(ctx context.Context, c *spec.Call, dir, requested string, progress
 		if pids := editorPIDsForProject(uproject); len(pids) > 0 {
 			return res, envelope.New(envelope.EditorUnreachable,
 				"an editor for this project is running (pid %v) but not answering; a full build would fail on its locked binaries", pids).
-				WithHint("it may be waiting on a dialog: look with desktop_capture op=window, answer it, then build again")
+				WithHint("it may be waiting on a dialog (enable the desktop toolset; desktop_capture op=window shows it), or its " +
+					"Python remote execution is off or bound to another client; close it to build")
 		}
 		progress("no editor running: building directly")
 		if err := step(ctx); err != nil {
@@ -572,6 +579,9 @@ func contentPackage(path string) (string, bool) {
 }
 
 func gitRevert(ctx context.Context, c *spec.Call) (*spec.Result, error) {
+	if err := notWhileRestarting(c); err != nil {
+		return nil, err
+	}
 	var in gitRevertIn
 	if err := c.Decode(&in); err != nil {
 		return nil, err

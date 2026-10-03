@@ -198,8 +198,9 @@ FString UMCPAuthoringSubsystem::CaptureWidget(const FString& WidgetClassPath, in
 	return bOk ? OutPath : FString();
 }
 
-TArray<FString> UMCPAuthoringSubsystem::PrepareBlueprintsForPIE(bool bAcknowledgeErrors)
+TArray<FString> UMCPAuthoringSubsystem::PrepareBlueprintsForPIE(bool bAcknowledgeErrors, int32& CompiledCount)
 {
+	CompiledCount = 0;
 	// What PIE would compile first (dirty, not data-only, status known). Compiling them
 	// here also avoids the "compile before playing?" prompt when auto-recompile is off.
 	TArray<UBlueprint*> ToCompile;
@@ -217,7 +218,14 @@ TArray<FString> UMCPAuthoringSubsystem::PrepareBlueprintsForPIE(bool bAcknowledg
 		if (IsValid(Blueprint))
 		{
 			FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipGarbageCollection);
+			++CompiledCount;
 		}
+	}
+	if (CompiledCount > 0)
+	{
+		// As ResolveDirtyBlueprints does once after its loop: drop the REINST leftovers
+		// before PIE duplicates the world.
+		CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
 	}
 	// What PIE's dialog would then list.
 	TArray<FString> Errored;

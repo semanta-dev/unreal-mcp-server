@@ -217,22 +217,35 @@ def test_pie_start_can_acknowledge_blueprint_errors(v2, ue):
     assert calls == [True] and res["blueprint_errors_ignored"] == ["/Game/BP_Bad.BP_Bad"] and res["editor_pid"] > 0
 
 
+def test_pie_start_reports_what_the_preflight_compiled(v2, ue):
+    from fakeunreal import _Subsystem
+
+    class Auth:
+        def prepare_blueprints_for_pie(self, acknowledge):
+            return ([], 3)  # 5.7 Python returns (return value, out param)
+
+    ue.MCPAuthoringSubsystem = Auth
+    ue.get_editor_subsystem = lambda which: Auth() if which is Auth else _Subsystem(ue)
+    assert ok(v2, "pie_start", {})["blueprints_compiled"] == 3
+
+
 def test_pie_start_without_the_plugin_says_so(v2, ue):
     res = ok(v2, "pie_start", {})
     assert res["blueprint_preflight"].startswith("unavailable")
 
 
-def test_pie_screenshot_uses_a_fresh_name_in_the_screenshot_dir(v2, ue, tmp_path):
+def test_pie_screenshot_is_a_fresh_absolute_name(v2, ue, tmp_path):
+    # A reused name returned the previous shot; a bare name resolves against the
+    # project's configurable screenshot folder (found live / gate, P7).
     shots = []
     ue.AutomationLibrary = type("A", (), {"take_high_res_screenshot": staticmethod(lambda w, h, f: shots.append(f))})
-    ue.Paths.screen_shot_dir = lambda: str(tmp_path / "Screenshots" / "WindowsEditor")
-    ue.Paths.convert_relative_path_to_full = lambda p: p
+    ue.Paths.convert_relative_path_to_full = lambda p: str(tmp_path / "Saved")
     v2["_mcp2"]._pie_running = lambda: True
     a = ok(v2, "pie_screenshot", {})
     time.sleep(0.002)
     b = ok(v2, "pie_screenshot", {})
-    assert a["file"] != b["file"] and len(set(shots)) == 2
-    assert a["file"].startswith((tmp_path / "Screenshots" / "WindowsEditor").as_posix() + "/")
+    assert a["file"] != b["file"] and shots == [a["file"], b["file"]]
+    assert a["file"].startswith((tmp_path / "Saved" / "MCP" / "Screenshots").as_posix() + "/")
 
 
 def test_null_args_are_no_args(v2, ue):

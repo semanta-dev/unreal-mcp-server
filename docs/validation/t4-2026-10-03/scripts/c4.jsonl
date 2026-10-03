@@ -1,0 +1,11 @@
+{"tool":"pie","args":{"op":"start"}}
+{"note":"pie transform static","tool":"actor_edit","args":{"op":"transform","world":"pie","actor":"Wall_North","location":[0,5000,1500]}}
+{"tool":"pie","args":{"op":"stop"}}
+{"note":"editor unchanged","tool":"actor_query","args":{"op":"get","actor":"Wall_North"}}
+{"note":"3 create bp","tool":"asset_create","args":{"op":"create","kind":"blueprint","class":"/Script/Engine.Actor","dest":"/Game/T4/BP_T4"}}
+{"note":"3 create again conflict","tool":"asset_create","args":{"op":"create","kind":"blueprint","class":"/Script/Engine.Actor","dest":"/Game/T4/BP_T4"}}
+{"note":"3 replace","tool":"asset_create","args":{"op":"replace","kind":"blueprint","class":"/Script/Engine.Pawn","dest":"/Game/T4/BP_T4"}}
+{"note":"3 replace bad class keeps old","tool":"asset_create","args":{"op":"replace","kind":"blueprint","class":"NoSuchXyz","dest":"/Game/T4/BP_T4"}}
+{"tool":"asset_query","args":{"op":"tags","asset":"/Game/T4/BP_T4"}}
+{"tool":"asset_query","args":{"op":"search","classes":["/Script/Engine.StaticMesh"],"limit":5}}
+{"tool":"asset_query","args":{"op":"search","classes":["/Script/UMG.UserWidget"],"blueprints":true,"limit":5}}

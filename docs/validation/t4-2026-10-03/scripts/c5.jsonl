@@ -1,0 +1,4 @@
+{"tool":"asset_query","args":{"op":"tags","asset":"/Game/T4/BP_T4"}}
+{"tool":"asset_query","args":{"op":"search","classes":["/Script/Engine.StaticMesh"],"limit":3}}
+{"tool":"asset_query","args":{"op":"search","classes":["/Script/UMG.UserWidget"],"blueprints":true,"limit":5}}
+{"tool":"asset_query","args":{"op":"search","classes":["/Script/Engine.Actor"],"blueprints":true,"limit":50}}

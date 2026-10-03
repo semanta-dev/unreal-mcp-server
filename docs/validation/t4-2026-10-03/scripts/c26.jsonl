@@ -1,0 +1,5 @@
+{"tool":"analyze","args":{"op":"scenarios"}}
+{"note":"8 playtest smoke","tool":"playtest","args":{"op":"run","path":"C:/Users/jorda/code/games/_p7scratch/aesir/.mcp/scenarios/smoke.json","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}

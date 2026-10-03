@@ -19,18 +19,26 @@ type fakeEd struct{}
 func (fakeEd) Close() error { return nil }
 
 type wireFakeSpawner struct {
-	mu    sync.Mutex // Spawn runs on the router's background goroutine
-	pid   int
-	kills []int
-	gate  chan struct{} // when set, Spawn blocks until it is closed (a slow cold start)
+	mu     sync.Mutex // Spawn runs on the router's background goroutine
+	pid    int
+	kills  []int
+	gate   chan struct{} // when set, Spawn blocks until it is closed (a slow cold start)
+	fail   error         // when set, Spawn fails with it
+	during func()        // runs inside Spawn (overlap checks)
 }
 
 func (s *wireFakeSpawner) Spawn(ctx context.Context, project, token string) (supervisor.Editor, int, string, error) {
 	if s.gate != nil {
 		<-s.gate
 	}
+	if s.during != nil {
+		s.during()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.fail != nil {
+		return nil, 0, "", s.fail
+	}
 	s.pid++
 	return fakeEd{}, s.pid, "id", nil
 }
@@ -39,6 +47,16 @@ func (s *wireFakeSpawner) Kill(pid int) error {
 	defer s.mu.Unlock()
 	s.kills = append(s.kills, pid)
 	return nil
+}
+func (s *wireFakeSpawner) spawned() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pid
+}
+func (s *wireFakeSpawner) killed() []int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]int(nil), s.kills...)
 }
 
 func newTestDaemon() *Daemon {

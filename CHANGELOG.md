@@ -51,16 +51,22 @@ See [`docs/validation/T4-2026-10-03.md`](docs/validation/T4-2026-10-03.md).
 - `pie op=start` froze the editor (and every later call) behind Unreal's modal "Blueprint Compilation Errors" dialog:
   a plugin pre-flight refuses with the Blueprint list (or `ignore_blueprint_errors=true` plays anyway), and a modal
   guard cancels that dialog and names any other dialog holding the game thread.
-- `build` ran UBT beside an editor that was running but not answering (locked DLLs); it now refuses.
+- `build` ran UBT beside an editor that was running but not answering (locked DLLs); it now refuses (Windows).
 - `git op=checkpoint` failed when `.gitignore` already ignored `Saved/`/`Intermediate/`/`DerivedDataCache/`.
 - A class-filtered snapshot diff reported a World Partition actor in an unloaded cell as removed.
 - Daemon: a cold start longer than the attach call was cancelled and its editor killed (now detached, attach is
   retryable); attaching a project already open in another editor launched a second one and bound the wrong editor
-  (now refused, and spawns bind only the editor they launched); during a lease restart the session lost its project and
-  jobs.
-- Also: PIE transforms of Static actors, asset search (`ARFilter`), registry tags by package path, HighResShot's real
-  output folder, stale PIE screenshots, the `game_scene` capture enum, thumbnail lighting, widget render class
-  resolution, PIE console commands, null op arguments in playtest beats.
+  (now refused on Windows, and spawns bind only the editor they launched); during a lease restart the session lost its
+  project and jobs.
+- A stdio server with `-project` could bind another project's editor while its own relaunched (after a build); node
+  selection is now strict whenever a project is set.
+- Daemon gate fixes: a session that ended mid cold start no longer keeps the editor leased forever; abandoned starts
+  are adopted by the next session; cold starts of one project are serialized; restarts refuse overlapping
+  build/revert/lifecycle/headless work.
+- Also: PIE transforms of Static actors, asset search (`ARFilter`), registry tags by package path (and during PIE),
+  HighResShots written to absolute paths, stale PIE screenshots, the `game_scene` capture enum, thumbnail lighting,
+  widget render class resolution, PIE console commands, null op arguments in playtest beats, garbage collection after
+  the PIE pre-flight compiles.
 
 ### Architecture & reliability
 - 48 → 29 top-level packages (plan target 28) with an enforced import DAG; one supervisor for stdio and daemon; per-session servers in the

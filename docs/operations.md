@@ -27,8 +27,9 @@ loopback multicast integration test.
    `keep_package_recovery`. `-toolsets`/`UMCP_TOOLSETS` adds toolsets for a stdio session.
 4. Optional plugin (`plugin/UnrealMCP`): needed for `pie op=input`, `audio`, `capture source=game_scene`,
    `widget_query op=render`, the `pie op=start` Blueprint pre-flight and the cockpit. Copy it into `<game>/Plugins/`,
-   then `build strategy=ubt`. Keep the project's copy current: an older build answers `PRECONDITION`
-   (`PLUGIN_MISSING`) for the features it lacks, and `pie op=start` reports `blueprint_preflight: unavailable`.
+   then `build strategy=ubt`. Keep the project's copy current: an older build answers `PRECONDITION` (with
+   `details.editor_code: PLUGIN_MISSING`) for the features it lacks, `pie op=start` reports a `blueprint_preflight`
+   starting with `unavailable`, and `ignore_blueprint_errors` has no effect.
 
 **Package recovery.** Every editor launch by the server (`editor_lifecycle`, `build`, `git_revert`, crash relaunch,
 `-auto-relaunch`) passes `-AutoDeclinePackageRecovery`, so an unattended editor is never blocked by the "restore
@@ -44,9 +45,11 @@ The editor must be running with the project open (or call `editor_lifecycle op=e
 clients at `http://127.0.0.1:6111/` (StreamableHTTP). Each session calls `project op=attach project=<dir>` first;
 editors are spawned on demand and kept warm between sessions. A cold start that outlasts the call returns a
 retryable `EDITOR_BUSY` — attach again to keep waiting (the start continues; if the session ends meanwhile, the editor
-comes up warm and unleased). A project already open in an editor the daemon did not launch is refused
-(`PRECONDITION`): close it first, or drive it with a stdio server. While a lease restarts, editor calls get a
-retryable `EDITOR_BUSY`; `job` and offline tools keep working. A session idle for `-session-idle` (30 min) is ended;
+comes up warm and unleased, and the next session of that project adopts it). Cold starts of one project run one at a
+time, and a spawn binds only the editor it launched. A project already open in an editor the daemon did not launch
+is refused (`PRECONDITION`; Windows, where process command lines are readable): close it first, or drive it with a
+stdio server. While a lease restarts, editor calls get a retryable `EDITOR_BUSY`, as do `build`, `git_revert`,
+`editor_lifecycle` and `headless`; `job` and read-only offline tools keep working. A session idle for `-session-idle` (30 min) is ended;
 its editor drains while a project job still runs. On start, the daemon reconciles its records and kills editors an
 earlier daemon left behind.
 
@@ -57,9 +60,13 @@ approvals in v2.0: `gate_policy: "require"` refuses gated ops instead of waiting
 
 **Modal dialogs.** An editor modal (a "save changes?", a Blueprint-errors prompt) holds the game thread, so every
 remote command waits on it. `pie op=start` pre-flights Blueprint compile errors (plugin) and, if the editor stops
-answering anyway, cancels PIE's "Blueprint Compilation Errors" dialog or reports any other dialog of the editor
-process (`desktop_capture op=window` shows it; `desktop_input` answers it). A timed-out call never wedges the channel:
-the next call reconnects.
+answering anyway, cancels PIE's "Blueprint Compilation Errors" dialog (Windows); when it times out it lists the
+editor process's other windows, never touching them (enable the `desktop` toolset: `desktop_capture op=window` shows
+one, `desktop_input` answers it). A timed-out call never wedges the channel: the next call reconnects (and still waits
+while a dialog is open). A full `build` refuses while the project's editor runs but does not answer (Windows).
+
+**Project binding.** With `-project`, the server only binds an editor of that project — never another project's
+editor, even while its own is relaunching (calls fail with `EDITOR_UNREACHABLE` until it is back).
 
 **One Go peer per editor.** The editor's remote-execution node holds a single command connection: two clients on one
 editor steal it from each other (`EDITOR_BUSY`; `editor_lifecycle op=reclaim` takes it back explicitly). Give each
@@ -67,8 +74,10 @@ concurrent client its own `-command-addr` port, and never point a v1 and a v2 se
 
 ## Validate
 
-Last live run: [`validation/T4-2026-10-03.md`](validation/T4-2026-10-03.md). Script a run with `cmd/mcpcall` (one JSON
-call per line on stdin; `-url` for a daemon), on scratch copies with their own multicast group (see `CLAUDE.md`).
+Last live run: [`validation/T4-2026-10-03.md`](validation/T4-2026-10-03.md). Script a run with `cmd/mcpcall`: one line
+per call on stdin — `{"tool": "...", "args": {...}, "note": "..."}`, or `{"sleep_s": N}`; `#` lines are comments — and
+one JSON result per line on stdout (`-images <dir>` saves returned images; `-url` targets a daemon). Run on scratch
+copies with their own multicast group (see `CLAUDE.md`).
 
 ```powershell
 .\dist\unreal-mcp.exe -selftest -project <game>   # discovery, companion install, editor_status

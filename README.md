@@ -87,7 +87,7 @@ go test -race ./...             # needs a C toolchain (or the Linux CI job)
 bash scripts/coverage.sh        # merged coverage gates (repo 75, tools 70, app 80, config 90)
 go generate ./internal/tools    # regenerate docs/tools.md + docs/migration-v2.md
 .venv\Scripts\python -m pytest internal/bridge/py/tests   # companion contract tests (T2)
-go run ./cmd/mcpcall -- dist\unreal-mcp.exe -project <game> < calls.jsonl   # scripted live calls (T4)
+Get-Content calls.jsonl | go run ./cmd/mcpcall -- dist\unreal-mcp.exe -project <game>   # scripted live calls (T4)
 ```
 
 Tools are added as a `spec.Spec` in `internal/tools/v2_*.go` (ops with tiers, timing, required/rejected params and

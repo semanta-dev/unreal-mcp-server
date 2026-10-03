@@ -1,0 +1,17 @@
+{
+  "schema": "scenario/v1",
+  "name": "arena_smoke",
+  "mode": "pie",
+  "level": "/Game/Maps/L_Arena",
+  "duration_s": 10,
+  "interval_s": 0.5,
+  "beats": [
+    {"wait_until": "counts.AesirCharacter >= 1", "timeout_s": 5},
+    {"at_s": 3, "console": "stat fps"}
+  ],
+  "rubric": [
+    {"id": "player_spawned", "kind": "nonzero_count", "path": "counts.AesirCharacter", "severity": "fail"},
+    {"id": "spawn_points", "kind": "min", "path": "counts.EnemySpawnPoint", "params": {"value": 8}, "severity": "fail"},
+    {"id": "no_errors", "kind": "log_zero", "path": "errors", "severity": "warn"}
+  ]
+}

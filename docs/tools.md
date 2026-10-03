@@ -430,7 +430,7 @@ Play In Editor.
 |---|---|---|
 | `action` | string | input: tap (default) \| press \| release \| hold \| release_all — one of: tap, press, release, hold, release_all |
 | `duration_s` | number | input action=hold: seconds (default 1) |
-| `ignore_blueprint_errors` | boolean | start: play despite Blueprint compile errors |
+| `ignore_blueprint_errors` | boolean | start: play despite Blueprint compile errors (needs the plugin) |
 | `key` | string | input: UE key name, e.g. W, SpaceBar, LeftMouseButton |
 | `op` | string | one of: start, stop, input |
 | `simulate` | boolean | start: Simulate In Editor (the world runs, no player is possessed) |
@@ -448,7 +448,7 @@ Read the running game (PIE): gamestate properties (discovered by reflection), a 
 
 | param | type | description |
 |---|---|---|
-| `actors` | string[] | actor labels to read detailed state for (unknown labels are listed in missing) |
+| `actors` | string[] | actor labels to detail (unknown ones are listed in missing) |
 | `exclude` | string[] | glob patterns of property names to exclude |
 | `include` | string[] | glob patterns of property names to include (default all, minus engine noise) |
 | `max_props` | integer | cap on properties per object (default 48) |
@@ -607,7 +607,7 @@ Film the world: an in-editor recorder saves a frame + state every interval_s.
 | `all` | boolean | clear: delete EVERY MCP capture (instead of one session) |
 | `camera_actor` | string | start camera_mode=actor: the actor label to ride |
 | `camera_fov` | number | start source=game_scene: field of view (default 90) |
-| `camera_mode` | string | start: viewport (default; the editor camera) \| fixed \| actor \| player (game_scene: the player POV) — one of: viewport, fixed, actor, player |
+| `camera_mode` | string | start: viewport (default, editor camera) \| fixed \| actor \| player (game_scene POV) — one of: viewport, fixed, actor, player |
 | `cell_height` | integer | start: frame height (default 270) |
 | `cell_width` | integer | start: frame width (default 480) |
 | `cols` | integer | stop/read: contact-sheet columns (default 8 / 6) |
@@ -835,7 +835,7 @@ _tier destructive_
 
 Start, restart or reconnect the editor.
 - ensure_open (job): launch it if none answers.
-- restart (job): safe shutdown — PRECONDITION listing unsaved packages (save=true saves, discard_dirty=true drops them), stop PIE, graceful quit (kill after 30 s, reported), relaunch on the same map. Daemon: lease kept; other calls get RESTART_IN_PROGRESS meanwhile. Cancelling never escalates to a kill.
+- restart (job): safe shutdown — PRECONDITION listing unsaved packages (save=true saves, discard_dirty=true drops them), stop PIE, graceful quit (kill after 30 s, reported), relaunch on the same map. Daemon: lease kept; editor calls get retryable EDITOR_BUSY meanwhile. Cancel never kills.
 - reclaim: retake a command channel another client took.
 
 | op | tier | does | required | needs |
@@ -857,7 +857,7 @@ Start, restart or reconnect the editor.
 
 _tier mutating_
 
-Compile the project's C++ (async job). strategy=auto picks from the git diff: header/reflection/new files → ubt (save, safe editor shutdown, Build.bat, relaunch on the same map); body-only → livecoding (escalates to ubt if it cannot patch). Result: success, strategy, reason, diagnostics.
+Compile the project's C++ (async job). strategy=auto picks from the git diff: header/reflection/new files → ubt (save, safe editor shutdown, Build.bat, relaunch on the same map); body-only → livecoding (escalates to ubt if it cannot patch). A hung editor: EDITOR_UNREACHABLE. Result: success, strategy, reason, diagnostics.
 
 | tier | required | needs |
 |---|---|---|
@@ -913,7 +913,7 @@ Optional tool groups and what each tool needs.
 
 _tier mutating · offline_
 
-Multi-project daemon sessions. CALL op=attach FIRST: it binds this session to the project's editor (a warm one is reused, else one is spawned) and routes every later tool call there; it also applies the project's .umcp.json toolsets. op=list: every managed editor (yours marked). op=release: hand the editor back early (it also happens when the session ends).
+Multi-project daemon sessions. CALL op=attach FIRST: it binds this session to the project's editor (a warm one is reused, else one is spawned) and routes every later tool call there; it also applies the project's .umcp.json toolsets. A cold start longer than the call is a retryable EDITOR_BUSY: attach again to keep waiting. A project open in an editor the daemon did not launch is PRECONDITION (close it first). op=list: every managed editor (yours marked). op=release: hand the editor back early (it also happens when the session ends).
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|

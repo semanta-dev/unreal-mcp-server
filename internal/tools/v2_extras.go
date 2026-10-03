@@ -172,7 +172,9 @@ func projectSpec(pm session.ProjectManager) *spec.Spec {
 		Name: "project", Title: "Daemon projects", Toolset: spec.Daemon, Offline: true, Timeout: sync25, Max: sync28, Ops: ops,
 		Description: "Multi-project daemon sessions. CALL op=attach FIRST: it binds this session to the project's editor " +
 			"(a warm one is reused, else one is spawned) and routes every later tool call there; it also applies the " +
-			"project's .umcp.json toolsets. op=list: every managed editor (yours marked). op=release: hand the editor back " +
+			"project's .umcp.json toolsets. A cold start longer than the call is a retryable EDITOR_BUSY: attach again to keep " +
+			"waiting. A project open in an editor the daemon did not launch is PRECONDITION (close it first). " +
+			"op=list: every managed editor (yours marked). op=release: hand the editor back " +
 			"early (it also happens when the session ends).",
 		Schema:   spec.SchemaFor[projectIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces: []string{"project_attach", "project_list", "project_release"},

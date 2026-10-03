@@ -344,4 +344,14 @@ func TestDaemonRestartKeepsProjectAndJobs(t *testing.T) {
 	if out := callTool(t, cs, "job", map[string]any{"op": "list"}); out["_error"] != nil {
 		t.Fatalf("the project's jobs must stay reachable mid-restart: %v", out)
 	}
+	// Work that could overlap the restart's own build/revert is refused (gate finding).
+	for _, call := range []struct {
+		tool string
+		args map[string]any
+	}{{"build", map[string]any{"strategy": "ubt"}}, {"git_revert", map[string]any{"to": "1"}}} {
+		out := callTool(t, cs, call.tool, call.args)
+		if s, _ := out["_error"].(string); !strings.Contains(s, "EDITOR_BUSY") {
+			t.Fatalf("%s mid-restart should be EDITOR_BUSY: %v", call.tool, out)
+		}
+	}
 }

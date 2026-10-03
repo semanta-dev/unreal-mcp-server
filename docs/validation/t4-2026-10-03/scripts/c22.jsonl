@@ -1,0 +1,5 @@
+{"note":"guard","tool":"pie","args":{"op":"start"}}
+{"tool":"editor","args":{"op":"ping"}}
+{"sleep_s":3}
+{"tool":"editor","args":{"op":"ping"}}
+{"tool":"editor","args":{"op":"status"}}

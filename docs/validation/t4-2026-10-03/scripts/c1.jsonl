@@ -1,0 +1,4 @@
+{"tool":"editor","args":{"op":"health"}}
+{"tool":"editor","args":{"op":"status"}}
+{"tool":"level","args":{"op":"current"}}
+{"tool":"actor_query","args":{"op":"list","limit":5}}

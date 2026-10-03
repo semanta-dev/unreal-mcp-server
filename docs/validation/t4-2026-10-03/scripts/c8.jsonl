@@ -1,0 +1,5 @@
+{"tool":"editor","args":{"op":"status"}}
+{"note":"discarded actors gone","tool":"actor_query","args":{"op":"list","filter":"T4_"}}
+{"note":"never-saved asset gone","tool":"python","args":{"op":"run","code":"import unreal\nprint(unreal.EditorAssetLibrary.does_asset_exist('/Game/T4/MI_T4_Unsaved'), unreal.EditorAssetLibrary.does_asset_exist('/Game/T4/BP_T4'))"}}
+{"tool":"toolsets","args":{"op":"enable","toolset":"desktop"}}
+{"note":"6 no modal","tool":"desktop_capture","args":{"op":"list_windows"}}

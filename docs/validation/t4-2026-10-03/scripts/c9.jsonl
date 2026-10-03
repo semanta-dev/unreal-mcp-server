@@ -1,0 +1,15 @@
+{"note":"7 checkpoint","tool":"git","args":{"op":"checkpoint","message":"t4 checkpoint A"}}
+{"tool":"git","args":{"op":"log","limit":3}}
+{"note":"7 change","tool":"actor_edit","args":{"op":"transform","world":"editor","actor":"Wall_North","location":[0,5000,777]}}
+{"note":"7 save","tool":"level","args":{"op":"save_all"}}
+{"tool":"git","args":{"op":"status"}}
+{"note":"7 dry run","tool":"git_revert","args":{"to":"1","dry_run":true}}
+{"note":"7 revert","tool":"git_revert","args":{"to":"1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"note":"7 after revert","tool":"actor_query","args":{"op":"get","actor":"Wall_North"}}
+{"tool":"git","args":{"op":"status"}}

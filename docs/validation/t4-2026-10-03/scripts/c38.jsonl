@@ -1,0 +1,2 @@
+{"tool":"level","args":{"op":"save_all"}}
+{"tool":"python","args":{"op":"run","code":"import unreal\nunreal.SystemLibrary.quit_editor()"}}

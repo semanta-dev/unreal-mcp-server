@@ -88,7 +88,7 @@ func TestLoadFromFlagsEnvAndUexec(t *testing.T) {
 		t.Fatalf("loaded config should validate: %v", err)
 	}
 	u := c.Uexec()
-	if u.ProjectDir != "C:/proj" || u.CommandTimeout != 7*time.Second || u.CommandAddr == "" {
+	if u.ProjectDir != "C:/proj" || u.CommandTimeout != 7*time.Second || u.CommandAddr == "" || !u.StrictNode {
 		t.Fatalf("Uexec mapping wrong: %+v", u)
 	}
 	if _, err := LoadFrom(flag.NewFlagSet("t", flag.ContinueOnError), []string{"-nope"}); err == nil {

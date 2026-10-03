@@ -1,0 +1,2 @@
+{"tool":"actor_edit","args":{"op":"transform","world":"editor","actor":"Wall_South","location":[0,-5000,555]}}
+{"note":"6 crash","tool":"console","args":{"command":"debug crash","world":"editor"}}

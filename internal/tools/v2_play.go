@@ -56,7 +56,7 @@ func pollTimeout(ctx context.Context, requestedS float64, def time.Duration) tim
 type pieIn struct {
 	Op        string  `json:"op" jsonschema:"start | stop | input"`
 	Simulate  bool    `json:"simulate,omitempty" jsonschema:"start: Simulate In Editor (the world runs, no player is possessed)"`
-	IgnoreBP  bool    `json:"ignore_blueprint_errors,omitempty" jsonschema:"start: play despite Blueprint compile errors"`
+	IgnoreBP  bool    `json:"ignore_blueprint_errors,omitempty" jsonschema:"start: play despite Blueprint compile errors (needs the plugin)"`
 	Wait      *bool   `json:"wait,omitempty" jsonschema:"start/stop: wait until PIE is actually running/stopped (default true)"`
 	Key       string  `json:"key,omitempty" jsonschema:"input: UE key name, e.g. W, SpaceBar, LeftMouseButton"`
 	Action    string  `json:"action,omitempty" jsonschema:"input: tap (default) | press | release | hold | release_all"`
@@ -97,16 +97,15 @@ func pieHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			return nil, e.WithHint("fix them (the editor log names the errors), or pass ignore_blueprint_errors=true to play anyway")
 		}
 	}
+	pid, _ := out["editor_pid"].(float64)
+	delete(out, "editor_pid")
 	if err != nil || (in.Wait != nil && !*in.Wait) {
 		return &spec.Result{Data: out, Summary: "PIE " + c.Op.Name + " requested"}, err
 	}
-	pid, _ := out["editor_pid"].(float64)
-	delete(out, "editor_pid")
 	// PIE begins/ends on a later editor tick: poll until the state flips. Each ping is
 	// short so a game thread blocked by a modal dialog is noticed, not waited out.
 	started := time.Now()
 	deadline := started.Add(pollTimeout(ctx, 0, 15*time.Second))
-	var guard modalGuard
 	for {
 		pctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		ping, perr := v2Op(pctx, c, "editor_ping", nil)
@@ -116,7 +115,7 @@ func pieHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			return &spec.Result{Data: out, Summary: map[bool]string{true: "PIE is running", false: "PIE stopped"}[want]}, nil
 		}
 		if perr != nil && ctx.Err() == nil {
-			if e := guard.check(int(pid)); e != nil {
+			if e := cancelPIEBlueprintDialog(int(pid), in.IgnoreBP); e != nil {
 				return nil, e
 			}
 		}
@@ -124,6 +123,11 @@ func pieHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			if perr != nil {
 				// The editor stopped answering (e.g. crashed on PIE start): say so, with the crash if any.
 				e := envelope.Classify(perr, true)
+				if wins := editorDialogs(int(pid)); len(wins) > 0 {
+					// Reported, never touched: a dialog may be what holds the game thread.
+					e.WithDetail("editor_windows", wins).WithHint("the editor may be waiting on a dialog: enable the desktop " +
+						"toolset, look with desktop_capture op=window hwnd=<hwnd>, answer it with desktop_input")
+				}
 				if c.Deps.ProjectDir != "" {
 					if rep, _ := crash.FromCrashDir(c.Deps.ProjectDir, started); rep != nil {
 						e.WithDetail("crash", rep)
@@ -142,14 +146,9 @@ func pieHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	}
 }
 
-// modalGuard recognizes an editor whose game thread is held by a modal dialog (it
-// stops answering while the dialog waits for a human). PIE's "Blueprint Compilation
-// Errors" dialog is cancelled at once (WM_CLOSE = its Cancel); any other window of
-// the editor process still there on a later check is reported, never touched.
-type modalGuard struct{ seen map[uintptr]int }
-
 // editorDialogs lists the top-level windows of the editor process other than its
-// main window (Windows only; nil elsewhere or without a pid).
+// main window (Windows only; nil elsewhere or without a pid). An editor whose game
+// thread is held by a modal dialog stops answering while it waits for a human.
 var editorDialogs = func(pid int) []desktop.Window {
 	if pid <= 0 {
 		return nil
@@ -171,36 +170,27 @@ var closeWindow = desktop.CloseWindow
 
 const bpErrorsDialog = "Blueprint Compilation Errors"
 
-func (g *modalGuard) check(pid int) *envelope.Error {
-	if g.seen == nil {
-		g.seen = map[uintptr]int{}
-	}
-	var stuck []desktop.Window
+// cancelPIEBlueprintDialog cancels PIE's "Blueprint Compilation Errors" dialog
+// (WM_CLOSE = its Cancel) when the editor shows it. Other windows are only reported,
+// with the timeout: progress windows and docked-out tabs look the same from outside.
+func cancelPIEBlueprintDialog(pid int, ignoreAsked bool) *envelope.Error {
 	for _, w := range editorDialogs(pid) {
-		if w.Title == bpErrorsDialog {
-			e := envelope.New(envelope.Precondition, "PIE stopped at the editor's %q dialog, which was cancelled", bpErrorsDialog).
-				WithHint("fix the Blueprints (logs op=tail names them), or pass ignore_blueprint_errors=true (needs the UnrealMCP plugin)").
-				WithDetail("modal", w.Title)
-			if err := closeWindow(w.HWND); err != nil {
-				e.Message = fmt.Sprintf("PIE is stopped at the editor's %q dialog (closing it failed: %v)", bpErrorsDialog, err)
-			}
-			return e
+		if w.Title != bpErrorsDialog {
+			continue
 		}
-		// A progress window comes and goes; a dialog waiting for a human stays.
-		if g.seen[w.HWND]++; g.seen[w.HWND] >= 3 {
-			stuck = append(stuck, w)
+		hint := "fix the Blueprints (logs op=tail names them), or pass ignore_blueprint_errors=true (needs the UnrealMCP plugin)"
+		if ignoreAsked {
+			hint = "ignore_blueprint_errors needs a current UnrealMCP plugin (copy plugin/UnrealMCP into the project, " +
+				"build strategy=ubt); or fix the Blueprints (logs op=tail names them)"
 		}
+		e := envelope.New(envelope.Precondition, "PIE stopped at the editor's %q dialog, which was cancelled", bpErrorsDialog).
+			WithHint(hint).WithDetail("modal", w.Title)
+		if err := closeWindow(w.HWND); err != nil {
+			e.Message = fmt.Sprintf("PIE is stopped at the editor's %q dialog (closing it failed: %v)", bpErrorsDialog, err)
+		}
+		return e
 	}
-	if len(stuck) == 0 {
-		return nil
-	}
-	titles := make([]string, len(stuck))
-	for i, w := range stuck {
-		titles[i] = w.Title
-	}
-	return envelope.New(envelope.Precondition, "the editor is blocked by a dialog: %s", strings.Join(titles, ", ")).
-		WithHint("look at it with desktop_capture op=window hwnd=<hwnd>, then answer it with desktop_input").
-		WithDetail("windows", stuck)
+	return nil
 }
 
 func orStr(s, def string) string {
@@ -213,7 +203,7 @@ func orStr(s, def string) string {
 // --- pie_observe / pie_wait ------------------------------------------------------
 
 type pieObserveIn struct {
-	Actors     []string `json:"actors,omitempty" jsonschema:"actor labels to read detailed state for (unknown labels are listed in missing)"`
+	Actors     []string `json:"actors,omitempty" jsonschema:"actor labels to detail (unknown ones are listed in missing)"`
 	Pawn       bool     `json:"pawn,omitempty" jsonschema:"include the player pawn's location, velocity and speed"`
 	Player     int      `json:"player,omitempty" jsonschema:"pawn: local player index (default 0)"`
 	Include    []string `json:"include,omitempty" jsonschema:"glob patterns of property names to include (default all, minus engine noise)"`
@@ -778,7 +768,7 @@ type captureIn struct {
 	IntervalS   float64   `json:"interval_s,omitempty" jsonschema:"start: seconds between frames (default 0.25)"`
 	CellWidth   int       `json:"cell_width,omitempty" jsonschema:"start: frame width (default 480)"`
 	CellHeight  int       `json:"cell_height,omitempty" jsonschema:"start: frame height (default 270)"`
-	CameraMode  string    `json:"camera_mode,omitempty" jsonschema:"start: viewport (default; the editor camera) | fixed | actor | player (game_scene: the player POV)"`
+	CameraMode  string    `json:"camera_mode,omitempty" jsonschema:"start: viewport (default, editor camera) | fixed | actor | player (game_scene POV)"`
 	CameraActor string    `json:"camera_actor,omitempty" jsonschema:"start camera_mode=actor: the actor label to ride"`
 	CameraFov   float64   `json:"camera_fov,omitempty" jsonschema:"start source=game_scene: field of view (default 90)"`
 	Location    []float64 `json:"location,omitempty" jsonschema:"start camera_mode=fixed: [x, y, z]"`

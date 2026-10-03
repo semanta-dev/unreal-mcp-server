@@ -1,0 +1,12 @@
+{"note":"amb: make BP named PointLight","tool":"asset_create","args":{"op":"create","kind":"blueprint","class":"/Script/Engine.Actor","dest":"/Game/T4/PointLight"}}
+{"note":"1 ambiguous short name","tool":"actor_edit","args":{"op":"spawn","world":"editor","class":"PointLight","label":"T4_Amb2"}}
+{"note":"1 disambiguated","tool":"actor_edit","args":{"op":"spawn","world":"editor","class":"/Game/T4/PointLight","label":"T4_FromBP"}}
+{"note":"4 viewport","tool":"screenshot","args":{"op":"viewport","location":[0,-3000,1500],"rotation":[-25,90,0],"width":960,"height":540}}
+{"note":"4 orbit","tool":"screenshot","args":{"op":"orbit","actors":["Wall_*"],"num_angles":4,"cols":2}}
+{"note":"4 thumbnail","tool":"asset_query","args":{"op":"thumbnail","asset":"/Game/UltimateFPSAnimationsKIT/GunModels/StaticMeshes/SM_SUBMACHINEGUN6","size":256}}
+{"note":"4 widget render","tool":"widget_query","args":{"op":"render","class":"/Game/EasyGameUI/Core/CommonWidgets/WBP_EGUI_CommonAlertBanner","width":800,"height":200}}
+{"note":"4 capture editor","tool":"capture","args":{"op":"start","session":"t4ed","interval_s":0.2,"max_frames":5,"cell_width":320,"cell_height":180}}
+{"sleep_s":2}
+{"tool":"capture","args":{"op":"status","session":"t4ed"}}
+{"tool":"capture","args":{"op":"stop","session":"t4ed","cols":5}}
+{"tool":"capture","args":{"op":"read","session":"t4ed","cols":5}}

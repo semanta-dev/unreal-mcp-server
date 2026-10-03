@@ -585,7 +585,7 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Compile the project's C++ (async job). strategy=auto picks from the git diff: header/reflection/new files → ubt (save, safe editor shutdown, Build.bat, relaunch on the same map); body-only → livecoding (escalates to ubt if it cannot patch). Result: success, strategy, reason, diagnostics.",
+      "description": "Compile the project's C++ (async job). strategy=auto picks from the git diff: header/reflection/new files → ubt (save, safe editor shutdown, Build.bat, relaunch on the same map); body-only → livecoding (escalates to ubt if it cannot patch). A hung editor: EDITOR_UNREACHABLE. Result: success, strategy, reason, diagnostics.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -630,7 +630,7 @@
             "type": "number"
           },
           "camera_mode": {
-            "description": "start: viewport (default; the editor camera) | fixed | actor | player (game_scene: the player POV)",
+            "description": "start: viewport (default, editor camera) | fixed | actor | player (game_scene POV)",
             "enum": [
               "viewport",
               "fixed",
@@ -1305,7 +1305,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Start, restart or reconnect the editor.\n- ensure_open (job): launch it if none answers.\n- restart (job): safe shutdown — PRECONDITION listing unsaved packages (save=true saves, discard_dirty=true drops them), stop PIE, graceful quit (kill after 30 s, reported), relaunch on the same map. Daemon: lease kept; other calls get RESTART_IN_PROGRESS meanwhile. Cancelling never escalates to a kill.\n- reclaim: retake a command channel another client took.",
+      "description": "Start, restart or reconnect the editor.\n- ensure_open (job): launch it if none answers.\n- restart (job): safe shutdown — PRECONDITION listing unsaved packages (save=true saves, discard_dirty=true drops them), stop PIE, graceful quit (kill after 30 s, reported), relaunch on the same map. Daemon: lease kept; editor calls get retryable EDITOR_BUSY meanwhile. Cancel never kills.\n- reclaim: retake a command channel another client took.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1638,7 +1638,7 @@
             "type": "number"
           },
           "ignore_blueprint_errors": {
-            "description": "start: play despite Blueprint compile errors",
+            "description": "start: play despite Blueprint compile errors (needs the plugin)",
             "type": "boolean"
           },
           "key": {
@@ -1680,7 +1680,7 @@
         "additionalProperties": false,
         "properties": {
           "actors": {
-            "description": "actor labels to read detailed state for (unknown labels are listed in missing)",
+            "description": "actor labels to detail (unknown ones are listed in missing)",
             "items": {
               "type": "string"
             },

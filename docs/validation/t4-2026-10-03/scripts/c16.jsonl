@@ -1,0 +1,2 @@
+{"tool":"toolsets","args":{"op":"enable","toolset":"desktop"}}
+{"tool":"desktop_capture","args":{"op":"window","hwnd":893455596,"max_width":900}}

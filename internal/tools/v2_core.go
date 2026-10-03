@@ -47,6 +47,18 @@ func v2Bridge(c *spec.Call) (*bridge.Bridge, error) {
 	return nil, e.WithHint("start the Unreal Editor with the project open (remote execution enabled)")
 }
 
+// notWhileRestarting refuses work that must not overlap a controlled restart of the
+// session's editor (the restart may itself be building or reverting).
+func notWhileRestarting(c *spec.Call) error {
+	if !c.Deps.Restarting {
+		return nil
+	}
+	e := envelope.New(envelope.EditorBusy, "the session's editor is restarting")
+	e.Hint = "wait for the restart (job op=wait), then retry"
+	e.Retryable = true
+	return e
+}
+
 // v2Op dispatches a companion op and decodes its result object. Warning/Error lines
 // the editor logged during the op are returned as "editor_log" (also on errors).
 func v2Op(ctx context.Context, c *spec.Call, op string, args map[string]any) (map[string]any, error) {

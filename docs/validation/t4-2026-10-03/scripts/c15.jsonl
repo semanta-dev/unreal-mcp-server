@@ -1,0 +1,2 @@
+{"tool":"toolsets","args":{"op":"enable","toolset":"desktop"}}
+{"tool":"desktop_capture","args":{"op":"list_windows"}}

@@ -1,0 +1,9 @@
+{"tool":"toolsets","args":{"op":"enable","toolset":"desktop"}}
+{"note":"windows before relaunch","tool":"desktop_capture","args":{"op":"list_windows"}}
+{"note":"6 ensure_open","tool":"editor_lifecycle","args":{"op":"ensure_open","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"note":"after relaunch","tool":"desktop_capture","args":{"op":"list_windows"}}
+{"note":"crash edit discarded","tool":"actor_query","args":{"op":"get","actor":"Wall_South"}}

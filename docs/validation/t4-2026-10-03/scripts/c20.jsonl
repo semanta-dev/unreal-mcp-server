@@ -1,0 +1,3 @@
+{"tool":"editor","args":{"op":"status"}}
+{"tool":"toolsets","args":{"op":"enable","toolset":"desktop"}}
+{"tool":"desktop_capture","args":{"op":"list_windows","filter":""}}

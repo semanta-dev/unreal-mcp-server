@@ -1,0 +1,14 @@
+{"tool":"editor","args":{"op":"ping"}}
+{"sleep_s":4}
+{"tool":"editor","args":{"op":"health"}}
+{"tool":"toolsets","args":{"op":"describe"}}
+{"tool":"actor_query","args":{"op":"get","actor":"Wall_North"}}
+{"note":"native CONFLICT path","tool":"actor_query","args":{"op":"get","actor":"NoSuchActorXYZ"}}
+{"tool":"asset_query","args":{"op":"search","classes":["/Script/Engine.StaticMesh"],"limit":2}}
+{"tool":"widget_query","args":{"op":"render","class":"WBP_EGUI_CommonAlertBanner","width":400,"height":100}}
+{"tool":"pie","args":{"op":"start"}}
+{"tool":"pie","args":{"op":"input","key":"SpaceBar"}}
+{"tool":"pie","args":{"op":"stop"}}
+{"tool":"pie","args":{"op":"start","ignore_blueprint_errors":true}}
+{"tool":"pie","args":{"op":"input","key":"SpaceBar"}}
+{"tool":"pie","args":{"op":"stop"}}

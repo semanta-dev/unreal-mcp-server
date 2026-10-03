@@ -1,0 +1,11 @@
+{"note":"1 spawn short class","tool":"actor_edit","args":{"op":"spawn","world":"editor","class":"PointLight","label":"T4_Dup","location":[100,0,200]}}
+{"note":"1 spawn Module.Class","tool":"actor_edit","args":{"op":"spawn","world":"editor","class":"Engine.PointLight","label":"T4_Dup","location":[300,0,200]}}
+{"note":"1 dup label CONFLICT","tool":"actor_query","args":{"op":"get","actor":"T4_Dup"}}
+{"note":"1 ambiguous short class","tool":"actor_edit","args":{"op":"spawn","world":"editor","class":"Character","label":"T4_Amb"}}
+{"note":"1 bad class","tool":"actor_edit","args":{"op":"spawn","world":"editor","class":"NoSuchClassXyz","label":"T4_Bad"}}
+{"note":"1 bad world","tool":"actor_edit","args":{"op":"transform","world":"game","actor":"Floor"}}
+{"note":"2 transform Floor (undo test)","tool":"actor_edit","args":{"op":"transform","world":"editor","actor":"Wall_North","location":[0,5000,999]}}
+{"tool":"actor_query","args":{"op":"get","actor":"Wall_North"}}
+{"note":"2 undo","tool":"console","args":{"command":"TRANSACTION UNDO","world":"editor"}}
+{"tool":"actor_query","args":{"op":"get","actor":"Wall_North"}}
+{"tool":"actor_query","args":{"op":"list","filter":"T4_"}}

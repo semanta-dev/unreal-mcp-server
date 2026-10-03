@@ -142,6 +142,7 @@ func (dm *Daemon) EndSession(sid string) {
 
 	id, leased := dm.Router.InstanceFor(sid)
 	if !leased {
+		dm.Router.Release(sid) // a cold start still in flight is abandoned (warm, adoptable)
 		return
 	}
 	inst, ok := dm.Pool.Get(id)

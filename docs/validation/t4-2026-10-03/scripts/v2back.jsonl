@@ -1,0 +1,4 @@
+{"note":"v2 again: status","tool":"editor","args":{"op":"status"}}
+{"sleep_s":4}
+{"note":"v2 again: native","tool":"actor_query","args":{"op":"get","actor":"Wall_North"}}
+{"tool":"actor_query","args":{"op":"list","filter":"V1_"}}

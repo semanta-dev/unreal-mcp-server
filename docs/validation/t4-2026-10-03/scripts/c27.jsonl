@@ -1,0 +1,5 @@
+{"tool":"pie","args":{"op":"start"}}
+{"tool":"pie_wait","args":{"predicate":"counts.AesirCharacter >= 1","timeout_s":5}}
+{"tool":"pie_observe","args":{"max_props":4}}
+{"note":"console in pie","tool":"console","args":{"command":"stat fps","world":"pie"}}
+{"tool":"pie","args":{"op":"stop"}}

@@ -1,0 +1,5 @@
+{"note":"block 8s with 3s timeout","tool":"python","args":{"op":"run","code":"import time\ntime.sleep(8)\nprint('done')","timeout_s":3}}
+{"tool":"editor","args":{"op":"ping"}}
+{"sleep_s":6}
+{"tool":"editor","args":{"op":"ping"}}
+{"tool":"editor","args":{"op":"ping"}}

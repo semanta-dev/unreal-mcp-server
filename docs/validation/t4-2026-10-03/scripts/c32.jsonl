@@ -1,0 +1,7 @@
+{"tool": "python", "note": "C:\\Users\\jorda\\AppData\\Local\\Temp\\claude\\C--Users-jorda-code-games-unreal-mcp-server\\de8c76ec-2c83-4a87-a5c0-9a34f7bcedbf\\scratchpad\\t4\\unload.py", "args": {"op": "run", "code": "import unreal\nlib = unreal.WorldPartitionBlueprintLibrary\ndescs = lib.get_actor_descs()\nd = [x for x in descs if str(x.get_editor_property(\"label\")) == \"WP_B\"]\nprint(len(descs), [str(x.get_editor_property(\"label\")) for x in descs][:8])\ng = d[0].get_editor_property(\"guid\")\nprint(\"unload\", lib.unload_actors([g]))\nsub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)\nprint(\"loaded labels\", [a.get_actor_label() for a in sub.get_all_level_actors() if a.get_actor_label().startswith(\"WP_\")])\n"}}
+{"tool":"actor_edit","args":{"op":"transform","world":"editor","actor":"WP_A","location":[0,0,900]}}
+{"note":"5 diff (B unloaded)","tool":"snapshot","args":{"op":"diff","name":"wp1"}}
+{"note":"5 restore","tool":"snapshot_restore","args":{"name":"wp1","save":false}}
+{"tool":"actor_query","args":{"op":"get","actor":"WP_A"}}
+{"note":"5 take while unloaded","tool":"snapshot","args":{"op":"take","name":"wp2","class_filter":"WP_"}}
+{"note":"5 diff wp1 vs wp2","tool":"snapshot","args":{"op":"diff","name":"wp1","against":"wp2"}}

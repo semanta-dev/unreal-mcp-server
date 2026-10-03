@@ -1,0 +1,5 @@
+{"note":"A attach","tool":"project","args":{"op":"attach","project":"C:/Users/jorda/code/games/_p7scratch/aesir"}}
+{"tool":"editor","args":{"op":"status"}}
+{"tool":"actor_query","args":{"op":"list","filter":"Wall_","limit":2}}
+{"tool":"toolsets","args":{"op":"list"}}
+{"tool":"project","args":{"op":"list"}}

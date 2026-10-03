@@ -1,0 +1,5 @@
+{"tool": "python", "note": "C:\\Users\\jorda\\AppData\\Local\\Temp\\claude\\C--Users-jorda-code-games-unreal-mcp-server\\de8c76ec-2c83-4a87-a5c0-9a34f7bcedbf\\scratchpad\\t4\\mkwp.py", "args": {"op": "run", "code": "import unreal\nles = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)\nok = les.new_level_from_template(\"/Game/T4/L_WP\", \"/Engine/Maps/Templates/OpenWorld\")\nw = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()\nprint(ok, w.get_path_name(), w.get_world_partition() is not None if hasattr(w, \"get_world_partition\") else \"n/a\")\nprint([n for n in dir(unreal.WorldPartitionBlueprintLibrary) if not n.startswith(\"_\")])\n"}}
+{"tool":"actor_edit","args":{"op":"spawn","world":"editor","class":"StaticMeshActor","static_mesh":"/Engine/BasicShapes/Cube","label":"WP_A","location":[0,0,500]}}
+{"tool":"actor_edit","args":{"op":"spawn","world":"editor","class":"StaticMeshActor","static_mesh":"/Engine/BasicShapes/Cube","label":"WP_B","location":[90000,90000,500]}}
+{"tool":"level","args":{"op":"save_all"}}
+{"note":"5 take","tool":"snapshot","args":{"op":"take","name":"wp1","class_filter":"WP_"}}

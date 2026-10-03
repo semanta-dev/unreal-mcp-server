@@ -1,0 +1,5 @@
+{"tool":"pie","args":{"op":"start"}}
+{"note":"tags in PIE","tool":"asset_query","args":{"op":"tags","asset":"/Game/T4/BP_T4"}}
+{"tool":"pie","args":{"op":"stop"}}
+{"note":"tags editor","tool":"asset_query","args":{"op":"tags","asset":"/Game/T4/BP_T4.BP_T4"}}
+{"note":"tags missing","tool":"asset_query","args":{"op":"tags","asset":"/Game/T4/Nope"}}

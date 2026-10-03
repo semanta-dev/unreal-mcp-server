@@ -142,5 +142,9 @@ func (c Config) Uexec() uexec.Config {
 	u.DiscoveryTimeout = c.DiscoveryTimeout
 	u.CommandTimeout = c.CommandTimeout
 	u.ProjectDir = c.ProjectDir
+	// With a project, never fall back to another project's editor: found live (P7),
+	// while the project's editor relaunched after a build, the reconnect bound the only
+	// other editor on the network and the next calls ran in the wrong project.
+	u.StrictNode = c.ProjectDir != ""
 	return u
 }

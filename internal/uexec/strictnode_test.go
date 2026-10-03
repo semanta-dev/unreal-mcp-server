@@ -51,3 +51,15 @@ func TestWaitForNodeSkipsExcludedNodes(t *testing.T) {
 		t.Fatalf("want the fresh node, got n=%v err=%v", n, err)
 	}
 }
+
+// Gate finding (P7): excluding the node a session is connected to must drop that
+// channel and forget the node, so Close never sends it close_connection (the node may
+// be another session's editor).
+func TestExcludingTheCurrentNodeForgetsIt(t *testing.T) {
+	s := New(DefaultConfig(), nil)
+	s.nodeID = "theirs"
+	s.ExcludeNode("theirs")
+	if s.nodeID != "" || !s.excluded["theirs"] {
+		t.Fatalf("nodeID=%q excluded=%v", s.nodeID, s.excluded)
+	}
+}

@@ -1,0 +1,19 @@
+{"tool":"build","args":{"strategy":"ubt","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"note":"preflight refuse","tool":"pie","args":{"op":"start"}}
+{"note":"preflight ignore","tool":"pie","args":{"op":"start","ignore_blueprint_errors":true}}
+{"note":"tags during PIE","tool":"asset_query","args":{"op":"tags","asset":"/Game/T4/BP_T4"}}
+{"note":"pie shot abs","tool":"screenshot","args":{"op":"pie","width":640,"height":360}}
+{"note":"highres abs","tool":"capture","args":{"op":"start","session":"hr3","source":"pie_highres","world":"pie","interval_s":0.5,"max_frames":3,"cell_width":320,"cell_height":180}}
+{"sleep_s":4}
+{"tool":"capture","args":{"op":"stop","session":"hr3","cols":3}}
+{"tool":"pie","args":{"op":"stop"}}

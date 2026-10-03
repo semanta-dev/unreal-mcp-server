@@ -1,0 +1,2 @@
+{"note":"5 filtered diff","tool":"snapshot","args":{"op":"diff","name":"wp1"}}
+{"note":"5 unfiltered diff vs wp_all","tool":"snapshot","args":{"op":"diff","name":"wp_all"}}

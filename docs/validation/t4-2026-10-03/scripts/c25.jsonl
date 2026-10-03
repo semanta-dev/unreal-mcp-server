@@ -1,0 +1,10 @@
+{"note":"2 snap take","tool":"snapshot","args":{"op":"take","name":"t4base"}}
+{"tool":"actor_edit","args":{"op":"transform","world":"editor","actor":"Wall_East","location":[5000,0,900]}}
+{"tool":"actor_edit","args":{"op":"transform","world":"editor","actor":"Wall_West","location":[-5000,0,900]}}
+{"note":"2 diff","tool":"snapshot","args":{"op":"diff","name":"t4base"}}
+{"note":"2 restore","tool":"snapshot_restore","args":{"name":"t4base","save":false}}
+{"tool":"actor_query","args":{"op":"list","filter":"Wall_"}}
+{"note":"2 undo restore (1 step)","tool":"console","args":{"command":"TRANSACTION UNDO","world":"editor"}}
+{"tool":"actor_query","args":{"op":"list","filter":"Wall_"}}
+{"tool":"snapshot_restore","args":{"name":"t4base","save":true}}
+{"tool":"analyze","args":{"op":"scenarios"}}

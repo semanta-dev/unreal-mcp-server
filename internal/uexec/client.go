@@ -120,6 +120,15 @@ func (s *Session) ExcludeNode(id string) {
 		s.excluded = map[string]bool{}
 	}
 	s.excluded[id] = true
+	if s.nodeID == id {
+		// Not ours: drop our side of the channel and forget the node, so neither a
+		// reconnect nor Close sends it close_connection (it may serve another session).
+		if s.cmd != nil {
+			s.cmd.close()
+			s.cmd = nil
+		}
+		s.nodeID = ""
+	}
 }
 
 func (s *Session) excludedCopyLocked() map[string]bool {

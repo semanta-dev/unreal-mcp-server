@@ -1,0 +1,28 @@
+{"tool":"build","args":{"strategy":"ubt","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"tool":"job","args":{"op":"wait","job_id":"job-1","wait_s":25}}
+{"note":"preflight refuse","tool":"pie","args":{"op":"start"}}
+{"note":"preflight ignore","tool":"pie","args":{"op":"start","ignore_blueprint_errors":true}}
+{"note":"plugin pie input","tool":"pie","args":{"op":"input","key":"W","action":"hold","duration_s":1}}
+{"note":"4 capture pie_highres","tool":"capture","args":{"op":"start","session":"t4hr","source":"pie_highres","world":"pie","interval_s":0.5,"max_frames":3,"cell_width":320,"cell_height":180}}
+{"sleep_s":4}
+{"tool":"capture","args":{"op":"stop","session":"t4hr","cols":3}}
+{"note":"4 capture game_scene","tool":"capture","args":{"op":"start","session":"t4gs","source":"game_scene","world":"pie","camera_mode":"player","interval_s":0.25,"max_frames":4,"cell_width":320,"cell_height":180}}
+{"sleep_s":3}
+{"tool":"capture","args":{"op":"stop","session":"t4gs","cols":4}}
+{"note":"audio","tool":"audio","args":{"op":"capture_start"}}
+{"sleep_s":1}
+{"tool":"audio","args":{"op":"capture_stop"}}
+{"tool":"pie","args":{"op":"stop"}}

@@ -1,0 +1,7 @@
+{"tool":"toolsets","args":{"op":"enable","toolset":"desktop"}}
+{"tool":"desktop_input","args":{"op":"focus","hwnd":893455596}}
+{"sleep_s":1}
+{"note":"click Cancel","tool":"desktop_input","args":{"op":"mouse","action":"click","window_hwnd":893455596,"x":575,"y":112}}
+{"sleep_s":2}
+{"tool":"desktop_capture","args":{"op":"list_windows","filter":"Blueprint"}}
+{"tool":"editor","args":{"op":"status"}}

@@ -1,0 +1,9 @@
+{
+  "schema": "scenario/v1",
+  "name": "arena_crash",
+  "mode": "pie",
+  "level": "/Game/Maps/L_Arena",
+  "duration_s": 8,
+  "beats": [{"at_s": 2, "console": "debug crash"}],
+  "rubric": [{"id": "player_spawned", "kind": "nonzero_count", "path": "counts.AesirCharacter", "severity": "fail"}]
+}

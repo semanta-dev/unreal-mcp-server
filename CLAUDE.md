@@ -51,7 +51,10 @@ cat internal/bridge/py/[0-9]*.py > /tmp/mcp2_bridge.py; ruff check --config pypr
 - `ARFilter` fields are read-only on instances: build it in one constructor call (`unreal.ARFilter(**kw)`).
 - `PlayerController.console_command` is not exposed: use `SystemLibrary.execute_console_command(world, cmd, pc)`.
 - A Static-mobility root ignores `set_actor_location` in a game world (no error): check that a move landed.
-- HighResShot writes a relative name under `Paths.screen_shot_dir()` (`Saved/Screenshots/WindowsEditor/`).
+- HighResShot resolves a bare file name against the project's configurable `GameScreenshotSaveDirectory`: pass an
+  absolute path.
+- Asset registry lookups: `EditorAssetLibrary.find_asset_data` refuses during PIE, and `get_asset_by_object_path`
+  cannot take a `SoftObjectPath` built from a string — use `get_assets_by_package_name`.
 - `Blueprint.Status` and `bDisplayCompilePIEWarning` are invisible to Python; PIE's "Blueprint Compilation Errors"
   modal blocks the game thread (and every remote command) — the plugin's `PrepareBlueprintsForPIE` is the pre-flight.
 - Remote execution: the editor ignores `open_connection` from a node+endpoint it believes is still connected (it does

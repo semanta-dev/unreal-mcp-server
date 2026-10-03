@@ -55,14 +55,17 @@ def _pie_blueprint_preflight(acknowledge):
     auth = unreal.get_editor_subsystem(cls) if cls else None
     if not auth or not hasattr(auth, "prepare_blueprints_for_pie"):
         return None
-    return [str(p) for p in auth.prepare_blueprints_for_pie(bool(acknowledge))]
+    res = auth.prepare_blueprints_for_pie(bool(acknowledge))
+    errored, compiled = (res if isinstance(res, tuple) else (res, None))
+    return [str(p) for p in errored], compiled
 
 
 def _op_pie_start(args):
     if _pie_running():
         return {"pie": True, "already_running": True}
     ignore = bool(args.get("ignore_blueprint_errors"))
-    errored = _pie_blueprint_preflight(ignore)
+    pre = _pie_blueprint_preflight(ignore)
+    errored, compiled = pre if pre is not None else (None, None)
     if errored and not ignore:
         raise _V2Error("PRECONDITION", "%d Blueprint(s) have compile errors; PIE would stop at a modal dialog"
                        % len(errored), blueprints=errored)
@@ -70,6 +73,8 @@ def _op_pie_start(args):
     out = {"pie": "starting", "simulate": bool(args.get("simulate")), "editor_pid": os.getpid()}
     if errored:
         out["blueprint_errors_ignored"] = errored
+    if compiled:
+        out["blueprints_compiled"] = compiled
     if errored is None:
         out["blueprint_preflight"] = "unavailable (UnrealMCP plugin missing or older)"
     return out
@@ -274,18 +279,6 @@ def _op_take_screenshot_v2(args):
     return out
 
 
-def _screenshot_dir():
-    """Where HighResShot writes a relative filename: FPaths::ScreenShotDir()
-    (Saved/Screenshots/WindowsEditor/ in the editor), absolute, with a trailing /."""
-    try:
-        d = _full_path(unreal.Paths.screen_shot_dir())
-    except Exception:
-        d = os.path.join(_full_path(unreal.Paths.project_saved_dir()), "Screenshots")
-    d = d.replace("\\", "/").rstrip("/") + "/"
-    os.makedirs(d, exist_ok=True)
-    return d
-
-
 def _op_pie_screenshot_v2(args):
     fname = args.get("filename") or ""
     if fname and (os.path.basename(fname) != fname or not fname.endswith(".png") or ".." in fname):
@@ -295,12 +288,14 @@ def _op_pie_screenshot_v2(args):
     # A fresh name per shot: the server waits for this file to appear, and a reused
     # name would hand back the previous shot.
     fname = fname or "mcp_pie_%d.png" % int(time.time() * 1000)
-    out_dir = _screenshot_dir()
+    out_dir = _saved_mcp_dir("Screenshots") + "/"
     try:
         os.remove(out_dir + fname)
     except OSError:
         pass
-    unreal.AutomationLibrary.take_high_res_screenshot(int(args.get("width", 1920)), int(args.get("height", 1080)), fname)
+    # An absolute name: a bare one resolves against the configurable GameScreenshotSaveDirectory.
+    unreal.AutomationLibrary.take_high_res_screenshot(int(args.get("width", 1920)), int(args.get("height", 1080)),
+                                                      out_dir + fname)
     return {"file": out_dir + fname, "async": True}
 
 

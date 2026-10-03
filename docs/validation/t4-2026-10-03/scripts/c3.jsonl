@@ -1,0 +1,16 @@
+{"note":"2 undo spawn","tool":"console","args":{"command":"TRANSACTION UNDO","world":"editor"}}
+{"tool":"actor_query","args":{"op":"list","filter":"T4_"}}
+{"note":"pie start","tool":"pie","args":{"op":"start"}}
+{"note":"@pawn get","tool":"actor_query","args":{"op":"get","actor":"@pawn","world":"pie"}}
+{"note":"@controller","tool":"actor_query","args":{"op":"get","actor":"@controller","world":"pie"}}
+{"note":"@gamestate","tool":"actor_query","args":{"op":"get","actor":"@gamestate","world":"pie"}}
+{"note":"editor path in pie","tool":"actor_query","args":{"op":"get","actor":"/Game/Maps/L_Arena.L_Arena:PersistentLevel.StaticMeshActor_1","world":"pie"}}
+{"note":"pie transform","tool":"actor_edit","args":{"op":"transform","world":"pie","actor":"Wall_North","location":[0,5000,1500]}}
+{"note":"pie dup conflict","tool":"actor_query","args":{"op":"get","actor":"T4_Dup","world":"pie"}}
+{"note":"auto world","tool":"actor_query","args":{"op":"list","world":"auto","limit":1}}
+{"note":"pie_observe pawn","tool":"pie_observe","args":{"pawn":true,"max_props":8}}
+{"note":"pie spawn unsupported","tool":"actor_edit","args":{"op":"spawn","world":"pie","class":"PointLight"}}
+{"note":"4 screenshot pie","tool":"screenshot","args":{"op":"pie","width":960,"height":540}}
+{"note":"pie stop","tool":"pie","args":{"op":"stop"}}
+{"note":"editor untouched","tool":"actor_query","args":{"op":"get","actor":"Wall_North"}}
+{"note":"pie gone","tool":"actor_query","args":{"op":"list","world":"pie"}}

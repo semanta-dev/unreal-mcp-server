@@ -1,0 +1,7 @@
+{"note":"B attach (spawn)","tool":"project","args":{"op":"attach","project":"C:/Users/jorda/code/games/_p7scratch/PolyWorld"}}
+{"tool":"level","args":{"op":"open","level":"/Game/PolyWorld/Maps/L_CompanyCity"}}
+{"tool":"asset_create","args":{"op":"replace","kind":"blueprint","class":"/Script/Engine.Actor","dest":"/Game/T4/BP_D"}}
+{"note":"B checkpoint","tool":"git","args":{"op":"checkpoint","message":"daemon cp"}}
+{"tool":"asset_edit","args":{"op":"add_component","asset":"/Game/T4/BP_D","class":"StaticMeshComponent","name":"DMesh"}}
+{"tool":"level","args":{"op":"save_all"}}
+{"tool":"git","args":{"op":"log","limit":1}}

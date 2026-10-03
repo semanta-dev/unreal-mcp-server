@@ -1,0 +1,4 @@
+{"tool":"level","args":{"op":"save_all"}}
+{"tool":"level","args":{"op":"open","level":"/Game/PolyWorld/Maps/L_MainMenu"}}
+{"tool":"level","args":{"op":"open","level":"/Game/T4/L_WP"}}
+{"tool":"actor_query","args":{"op":"list","filter":"WP_"}}

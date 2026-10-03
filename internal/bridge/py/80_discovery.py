@@ -79,14 +79,17 @@ def _op_asset_tags(args):
     path = args["asset"]
     if "." not in path.rsplit("/", 1)[-1]:  # a package path: /Game/X/BP_Y -> /Game/X/BP_Y.BP_Y
         path = path + "." + path.rsplit("/", 1)[-1]
+    # The registry by package name: EditorAssetLibrary.find_asset_data refuses during PIE,
+    # and get_asset_by_object_path cannot take a path built from a string in 5.7 Python.
+    pkg, obj = path.rsplit(".", 1)
     data = None
     try:
-        data = unreal.EditorAssetLibrary.find_asset_data(path)
+        for ad in ar.get_assets_by_package_name(pkg) or []:
+            if str(ad.get_editor_property("asset_name")) == obj:
+                data = ad
+                break
     except Exception:
-        try:
-            data = ar.get_asset_by_object_path(unreal.SoftObjectPath(path))
-        except Exception:
-            data = None
+        data = None
     if not data or not data.is_valid():
         return {"error": "asset not found: " + str(path), "code": "ASSET_NOT_FOUND"}
     tags = {}

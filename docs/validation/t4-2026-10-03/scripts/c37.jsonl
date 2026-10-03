@@ -1,0 +1,10 @@
+{"note":"pw not in pie","tool":"polyworld","args":{"op":"status"}}
+{"tool":"level","args":{"op":"open","level":"/Game/PolyWorld/Maps/L_CompanyCity"}}
+{"tool":"pie","args":{"op":"start","ignore_blueprint_errors":true}}
+{"note":"pw status","tool":"polyworld","args":{"op":"status"}}
+{"note":"pw road","tool":"polyworld","args":{"op":"road","start":[2,2],"end":[6,2]}}
+{"note":"pw build","tool":"polyworld","args":{"op":"build","option":0,"location":[800,800,0]}}
+{"tool":"polyworld","args":{"op":"status"}}
+{"note":"pw demolish","tool":"polyworld_demolish","args":{"location":[800,800,0]}}
+{"tool":"screenshot","args":{"op":"pie","width":960,"height":540}}
+{"tool":"pie","args":{"op":"stop"}}

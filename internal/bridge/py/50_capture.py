@@ -9,10 +9,7 @@ _MCP_RECORDERS = {}
 
 
 def _capture_session_dir(session):
-    d = unreal.SystemLibrary.get_project_directory() + "Saved/MCP/capture/" + session + "/"
-    if not os.path.isdir(d):
-        os.makedirs(d, exist_ok=True)
-    return d
+    return _saved_mcp_dir("capture", session) + "/"
 
 
 def _make_scene_capture(world, width, height):
@@ -116,7 +113,7 @@ def _recorder_tick(session):
             if rec["source"] == "pie_highres":
                 # HighResShot writes asynchronously to Saved/Screenshots/<rel>;
                 # Go tolerates a not-yet-flushed final frame (skips absent files).
-                unreal.AutomationLibrary.take_high_res_screenshot(rec["width"], rec["height"], rel)
+                unreal.AutomationLibrary.take_high_res_screenshot(rec["width"], rec["height"], rec["dir"] + rel)
             else:
                 _position_capture(rec)
                 cc = rec["cap"].capture_component2d
@@ -287,11 +284,10 @@ def _op_capture_start(args):
         return {"error": "no world to capture (open a level / start play)"}
     warning = None
     if source == "pie_highres":
-        # HighResShot writes to the platform screenshot dir (Saved/Screenshots/WindowsEditor
-        # in the editor) — record frames there under a session-prefixed name so Go
-        # resolves dir+file to the real path.
-        rec_dir = _screenshot_dir()
-        file_prefix = "mcp_" + session + "_"
+        # Frames are HighResShots written to absolute paths in the session dir (a bare
+        # name would resolve against the project's configurable screenshot folder).
+        rec_dir = _capture_session_dir(session)
+        file_prefix = ""
         min_interval = 0.2  # HighResShot is slow; a tight interval drops frames
         cap, rt = (None, None)
         if not os.path.isdir(rec_dir):

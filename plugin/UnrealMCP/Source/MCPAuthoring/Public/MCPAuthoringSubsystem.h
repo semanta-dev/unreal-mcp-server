@@ -55,7 +55,8 @@ public:
 	 *  Compilation Errors" dialog (which blocks the game thread — and every remote
 	 *  command — until a human answers). With bAcknowledgeErrors, marks them as the
 	 *  dialog's "Play in Editor" button does, so PIE starts without asking. Mirrors
-	 *  FInternalPlayLevelUtils::ResolveDirtyBlueprints (PlayLevel.cpp, UE 5.7). */
+	 *  FInternalPlayLevelUtils::ResolveDirtyBlueprints (PlayLevel.cpp, UE 5.7), including
+	 *  its garbage collection after compiling. CompiledCount: Blueprints compiled. */
 	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
-	TArray<FString> PrepareBlueprintsForPIE(bool bAcknowledgeErrors);
+	TArray<FString> PrepareBlueprintsForPIE(bool bAcknowledgeErrors, int32& CompiledCount);
 };
