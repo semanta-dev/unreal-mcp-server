@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jdziat/unreal-mcp-server/internal/editorpool"
+	"github.com/jdziat/unreal-mcp-server/internal/supervisor"
 )
 
 type dClock struct{ t time.Time }
@@ -28,7 +28,7 @@ func (l *dLiveness) set(pid int, alive bool, id string) {
 
 func TestRuntimeTickReapsCrashKeepsAlive(t *testing.T) {
 	c := &dClock{t: time.Unix(1000, 0)}
-	pool := editorpool.New(c.now)
+	pool := supervisor.NewPool(c.now)
 	sp := &fakeSpawner{}
 	router := NewRouter(pool, sp, nil)
 
@@ -48,7 +48,7 @@ func TestRuntimeTickReapsCrashKeepsAlive(t *testing.T) {
 	reaped := rt.Tick()
 
 	// Exactly B is reaped as a crash; A was renewed (alive) so it survives.
-	if len(reaped) != 1 || reaped[0].ID != idB || reaped[0].State != editorpool.Leased || reaped[0].LeasedBy != "sessB" {
+	if len(reaped) != 1 || reaped[0].ID != idB || reaped[0].State != supervisor.Leased || reaped[0].LeasedBy != "sessB" {
 		t.Fatalf("expected B crash-reaped, got %+v", reaped)
 	}
 	if len(lost) != 1 || lost[0] != "sessB" {

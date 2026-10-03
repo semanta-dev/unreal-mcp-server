@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/jdziat/unreal-mcp-server/internal/editorpool"
+	"github.com/jdziat/unreal-mcp-server/internal/supervisor"
 )
 
 // Runtime drives the pool's background liveness (MULTI_PROJECT_SYSTEM.md §3): a
@@ -16,7 +16,7 @@ import (
 // deterministically unit-testable.
 type Runtime struct {
 	router      *Router
-	lv          editorpool.Liveness
+	lv          supervisor.Liveness
 	reapTTL     time.Duration
 	interval    time.Duration
 	onLeaseLost func(sessionID string) // notify a session its lease crashed (HTTP push)
@@ -26,7 +26,7 @@ type Runtime struct {
 // (a live instance renewed each tick is never older than ~interval), and both are
 // wall-clock-independent of any command/build (§3: the reaper is PID-gated, not
 // duration-gated). onLeaseLost may be nil.
-func NewRuntime(router *Router, lv editorpool.Liveness, interval, reapTTL time.Duration, onLeaseLost func(string)) *Runtime {
+func NewRuntime(router *Router, lv supervisor.Liveness, interval, reapTTL time.Duration, onLeaseLost func(string)) *Runtime {
 	if interval <= 0 {
 		interval = 3 * time.Second
 	}
@@ -38,7 +38,7 @@ func NewRuntime(router *Router, lv editorpool.Liveness, interval, reapTTL time.D
 
 // Tick performs one liveness pass: renew alive, reap dead, reconcile bridges, deliver
 // LEASE_LOST. Returns the reaped set (for tests / metrics).
-func (rt *Runtime) Tick() []editorpool.Reaped {
+func (rt *Runtime) Tick() []supervisor.Reaped {
 	pool := rt.router.Pool()
 	pool.RenewAlive(rt.lv) // standing PID heartbeat: keep every alive editor fresh
 	reaped := pool.ReapStale(rt.reapTTL)
@@ -47,7 +47,7 @@ func (rt *Runtime) Tick() []editorpool.Reaped {
 	}
 	rt.router.ReconcileReaped(reaped) // close/drop crashed bridges + bindings
 	for _, r := range reaped {
-		if r.State == editorpool.Leased && r.LeasedBy != "" && rt.onLeaseLost != nil {
+		if r.State == supervisor.Leased && r.LeasedBy != "" && rt.onLeaseLost != nil {
 			rt.onLeaseLost(r.LeasedBy) // the holder's next call already gets LEASE_LOST; also push
 		}
 	}

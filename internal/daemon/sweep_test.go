@@ -1,35 +1,33 @@
-package daemonwire
+package daemon
 
 import (
 	"context"
+	"github.com/jdziat/unreal-mcp-server/internal/jobs"
+	"github.com/jdziat/unreal-mcp-server/internal/supervisor"
 	"log/slog"
 	"testing"
 	"time"
-
-	"github.com/jdziat/unreal-mcp-server/internal/daemon"
-	"github.com/jdziat/unreal-mcp-server/internal/editorpool"
-	"github.com/jdziat/unreal-mcp-server/internal/jobs"
 )
 
 type fakeEd struct{}
 
 func (fakeEd) Close() error { return nil }
 
-type fakeSpawner struct {
+type wireFakeSpawner struct {
 	pid   int
 	kills []int
 }
 
-func (s *fakeSpawner) Spawn(ctx context.Context, project, token string) (daemon.Editor, int, string, error) {
+func (s *wireFakeSpawner) Spawn(ctx context.Context, project, token string) (supervisor.Editor, int, string, error) {
 	s.pid++
 	return fakeEd{}, s.pid, "id", nil
 }
-func (s *fakeSpawner) Kill(pid int) error { s.kills = append(s.kills, pid); return nil }
+func (s *wireFakeSpawner) Kill(pid int) error { s.kills = append(s.kills, pid); return nil }
 
 func newTestDaemon() *Daemon {
-	pool := editorpool.New(nil)
-	sp := &fakeSpawner{}
-	router := daemon.NewRouter(pool, sp, func() string { return "tok" })
+	pool := supervisor.NewPool(nil)
+	sp := &wireFakeSpawner{}
+	router := NewRouter(pool, sp, func() string { return "tok" })
 	return &Daemon{
 		Pool: pool, Router: router, spawner: sp,
 		isAlive:   func(int) bool { return false }, // fake editors are dead once killed

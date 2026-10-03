@@ -1,4 +1,4 @@
-package main
+package supervisor
 
 import (
 	"context"
@@ -10,11 +10,11 @@ import (
 	"github.com/jdziat/unreal-mcp-server/internal/uexec"
 )
 
-// relaunchWatcher relaunches the editor when it disappears from discovery for a
+// RelaunchWatcher relaunches the editor when it disappears from discovery for a
 // sustained window (unattended crash recovery). Opt-in via UMCP_AUTO_RELAUNCH;
 // requires -project (to find the .uproject) and -engine. Uses a cooldown so a
 // launch that is still coming up is not relaunched again.
-func relaunchWatcher(ctx context.Context, sess *uexec.Session, cfg config.Config, logger *slog.Logger) {
+func RelaunchWatcher(ctx context.Context, sess *uexec.Session, cfg config.Config, logger *slog.Logger) {
 	uproject := lifecycle.FindUproject(cfg.ProjectDir)
 	if uproject == "" {
 		logger.Warn("auto-relaunch enabled but no .uproject found under -project; disabling", "project", cfg.ProjectDir)

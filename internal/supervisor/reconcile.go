@@ -1,6 +1,4 @@
-package daemon
-
-import "github.com/jdziat/unreal-mcp-server/internal/editorpool"
+package supervisor
 
 // Reattach reconciliation (MULTI_PROJECT_SYSTEM.md §6). On daemon restart every
 // agent HTTP session is gone, so persisted leases can't be re-held; the goal is
@@ -20,14 +18,14 @@ type Record struct {
 	ID       string
 	Project  string
 	Token    string
-	State    editorpool.State // intent-only == Starting; full record carries the real state
+	State    State // intent-only == Starting; full record carries the real state
 	PID      int
 	Identity string
 }
 
 // reAdoptable: a record whose editor should be re-adopted as a warm Idle rather
 // than killed — only a stable, accepting-ready state ({Idle, Leased}).
-func (r Record) reAdoptable() bool { return r.State == editorpool.Idle || r.State == editorpool.Leased }
+func (r Record) reAdoptable() bool { return r.State == Idle || r.State == Leased }
 
 // LiveEditor is an editor observed at reattach — via the process table (Token read
 // from its command line, PID from enumeration) or via live discovery (Token

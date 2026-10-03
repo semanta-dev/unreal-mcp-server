@@ -7,7 +7,7 @@
 // kill-before-teardown discipline for expected-dead instances.
 //
 // Editor bring-up (spawn + accepting-wait + node pin) and process kills are behind
-// the Spawner interface (lifecycle + uexec in production, fakes in tests), so the
+// the supervisor.Spawner interface (lifecycle + uexec in production, fakes in tests), so the
 // routing logic is unit-testable without a live editor.
 package daemon
 
@@ -17,21 +17,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/jdziat/unreal-mcp-server/internal/editorpool"
+	"github.com/jdziat/unreal-mcp-server/internal/supervisor"
 )
-
-// Editor is a per-instance command bridge (a bridge.Bridge in production).
-type Editor interface {
-	Close() error
-}
-
-// Spawner brings up and tears down editors. Spawn MUST write the write-ahead intent
-// (token) before launching, wait until the editor is ACCEPTING, and return a ready
-// bridge + its pid + a stable process identity. Kill force-kills and confirms death.
-type Spawner interface {
-	Spawn(ctx context.Context, project, token string) (ed Editor, pid int, identity string, err error)
-	Kill(pid int) error
-}
 
 // Errors surfaced to a session (mapped to MCP error codes by the transport layer).
 var (
@@ -43,18 +30,18 @@ var (
 // Router binds sessions to leases and routes to per-instance editors.
 type Router struct {
 	mu       sync.Mutex
-	pool     *editorpool.Pool
-	spawner  Spawner
+	pool     *supervisor.Pool
+	spawner  supervisor.Spawner
 	newToken func() string
 
-	bindings map[string]string // sessionID -> instanceID
-	editors  map[string]Editor // instanceID -> its bridge
+	bindings map[string]string            // sessionID -> instanceID
+	editors  map[string]supervisor.Editor // instanceID -> its bridge
 	seq      int
 }
 
 // NewRouter builds a router. newToken generates a fresh -MCPInstanceToken (uuid in
 // prod); nil defaults to a monotonic stub (fine for a single-daemon test).
-func NewRouter(pool *editorpool.Pool, spawner Spawner, newToken func() string) *Router {
+func NewRouter(pool *supervisor.Pool, spawner supervisor.Spawner, newToken func() string) *Router {
 	if newToken == nil {
 		var n int
 		var mu sync.Mutex
@@ -62,7 +49,7 @@ func NewRouter(pool *editorpool.Pool, spawner Spawner, newToken func() string) *
 	}
 	return &Router{
 		pool: pool, spawner: spawner, newToken: newToken,
-		bindings: map[string]string{}, editors: map[string]Editor{},
+		bindings: map[string]string{}, editors: map[string]supervisor.Editor{},
 	}
 }
 
@@ -117,7 +104,7 @@ func (r *Router) Attach(ctx context.Context, sessionID, project string) (instanc
 // Resolve returns the editor bridge for a session's lease, or NO_PROJECT_ATTACHED /
 // LEASE_LOST. It re-checks the lease is still Leased by this session (a reaped lease
 // returns LEASE_LOST so the agent re-attaches).
-func (r *Router) Resolve(sessionID string) (Editor, string, error) {
+func (r *Router) Resolve(sessionID string) (supervisor.Editor, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	id, ok := r.bindings[sessionID]
@@ -125,13 +112,13 @@ func (r *Router) Resolve(sessionID string) (Editor, string, error) {
 		return nil, "", ErrNoProjectAttached
 	}
 	inst, ok := r.pool.Get(id)
-	if !ok || inst.State == editorpool.Unhealthy || inst.State == editorpool.Stopped || inst.LeasedBy != sessionID {
+	if !ok || inst.State == supervisor.Unhealthy || inst.State == supervisor.Stopped || inst.LeasedBy != sessionID {
 		delete(r.bindings, sessionID) // lease is gone
 		return nil, "", ErrLeaseLost
 	}
 	// During a controlled restart, ONLY the watchdog may touch the bridge/node pin
 	// (§3.1 step 5) — a holder call routed to the bridge now would race the re-pin.
-	if inst.State == editorpool.Restarting || inst.State == editorpool.NeedsRelaunch {
+	if inst.State == supervisor.Restarting || inst.State == supervisor.NeedsRelaunch {
 		return nil, inst.Project, ErrRestartInProgress // binding kept; holder retries
 	}
 	ed := r.editors[id]
@@ -188,7 +175,7 @@ func (r *Router) Teardown(id string) {
 // and drops the bridge for every instance the pool reaped/removed (a crashed Leased
 // editor's LEASE_LOST is delivered separately from Reaped.LeasedBy), so a bridge is
 // never left dangling after an out-of-band pool removal.
-func (r *Router) ReconcileReaped(reaped []editorpool.Reaped) {
+func (r *Router) ReconcileReaped(reaped []supervisor.Reaped) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, rp := range reaped {
@@ -211,7 +198,7 @@ func (r *Router) newInstanceID() string {
 }
 
 // Pool exposes the underlying pool (for the daemon's heartbeat/reaper loops).
-func (r *Router) Pool() *editorpool.Pool { return r.pool }
+func (r *Router) Pool() *supervisor.Pool { return r.pool }
 
 // InstanceFor returns the instance id a session is bound to (for per-lease scoping).
 func (r *Router) InstanceFor(sessionID string) (string, bool) {
@@ -227,7 +214,7 @@ type RestartInfo struct {
 	Token     string
 	Project   string
 	OldPID    int
-	OldEditor Editor
+	OldEditor supervisor.Editor
 }
 
 // BeginRestart transitions the holder's lease Leased→Restarting (§3.1) so the lease is
@@ -256,7 +243,7 @@ func (r *Router) BeginRestart(sessionID string) (RestartInfo, error) {
 // EndRestart re-pins the lease onto the freshly-relaunched editor: swap in the new
 // bridge and complete the pool transition (RestartEnd + RepinSucceeded → Leased). The
 // holder's lease survives the whole rebuild with no LEASE_LOST.
-func (r *Router) EndRestart(id string, newEditor Editor, newPID int, newIdentity string) error {
+func (r *Router) EndRestart(id string, newEditor supervisor.Editor, newPID int, newIdentity string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := r.pool.RestartEnd(id, newPID, newIdentity); err != nil {

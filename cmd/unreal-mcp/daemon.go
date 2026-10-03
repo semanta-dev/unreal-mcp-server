@@ -14,7 +14,7 @@ import (
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"github.com/jdziat/unreal-mcp-server/internal/config"
-	"github.com/jdziat/unreal-mcp-server/internal/daemonwire"
+	"github.com/jdziat/unreal-mcp-server/internal/daemon"
 	"github.com/jdziat/unreal-mcp-server/internal/jobs"
 	"github.com/jdziat/unreal-mcp-server/internal/session"
 	"github.com/jdziat/unreal-mcp-server/internal/tools"
@@ -35,7 +35,7 @@ func runDaemon(ctx context.Context, cfg config.Config, logger *slog.Logger) erro
 		base = os.TempDir()
 	}
 	recordsDir := filepath.Join(base, "unreal-mcp-daemon", "records")
-	dm, err := daemonwire.NewDaemon(ctx, cfg.Uexec(), cfg.EngineDir, recordsDir, bridge.SnippetMode(cfg.SnippetMode), logger)
+	dm, err := daemon.NewDaemon(ctx, cfg.Uexec(), cfg.EngineDir, recordsDir, bridge.SnippetMode(cfg.SnippetMode), logger)
 	if err != nil {
 		return fmt.Errorf("daemon init: %w", err)
 	}

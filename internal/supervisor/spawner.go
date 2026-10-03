@@ -1,10 +1,10 @@
 // Package daemonwire is the production wiring that connects the daemon CORE
 // (internal/daemon, internal/editorpool, internal/uexec split) to real OS editors
 // (internal/lifecycle) and per-instance command bridges (internal/bridge). It
-// implements daemon.Spawner (editor bring-up + kill) and the daemon.Editor that
+// implements Spawner (editor bring-up + kill) and the Editor that
 // wraps a per-instance uexec.Session + bridge.Bridge. Kept separate from the daemon
 // package so that package stays unit-testable with fakes.
-package daemonwire
+package supervisor
 
 import (
 	"context"
@@ -13,12 +13,11 @@ import (
 	"time"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
-	"github.com/jdziat/unreal-mcp-server/internal/daemon"
 	"github.com/jdziat/unreal-mcp-server/internal/lifecycle"
 	"github.com/jdziat/unreal-mcp-server/internal/uexec"
 )
 
-// EditorHandle is the production daemon.Editor: a per-instance command bridge over a
+// EditorHandle is the production Editor: a per-instance command bridge over a
 // uexec.Session on the shared discovery. Bridge() exposes the *bridge.Bridge the tool
 // resolver routes to; Close tears down only this session's command channel (never the
 // shared discovery).
@@ -30,17 +29,17 @@ type EditorHandle struct {
 func (e *EditorHandle) Close() error           { return e.sess.Close() }
 func (e *EditorHandle) Bridge() *bridge.Bridge { return e.br }
 
-var _ daemon.Editor = (*EditorHandle)(nil)
+var _ Editor = (*EditorHandle)(nil)
 
 // Spawner brings up editors for the daemon. It writes a write-ahead intent (§6),
 // launches the editor with its correlation token + an ephemeral reverse-connect
 // port, opens a per-instance session on the SHARED discovery, and waits until the
 // editor is accepting before returning a ready bridge.
-type Spawner struct {
+type ProcessSpawner struct {
 	Disc       *uexec.Discovery
 	Base       uexec.Config // multicast group etc. (CommandAddr/ProjectDir set per-instance)
 	EngineDir  string
-	Records    *recordStore // shared crash-safe reattach store
+	Records    *RecordStore // shared crash-safe reattach store
 	BridgeMode bridge.SnippetMode
 	Logger     *slog.Logger
 	// AcceptTimeout bounds the accepting-wait (cold start 10-60s + load). 0 => 300s.
@@ -48,26 +47,26 @@ type Spawner struct {
 }
 
 // Spawn launches an editor for project and returns a ready bridge + its pid +
-// process identity. Satisfies daemon.Spawner.
-func (s *Spawner) Spawn(ctx context.Context, project, token string) (daemon.Editor, int, string, error) {
+// process identity. Satisfies Spawner.
+func (s *ProcessSpawner) Spawn(ctx context.Context, project, token string) (Editor, int, string, error) {
 	// Write-ahead intent (§6): persist token+project BEFORE Launch so a crash during
 	// bring-up still leaves a reconcilable record (enumeration finds it by token).
-	_ = s.Records.write(reattachRecord{Token: token, Project: project})
+	_ = s.Records.Write(ReattachRecord{Token: token, Project: project})
 	uproj := lifecycle.FindUproject(project)
 	if uproj == "" {
-		s.Records.remove(token)
+		s.Records.Remove(token)
 		return nil, 0, "", fmt.Errorf("no .uproject under %s", project)
 	}
 	// The token is baked into the launch args so process-enumeration reattach can
 	// identify this editor as daemon-owned before it advertises on discovery.
-	pid, err := lifecycle.Launch(s.EngineDir, uproj, instanceTokenFlag+"="+token)
+	pid, err := lifecycle.Launch(s.EngineDir, uproj, InstanceTokenFlag+"="+token)
 	if err != nil {
-		s.Records.remove(token)
+		s.Records.Remove(token)
 		return nil, 0, "", fmt.Errorf("launch editor: %w", err)
 	}
 	identity := lifecycle.ProcessIdentity(pid)
 	// Upgrade the intent to a full record now that pid + identity are known.
-	_ = s.Records.write(reattachRecord{Token: token, Project: project, PID: pid, Identity: identity})
+	_ = s.Records.Write(ReattachRecord{Token: token, Project: project, PID: pid, Identity: identity})
 
 	cfg := s.Base
 	cfg.ProjectDir = project
@@ -89,7 +88,7 @@ func (s *Spawner) Spawn(ctx context.Context, project, token string) (daemon.Edit
 // is alive, up to a cold-start-sized deadline. Terminal only on confirmed process
 // death or the deadline (§3.1 re-pin: PID-death, not a fixed clock, is the primary
 // signal).
-func (s *Spawner) waitAccepting(ctx context.Context, sess *uexec.Session, br *bridge.Bridge, pid int) error {
+func (s *ProcessSpawner) waitAccepting(ctx context.Context, sess *uexec.Session, br *bridge.Bridge, pid int) error {
 	deadline := s.AcceptTimeout
 	if deadline <= 0 {
 		deadline = 300 * time.Second
@@ -117,7 +116,7 @@ func (s *Spawner) waitAccepting(ctx context.Context, sess *uexec.Session, br *br
 	}
 }
 
-// Kill force-kills a pid (kill-before-teardown). Satisfies daemon.Spawner.
-func (s *Spawner) Kill(pid int) error { return lifecycle.Kill(pid) }
+// Kill force-kills a pid (kill-before-teardown). Satisfies Spawner.
+func (s *ProcessSpawner) Kill(pid int) error { return lifecycle.Kill(pid) }
 
-var _ daemon.Spawner = (*Spawner)(nil)
+var _ Spawner = (*ProcessSpawner)(nil)

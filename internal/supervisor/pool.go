@@ -1,4 +1,4 @@
-// Package editorpool is the liveness state machine that lets one server (the
+// pool.go (formerly package editorpool) is the liveness state machine that lets one server (the
 // Model-A daemon) hold N Unreal Editor instances and lease them 1:1 to agent
 // sessions — the core of MULTI_PROJECT_SYSTEM.md. It implements that design's §3.2
 // (state × PID) machine faithfully: a standing PID heartbeat renews every alive
@@ -14,7 +14,7 @@
 // required (any {Starting,Restarting,NeedsRelaunch} instance can hold a transiently
 // LIVE PID). The node id lives in the uexec.Session, not here; the pool tracks
 // lease/PID/health/token per the design.
-package editorpool
+package supervisor
 
 import (
 	"errors"
@@ -106,7 +106,7 @@ type Pool struct {
 }
 
 // New creates an empty pool. now defaults to time.Now (inject for tests).
-func New(now func() time.Time) *Pool {
+func NewPool(now func() time.Time) *Pool {
 	if now == nil {
 		now = time.Now
 	}

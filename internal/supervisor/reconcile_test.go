@@ -1,9 +1,7 @@
-package daemon
+package supervisor
 
 import (
 	"testing"
-
-	"github.com/jdziat/unreal-mcp-server/internal/editorpool"
 )
 
 func actionFor(t *testing.T, actions []Action, token string) Action {
@@ -17,7 +15,7 @@ func actionFor(t *testing.T, actions []Action, token string) Action {
 }
 
 func TestReconcileAdoptReadopdtable(t *testing.T) {
-	records := []Record{{ID: "e1", Project: "/A", Token: "mine-idle", State: editorpool.Idle, PID: 10}}
+	records := []Record{{ID: "e1", Project: "/A", Token: "mine-idle", State: Idle, PID: 10}}
 	live := []LiveEditor{{Token: "mine-idle", PID: 10, Project: "/A"}}
 	acts := Reconcile(records, live)
 	if len(acts) != 1 || acts[0].Kind != Adopt || acts[0].PID != 10 {
@@ -28,7 +26,7 @@ func TestReconcileAdoptReadopdtable(t *testing.T) {
 func TestReconcileKillMyExpectedDeadOrphan(t *testing.T) {
 	// A Restarting record whose editor came up alive-but-wedged (fresh relaunch PID
 	// in the re-pin window) -> daemon-owned orphan -> Kill.
-	records := []Record{{ID: "e2", Project: "/A", Token: "mine-restart", State: editorpool.Restarting, PID: 20}}
+	records := []Record{{ID: "e2", Project: "/A", Token: "mine-restart", State: Restarting, PID: 20}}
 	live := []LiveEditor{{Token: "mine-restart", PID: 20}}
 	a := actionFor(t, Reconcile(records, live), "mine-restart")
 	if a.Kind != Kill || a.PID != 20 {
@@ -37,7 +35,7 @@ func TestReconcileKillMyExpectedDeadOrphan(t *testing.T) {
 }
 
 func TestReconcileNeverTouchesForeign(t *testing.T) {
-	records := []Record{{ID: "e1", Project: "/A", Token: "mine", State: editorpool.Idle, PID: 10}}
+	records := []Record{{ID: "e1", Project: "/A", Token: "mine", State: Idle, PID: 10}}
 	live := []LiveEditor{
 		{Token: "mine", PID: 10, Project: "/A"},                 // mine -> adopt
 		{Token: "another-daemon-token", PID: 99, Project: "/A"}, // foreign token -> never touch
@@ -57,8 +55,8 @@ func TestReconcileNeverTouchesForeign(t *testing.T) {
 
 func TestReconcileRemoveStaleRecordAndIntent(t *testing.T) {
 	records := []Record{
-		{ID: "e1", Project: "/A", Token: "gone-record", State: editorpool.Leased, PID: 10},  // editor absent
-		{ID: "e2", Project: "/B", Token: "gone-intent", State: editorpool.Starting, PID: 0}, // pre-Launch intent, spawn died
+		{ID: "e1", Project: "/A", Token: "gone-record", State: Leased, PID: 10},  // editor absent
+		{ID: "e2", Project: "/B", Token: "gone-intent", State: Starting, PID: 0}, // pre-Launch intent, spawn died
 	}
 	live := []LiveEditor{} // nothing alive
 	acts := Reconcile(records, live)
@@ -75,7 +73,7 @@ func TestReconcileRemoveStaleRecordAndIntent(t *testing.T) {
 func TestReconcileDedupTokenInBothSources(t *testing.T) {
 	// A re-adoptable warm editor is in BOTH the process table AND discovery, so its
 	// token appears twice in the union input — must yield exactly ONE Adopt.
-	records := []Record{{ID: "e1", Project: "/A", Token: "dual", State: editorpool.Idle, PID: 10}}
+	records := []Record{{ID: "e1", Project: "/A", Token: "dual", State: Idle, PID: 10}}
 	live := []LiveEditor{
 		{Token: "dual", PID: 10, Project: "/A"}, // seen via process enumeration
 		{Token: "dual", PID: 10, Project: "/A"}, // and via discovery
@@ -94,7 +92,7 @@ func TestReconcileDedupTokenInBothSources(t *testing.T) {
 
 func TestReconcileIdleAbsentRemoveStale(t *testing.T) {
 	// An Idle record whose editor is absent everywhere -> RemoveStale (not just Leased).
-	records := []Record{{ID: "e1", Project: "/A", Token: "gone-idle", State: editorpool.Idle, PID: 10}}
+	records := []Record{{ID: "e1", Project: "/A", Token: "gone-idle", State: Idle, PID: 10}}
 	acts := Reconcile(records, []LiveEditor{})
 	if len(acts) != 1 || acts[0].Kind != RemoveStale {
 		t.Fatalf("absent Idle record -> RemoveStale, got %+v", acts)
@@ -105,7 +103,7 @@ func TestReconcileLaunchWindowOrphanKilled(t *testing.T) {
 	// The race the write-ahead exists for: a Starting intent whose editor is still
 	// cold-starting (NOT on discovery yet) but IS in the process table by its token.
 	// It's MY token, not re-adoptable (Starting) -> Kill (no leak).
-	records := []Record{{ID: "e3", Project: "/A", Token: "cold", State: editorpool.Starting, PID: 30}}
+	records := []Record{{ID: "e3", Project: "/A", Token: "cold", State: Starting, PID: 30}}
 	live := []LiveEditor{{Token: "cold", PID: 30}} // seen via process enumeration only
 	a := actionFor(t, Reconcile(records, live), "cold")
 	if a.Kind != Kill || a.PID != 30 {

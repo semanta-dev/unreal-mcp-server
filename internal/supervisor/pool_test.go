@@ -1,4 +1,4 @@
-package editorpool
+package supervisor
 
 import (
 	"testing"
@@ -26,7 +26,7 @@ func (l *fakeLiveness) set(pid int, alive bool, id string) {
 
 func newPool() (*Pool, *clock) {
 	c := &clock{t: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
-	return New(c.now), c
+	return NewPool(c.now), c
 }
 
 // helper: register-accepting-lease in one shot.

@@ -80,3 +80,51 @@ pass, exe stamped `v1-final-2-g342e5ae` (tags now drive the version); `scripts/r
 
 **Gate P0:** A (MCP/test reviewer; 60 `-race` runs, 0 flakes). Remaining P0 notes scheduled: on-disk install
 emulation (P4), raw-result emulator mode for the error-key rule (P5), goroutine-leak check (P3).
+
+## P2 — Packages (2026-10-03)
+
+**Result: 48 → 28 top-level internal packages** (+ test helpers `uexec/uexectest`, `bridge/bridgetest`, and
+`cockpit/attach`); `manifest` + `affordances` are deleted in P3a when the spec table replaces them (→ 26).
+Commits: P2a (leaf merges), P2a-fmt, P2b, P2c, P2d, P2e.
+
+| New package | From |
+|---|---|
+| `audit` | gametrace, audioaudit, feelaudit, primitiveaudit, renderhealth, utilization, decisionaudit |
+| `visual` | lumaudit, stylecohesion, imgdiff, montage, framing |
+| `eval` | rubric, predicate, scenario |
+| `design` | balance, explore |
+| `calibration` | critique, persona |
+| `logs` | events, logtail |
+| `build` | build, gitutil |
+| `snapshot` | digest |
+| `uexec/uexectest` | fakeeditor |
+| `bridge` (+`py/`, `companion.go`) | snippets |
+| `cockpit/attach` | cockpitbridge, cockpitlaunch |
+| `session` | `tools.Deps`, `WithDeps`, `InstallDepsMiddleware` (tools keeps `type Deps = session.Deps`) |
+| `supervisor` | editorpool, daemon's `Record/LiveEditor/Reconcile/OSLiveness` + `Editor/Spawner` interfaces, daemonwire `spawner.go` (`Spawner` struct → `ProcessSpawner`) + record store, cmd `relaunch.go` + `siblings_*.go` |
+| `daemon` | daemon (router, build queue, runtime) + daemonwire (Daemon, project tools, boot reconcile) |
+
+Colliding identifiers were renamed with a package prefix (e.g. `audioaudit.Report → audit.AudioReport`,
+`lumaudit.Analyze → visual.AnalyzeLuminance`, `editorpool.New → supervisor.NewPool`); helpers that merely shared a
+name but differ (`luma`, `toFloat`, `clamp01`) were renamed, not deduplicated.
+
+**Import DAG enforced** by `internal/archtest` (`go list`); the real graph matches §2.6 except two transitional edges
+marked in the test: `cmd/unreal-mcp`'s direct imports (→ `app` in P3) and `tools → affordances` (removed P3a).
+Verified it fails on a removed edge (`supervisor → config`).
+
+**Deviations (recorded):**
+1. *No throwaway prototype branch.* Each move was done as its own compile- and test-verified commit, and the final
+   `go list` edge dump (above) is the evidence the prototype was meant to produce.
+2. *`reattach.go` split*: the record store + `KillConfirmed` + `InstanceTokenFlag` moved to `supervisor` (the spawner
+   writes the write-ahead record), while the boot barrier (`ReconcileAtStartup`, `reconcileRecords`,
+   `PruneDeadRecords`) stays a `*Daemon` method set in `daemon` — it is daemon lifecycle, and moving it would mean
+   rewriting its tests for no behavioural gain. Still DAG-compliant (`daemon → supervisor`).
+3. *Audit fixtures stay in `audit`*: moving them to `audit/audittest` would create an import cycle (audit's own
+   in-package tests use them).
+
+**P1 gate follow-ups done:** companion module now at `internal/bridge/py/` (plan location); selftest removes its
+probe global; `refs.ps1` header path fixed; CI Windows build fetches tags (`fetch-depth: 0`) and stamps
+`-X version.Version/Commit`.
+
+**Evidence.** `go build ./...`, `go vet ./...`, gofmt clean; `go test ./...` all ok (incl. e2e, archtest);
+`scripts/refs.ps1` exit 0.

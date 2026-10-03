@@ -1,4 +1,4 @@
-package daemonwire
+package daemon
 
 import (
 	"context"
@@ -12,11 +12,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
-	"github.com/jdziat/unreal-mcp-server/internal/daemon"
-	"github.com/jdziat/unreal-mcp-server/internal/editorpool"
 	"github.com/jdziat/unreal-mcp-server/internal/jobs"
 	"github.com/jdziat/unreal-mcp-server/internal/lifecycle"
 	"github.com/jdziat/unreal-mcp-server/internal/session"
+	"github.com/jdziat/unreal-mcp-server/internal/supervisor"
 	"github.com/jdziat/unreal-mcp-server/internal/uexec"
 )
 
@@ -27,14 +26,14 @@ import (
 // resolution the tools opted into for MP3).
 type Daemon struct {
 	Disc            *uexec.Discovery
-	Pool            *editorpool.Pool
-	Router          *daemon.Router
-	Runtime         *daemon.Runtime
+	Pool            *supervisor.Pool
+	Router          *Router
+	Runtime         *Runtime
 	EngineDir       string
-	spawner         daemon.Spawner // *Spawner in prod; a fake in tests
-	isAlive         func(int) bool // lifecycle.IsAlive in prod; a fake in tests
-	restartKillWait time.Duration  // how long to confirm the old editor died (0 => 30s)
-	records         *recordStore
+	spawner         supervisor.Spawner // *Spawner in prod; a fake in tests
+	isAlive         func(int) bool     // lifecycle.IsAlive in prod; a fake in tests
+	restartKillWait time.Duration      // how long to confirm the old editor died (0 => 30s)
+	records         *supervisor.RecordStore
 	logger          *slog.Logger
 
 	jobsMu    sync.Mutex
@@ -56,24 +55,24 @@ func NewDaemon(ctx context.Context, cfg uexec.Config, engineDir, intentDir strin
 	if err != nil {
 		return nil, err
 	}
-	pool := editorpool.New(nil)
-	records := newRecordStore(intentDir, logger)
-	sp := &Spawner{
+	pool := supervisor.NewPool(nil)
+	records := supervisor.NewRecordStore(intentDir, logger)
+	sp := &supervisor.ProcessSpawner{
 		Disc: disc, Base: cfg, EngineDir: engineDir, Records: records,
 		BridgeMode: bridgeMode, Logger: logger,
 	}
-	router := daemon.NewRouter(pool, sp, newToken)
+	router := NewRouter(pool, sp, newToken)
 	dm := &Daemon{
 		Disc: disc, Pool: pool, Router: router, EngineDir: engineDir, spawner: sp,
 		isAlive: lifecycle.IsAlive, records: records,
 		logger: logger, leaseJobs: map[string]*jobs.Registry{}, lastSeen: map[string]time.Time{},
 	}
-	dm.Runtime = daemon.NewRuntime(router, editorpoolLiveness{}, 3*time.Second, 120*time.Second, dm.onLeaseLost)
+	dm.Runtime = NewRuntime(router, editorpoolLiveness{}, 3*time.Second, 120*time.Second, dm.onLeaseLost)
 	return dm, nil
 }
 
-// editorpoolLiveness is daemon.OSLiveness (aliased so this package doesn't re-export).
-type editorpoolLiveness = daemon.OSLiveness
+// editorpoolLiveness is supervisor.OSLiveness (aliased so this package doesn't re-export).
+type editorpoolLiveness = supervisor.OSLiveness
 
 // Run starts the liveness loop; it returns when ctx is cancelled. Also closes the
 // shared discovery on exit.
@@ -198,7 +197,7 @@ func (dm *Daemon) DepsResolver() func(ctx context.Context, req mcp.Request) (ses
 		if err != nil {
 			return session.Deps{}, false
 		}
-		eh, ok := ed.(*EditorHandle)
+		eh, ok := ed.(*supervisor.EditorHandle)
 		if !ok {
 			return session.Deps{}, false
 		}

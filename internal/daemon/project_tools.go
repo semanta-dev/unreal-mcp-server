@@ -1,4 +1,4 @@
-package daemonwire
+package daemon
 
 import (
 	"context"

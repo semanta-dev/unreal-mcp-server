@@ -40,13 +40,20 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags drive the version stamp
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - name: build static exe
         env:
           CGO_ENABLED: '0'
-        run: go build -trimpath -ldflags "-s -w" -o dist/unreal-mcp.exe ./cmd/unreal-mcp
+        shell: bash
+        run: |
+          VER=$(git describe --tags --always)
+          COMMIT=$(git rev-parse --short HEAD)
+          PKG=github.com/jdziat/unreal-mcp-server/internal/version
+          go build -trimpath -ldflags "-s -w -X $PKG.Version=$VER -X $PKG.Commit=$COMMIT" -o dist/unreal-mcp.exe ./cmd/unreal-mcp
       - name: version smoke
         run: .\dist\unreal-mcp.exe -version
       - name: loopback multicast integration test

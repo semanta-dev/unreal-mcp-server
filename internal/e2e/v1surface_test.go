@@ -12,7 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
-	"github.com/jdziat/unreal-mcp-server/internal/daemonwire"
+	"github.com/jdziat/unreal-mcp-server/internal/daemon"
 	"github.com/jdziat/unreal-mcp-server/internal/jobs"
 	"github.com/jdziat/unreal-mcp-server/internal/tools"
 	"github.com/jdziat/unreal-mcp-server/internal/uexec"
@@ -43,7 +43,7 @@ func v1Surface(t *testing.T) (names []string, listBytes int) {
 	}
 
 	dsrv := mcp.NewServer(&mcp.Implementation{Name: "unreal", Version: "v1"}, nil)
-	(&daemonwire.Daemon{}).RegisterProjectTools(dsrv)
+	(&daemon.Daemon{}).RegisterProjectTools(dsrv)
 	seen := map[string]bool{}
 	for _, tl := range append(stdio.Tools, listTools(t, dsrv).Tools...) {
 		if seen[tl.Name] {

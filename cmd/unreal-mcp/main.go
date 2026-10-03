@@ -20,6 +20,7 @@ import (
 	"github.com/jdziat/unreal-mcp-server/internal/cockpit/attach"
 	"github.com/jdziat/unreal-mcp-server/internal/config"
 	"github.com/jdziat/unreal-mcp-server/internal/jobs"
+	"github.com/jdziat/unreal-mcp-server/internal/supervisor"
 	"github.com/jdziat/unreal-mcp-server/internal/tools"
 	"github.com/jdziat/unreal-mcp-server/internal/uexec"
 	"github.com/jdziat/unreal-mcp-server/internal/version"
@@ -54,9 +55,9 @@ func main() {
 
 	// Reclaim the reverse-connect port from any orphaned sibling server (stale from a prior
 	// session) before discovery starts. Only for the default port — a custom -command-addr means
-	// a deliberate concurrent setup, which we must not disturb. See killOrphanSiblings.
+	// a deliberate concurrent setup, which we must not disturb. See supervisor.KillOrphanSiblings.
 	if cfg.CommandAddr == "127.0.0.1:6776" {
-		killOrphanSiblings(logger)
+		supervisor.KillOrphanSiblings(logger)
 	}
 
 	// Discovery runs in the background; failing to start it is non-fatal so the
@@ -69,7 +70,7 @@ func main() {
 	defer sess.Close()
 
 	if cfg.AutoRelaunch {
-		go relaunchWatcher(ctx, sess, cfg, logger)
+		go supervisor.RelaunchWatcher(ctx, sess, cfg, logger)
 	}
 
 	b := bridge.New(sess, bridge.Options{
@@ -141,6 +142,7 @@ func runSelfTest(ctx context.Context, sess *uexec.Session, b *bridge.Bridge, log
 		return fail("persistence probe", err)
 	}
 	persistent := strings.TrimSpace(v) == "1"
+	_, _ = b.RunPython(ctx, "globals().pop('_umcp_selftest_probe', None)", uexec.ModeExecFile)
 	fmt.Fprintf(os.Stderr, "  __main__ persists across commands = %v (hotload snippet mode %s)\n",
 		persistent, map[bool]string{true: "OK", false: "UNAVAILABLE — use -snippet-mode ondisk"}[persistent])
 

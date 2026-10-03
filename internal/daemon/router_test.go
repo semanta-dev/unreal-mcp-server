@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jdziat/unreal-mcp-server/internal/editorpool"
+	"github.com/jdziat/unreal-mcp-server/internal/supervisor"
 )
 
 type fakeEditor struct{ closed bool }
@@ -23,7 +23,7 @@ type fakeSpawner struct {
 	editors  map[int]*fakeEditor // pid -> editor (to assert Close)
 }
 
-func (s *fakeSpawner) Spawn(ctx context.Context, project, token string) (Editor, int, string, error) {
+func (s *fakeSpawner) Spawn(ctx context.Context, project, token string) (supervisor.Editor, int, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.failNext {
@@ -55,7 +55,7 @@ func (s *fakeSpawner) Kill(pid int) error {
 
 func newTestRouter() (*Router, *fakeSpawner) {
 	sp := &fakeSpawner{}
-	pool := editorpool.New(func() time.Time { return time.Unix(0, 0) })
+	pool := supervisor.NewPool(func() time.Time { return time.Unix(0, 0) })
 	return NewRouter(pool, sp, nil), sp
 }
 
@@ -158,7 +158,7 @@ func TestReleaseKeepsHealthyWarm(t *testing.T) {
 	if len(sp.kills) != 0 {
 		t.Fatalf("healthy Release must not kill, kills=%v", sp.kills)
 	}
-	if inst, ok := r.Pool().Get(id); !ok || inst.State != editorpool.Idle {
+	if inst, ok := r.Pool().Get(id); !ok || inst.State != supervisor.Idle {
 		t.Fatalf("healthy released editor should be warm Idle: %+v", inst)
 	}
 }
@@ -206,7 +206,7 @@ func TestControlledRestartPreservesLeaseAndRepins(t *testing.T) {
 		t.Fatalf("after restart, Resolve should return the NEW editor: ed=%v err=%v", ed, e)
 	}
 	ni, _ := r.Pool().Get(id)
-	if ni.State != editorpool.Leased || ni.PID != 999 || ni.LeasedBy != "sessA" {
+	if ni.State != supervisor.Leased || ni.PID != 999 || ni.LeasedBy != "sessA" {
 		t.Fatalf("lease must be re-pinned to the new pid, still held by sessA: %+v", ni)
 	}
 }

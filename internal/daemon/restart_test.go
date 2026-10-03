@@ -1,13 +1,11 @@
-package daemonwire
+package daemon
 
 import (
 	"context"
 	"errors"
+	"github.com/jdziat/unreal-mcp-server/internal/supervisor"
 	"testing"
 	"time"
-
-	"github.com/jdziat/unreal-mcp-server/internal/daemon"
-	"github.com/jdziat/unreal-mcp-server/internal/editorpool"
 )
 
 func TestRestartLeasePreservesLeaseAndRepins(t *testing.T) {
@@ -33,11 +31,11 @@ func TestRestartLeasePreservesLeaseAndRepins(t *testing.T) {
 		t.Fatal("the session must still hold the SAME lease after the controlled restart")
 	}
 	inst, _ := dm.Pool.Get(id)
-	if inst.State != editorpool.Leased || inst.PID == oldPID || inst.LeasedBy != "sessA" {
+	if inst.State != supervisor.Leased || inst.PID == oldPID || inst.LeasedBy != "sessA" {
 		t.Fatalf("lease should be re-pinned to a new pid, still held by sessA: %+v (old pid %d)", inst, oldPID)
 	}
 	// The old editor's pid was killed (kill-before-rebuild so it releases the DLL).
-	sp := dm.spawner.(*fakeSpawner)
+	sp := dm.spawner.(*wireFakeSpawner)
 	if len(sp.kills) != 1 || sp.kills[0] != oldPID {
 		t.Fatalf("old editor pid %d must be killed before rebuild, kills=%v", oldPID, sp.kills)
 	}
@@ -53,14 +51,14 @@ func TestRestartLeaseBuildFailureDropsLease(t *testing.T) {
 		t.Fatal("a build infra failure should surface as an error")
 	}
 	// The lease is torn down so the holder cleanly re-attaches (not stuck mid-restart).
-	if _, _, e := dm.Router.Resolve("sessA"); e != daemon.ErrLeaseLost {
+	if _, _, e := dm.Router.Resolve("sessA"); e != ErrLeaseLost {
 		t.Fatalf("after a failed restart the holder should get LEASE_LOST, got %v", e)
 	}
 }
 
 func TestRestartLeaseUnattachedErrors(t *testing.T) {
 	dm := newTestDaemon()
-	if err := dm.RestartLease(context.Background(), "ghost", nil); err != daemon.ErrNoProjectAttached {
+	if err := dm.RestartLease(context.Background(), "ghost", nil); err != ErrNoProjectAttached {
 		t.Fatalf("restart with no lease should be NO_PROJECT_ATTACHED, got %v", err)
 	}
 }
@@ -70,7 +68,7 @@ func TestRestartLeaseAbortsIfOldEditorWontDie(t *testing.T) {
 	dm.isAlive = func(int) bool { return true } // old editor refuses to die
 	dm.restartKillWait = 20 * time.Millisecond  // don't wait the full 30s
 	dm.Router.Attach(context.Background(), "sessA", "/A")
-	sp := dm.spawner.(*fakeSpawner)
+	sp := dm.spawner.(*wireFakeSpawner)
 	spawnsBefore := sp.pid
 
 	err := dm.RestartLease(context.Background(), "sessA", func(context.Context) error {
@@ -83,7 +81,7 @@ func TestRestartLeaseAbortsIfOldEditorWontDie(t *testing.T) {
 	if sp.pid != spawnsBefore {
 		t.Fatal("must NOT relaunch a same-token duplicate while the old editor is alive")
 	}
-	if _, _, e := dm.Router.Resolve("sessA"); e != daemon.ErrLeaseLost {
+	if _, _, e := dm.Router.Resolve("sessA"); e != ErrLeaseLost {
 		t.Fatalf("an aborted restart should drop the lease (LEASE_LOST), got %v", e)
 	}
 }

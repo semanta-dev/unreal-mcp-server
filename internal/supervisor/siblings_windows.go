@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package supervisor
 
 import (
 	"log/slog"
@@ -13,14 +13,14 @@ import (
 	"github.com/jdziat/unreal-mcp-server/internal/lifecycle"
 )
 
-// killOrphanSiblings terminates any OTHER unreal-mcp.exe process — a stale server left over
+// KillOrphanSiblings terminates any OTHER unreal-mcp.exe process — a stale server left over
 // from a previous session. The TCP reverse-connect listener uses SO_REUSEADDR, so on Windows
 // two servers can bind the same command port (6776) at once and the editor's reverse-connect
 // can land on the dead orphan, silently wedging discovery ("no Unreal Editor node discovered"
 // even though the editor is up). Claude Code spawns exactly one server per session, so a
 // sibling on the default port is always an orphan — kill it so THIS process owns the port.
 // Only called for the default command addr; custom-port concurrent setups are left untouched.
-func killOrphanSiblings(logger *slog.Logger) {
+func KillOrphanSiblings(logger *slog.Logger) {
 	self := os.Getpid()
 	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
