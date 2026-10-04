@@ -583,13 +583,16 @@ type liveResult struct {
 	Aborted     string     `json:"aborted,omitempty"` // cost_cap | turn_limit | unpriced | eval_cap | error
 	Calls       []toolCall `json:"calls,omitempty"`
 	PythonCalls int        `json:"python_calls"`
-	Turns       int        `json:"turns"`
-	Answer      string     `json:"answer,omitempty"`
-	Usage       usage      `json:"usage"`
-	CostUSD     float64    `json:"cost_usd"`
-	Served      []string   `json:"served"`
-	Err         string     `json:"error,omitempty"`
-	Seconds     float64    `json:"seconds"`
+	// Probes is what each probe read after the run (truncated JSON), so a failed
+	// check can be audited from the results alone.
+	Probes  map[string]string `json:"probes,omitempty"`
+	Turns   int               `json:"turns"`
+	Answer  string            `json:"answer,omitempty"`
+	Usage   usage             `json:"usage"`
+	CostUSD float64           `json:"cost_usd"`
+	Served  []string          `json:"served"`
+	Err     string            `json:"error,omitempty"`
+	Seconds float64           `json:"seconds"`
 }
 
 // liveSession is one server process (stdio) bound to a scratch project.
@@ -846,6 +849,16 @@ func runLive(ctx context.Context, cl *client, o liveOpts, t *gameTask, run int, 
 			probeErr[c.Name] = err.Error()
 		}
 		probes[c.Name] = m
+	}
+	for name, m := range probes {
+		if r.Probes == nil {
+			r.Probes = map[string]string{}
+		}
+		raw, _ := json.Marshal(m)
+		if e := probeErr[name]; e != "" {
+			raw = []byte("error: " + e)
+		}
+		r.Probes[name] = truncate(string(raw), 600)
 	}
 	r.Failed = judgeGame(t, probes, probeErr, r.Calls, r.Answer, r.PythonCalls)
 	if r.Aborted != "" {
