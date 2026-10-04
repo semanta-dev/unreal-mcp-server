@@ -604,7 +604,7 @@ type snapshotIn struct {
 func snapshotSpec() *spec.Spec {
 	ops := []spec.OpSpec{
 		{Name: "take", Summary: "record every actor's path, class, tags, transform (+ properties)", Tier: spec.Ephemeral, Idempotent: true, Reaches: []string{"snapshot_actors"}, Needs: []string{"project", "plugin>=9 for properties"}},
-		{Name: "diff", Summary: "added / removed / moved / retagged / changed between two snapshots (or now)", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"name"}, Rejects: []string{"properties"}, Reaches: []string{"snapshot_actors"}, Needs: []string{"project"}},
+		{Name: "diff", Summary: "added / removed / moved / retagged / changed between two snapshots (or now)", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"name"}, Rejects: []string{"properties"}, Reaches: []string{"snapshot_actors"}, Needs: []string{"project", "plugin>=9 for properties"}},
 		{Name: "list", Summary: "stored snapshots", Tier: spec.ReadOnly, Idempotent: true, Rejects: []string{"properties"}, Needs: []string{"project"}},
 		{Name: "digest", Summary: "deterministic hash of actor or instance transforms", Tier: spec.ReadOnly, Idempotent: true, Rejects: []string{"properties"}, Reaches: []string{"snapshot_actors", "instances_list"}},
 	}

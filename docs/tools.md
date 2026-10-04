@@ -527,7 +527,7 @@ Put back transforms and properties with snapshot_restore.
 | op | tier | does | required | needs |
 |---|---|---|---|---|
 | `take` | ephemeral | record every actor's path, class, tags, transform (+ properties) |  | editor, project, plugin>=9 for properties |
-| `diff` | readonly | added / removed / moved / retagged / changed between two snapshots (or now) | name | editor, project |
+| `diff` | readonly | added / removed / moved / retagged / changed between two snapshots (or now) | name | editor, project, plugin>=9 for properties |
 | `list` | readonly | stored snapshots |  | editor, project |
 | `digest` | readonly | deterministic hash of actor or instance transforms |  | editor |
 
