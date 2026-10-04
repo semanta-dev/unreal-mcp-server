@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"github.com/jdziat/unreal-mcp-server/internal/build"
 	"github.com/jdziat/unreal-mcp-server/internal/eval"
 	"github.com/jdziat/unreal-mcp-server/internal/headless"
@@ -571,7 +573,7 @@ func playtestSpec() *spec.Spec {
 	ops := []spec.OpSpec{
 		{Name: "run", Summary: "play a scenario: frames + state + beats + rubric verdict", Tier: spec.Exec, Async: true,
 			Reaches: []string{"open_level", "pie_start", "pie_stop", "console", "actor_set_properties",
-				"capture_start", "capture_stop", "actor_call", "pie_observe", "editor_ping"}},
+				"capture_start", "capture_stop", "actor_call", "pie_observe", "observe_paths", "editor_ping"}},
 	}
 	return &spec.Spec{
 		Name: "playtest", Title: "Automated playtest", Toolset: spec.Core, Timeout: sync15, Max: sync28, Ops: ops,
@@ -853,10 +855,13 @@ func waitUntil(ctx context.Context, c *spec.Call, expr string, timeoutS float64)
 	}
 	deadline := time.Now().Add(secs(timeoutS))
 	for time.Now().Before(deadline) {
-		if st, err := v2Op(ctx, c, "pie_observe", nil); err == nil {
+		st, err := observeState(ctx, c, pred, nil)
+		if err == nil {
 			if ok, _ := pred.Eval(st); ok {
 				return true, nil
 			}
+		} else if oe := (*bridge.OpError)(nil); !errors.As(err, &oe) || !(oe.Retryable || oe.Code == "NOT_IN_PIE") {
+			return false, err // a malformed or non-pure path will not fix itself
 		}
 		if sleepCtx(ctx, 250*time.Millisecond) != nil {
 			return false, ctx.Err()

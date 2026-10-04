@@ -190,6 +190,11 @@ def _observe_path(world, name, path, lib):
         m = re.match(r"^(@subsystem:/Script/\w+\.\w+)\.(.*)$", path)
     else:
         m = re.match(r"^(@[A-Za-z_]+(?::\w+)?)\.(.*)$", path)
+        # "@subsystem:Module.Class.prop" (the game_api spelling): Module.Class when that
+        # names a loaded class, else a short class name followed by a property.
+        mm = re.match(r"^@subsystem:(\w+)\.(\w+)\.(.+)$", path)
+        if mm and isinstance(unreal.find_object(None, "/Script/%s.%s" % (mm.group(1), mm.group(2))), unreal.Class):
+            m = re.match(r"^(@subsystem:\w+\.\w+)\.(.*)$", path)
     head, rest = (m.group(1), m.group(2)) if m else (path, "")
     if not rest:
         raise _V2Error("BAD_VALUE", "%s: an object path needs a property after the object" % path)
@@ -210,6 +215,10 @@ def _observe_path(world, name, path, lib):
             cur = cur.get(m.group(1))
         elif m.group(2):  # a getter
             fn = m.group(1)
+            if not hasattr(cur, "get_class") or not hasattr(cur, "call_method"):
+                raise _V2Error("BAD_VALUE", "%s: %s() on a value that is not an object" % (path, fn))
+            if lib is None:
+                lib = _need_plugin(3, "getters in object paths")
             if not lib.is_pure_or_const(cur.get_class(), fn):
                 raise _V2Error("BAD_VALUE", "%s: %s.%s is not BlueprintPure or const — a wait may only call "
                                "read-only getters (use actor_call for anything else)" % (path, cur.get_class().get_name(), fn))
@@ -235,14 +244,16 @@ def _op_observe_paths(args):
     {values: {path: value}, errors: {path: message}}. Read-only: getters must be pure."""
     paths = args.get("paths") or []
     world, name = _v2_world(args, "auto")
-    lib = _need_plugin(3, "object paths in predicates")
+    # The plugin is needed for @subsystem refs and getters; plain properties of
+    # @gameinstance / @playerstate / @hud are read by Python alone.
+    lib = _need_plugin(3, "object paths in predicates") if any("@subsystem:" in p or "()" in p for p in paths) else None
     values, errors = {}, {}
     for p in paths:
         try:
             values[p] = _observe_path(world, name, p, lib)
         except _V2Error as e:
-            if e.code == "BAD_VALUE":
-                raise  # a malformed or non-pure path is the caller's error, not "not yet"
+            if e.code in ("BAD_VALUE", "CLASS_UNRESOLVED", "CONFLICT"):
+                raise  # a malformed, unresolvable or non-pure path is the caller's error, not "not yet"
             errors[p] = str(e)
     return {"world": name, "values": values, "errors": errors}
 
@@ -636,6 +647,67 @@ def _op_actor_set_properties(args):
     return {"world": name, "actor": _actor_view(actor, name), "property_errors": errors}
 
 
+_ARG_DOC = re.compile(r"^\s+(\w+) \(([^)]+)\):", re.M)
+
+
+def _ufunction_params(target, fn):
+    """{python parameter name: type} of fn on target, from the docstring UE generates
+    for the Python method ("Args:\n    name (Type): ..."); None when no method matches.
+    The method is found by name ignoring case and underscores (K2_ prefix optional):
+    UE's Python names do not follow one rule (SetActorScale3D -> set_actor_scale3d)."""
+    want = fn.lower().replace("_", "")
+    alt = want[2:] if want.startswith("k2") else want
+    for attr in dir(type(target)):
+        if attr.lower().replace("_", "") in (want, alt):
+            doc = getattr(getattr(type(target), attr, None), "__doc__", None) or ""
+            return dict(_ARG_DOC.findall(doc.split("Returns:")[0]))
+    return None
+
+
+def _struct_arg(tname, value, where, st=None):
+    """A JSON object for a struct parameter, built field by field: UE's own dict
+    conversion silently drops unknown keys ({"X": 1} became a zero Vector, live)."""
+    m = re.match(r"^Array\[(\w+)\]$", tname)
+    if m and isinstance(value, list):
+        return [_struct_arg(m.group(1), v, "%s[%d]" % (where, i)) for i, v in enumerate(value)]
+    st = st or getattr(unreal, tname, None)
+    base = getattr(unreal, "StructBase", None)
+    if not isinstance(value, dict) or base is None or not (isinstance(st, type) and issubclass(st, base)):
+        return value
+    out = st()
+    for k, v in value.items():
+        try:
+            cur = out.get_editor_property(k)
+        except Exception:
+            raise _V2Error("BAD_VALUE", "%s: %s has no field %r" % (where, tname, k)) from None
+        if isinstance(v, dict) and isinstance(cur, base):
+            v = _struct_arg(type(cur).__name__, v, "%s.%s" % (where, k), type(cur))
+        try:
+            out.set_editor_property(k, v)
+        except Exception as e:
+            raise _V2Error("BAD_VALUE", "%s.%s: %s" % (where, k, e)) from None
+    return out
+
+
+def _call_args(target, fn, fargs):
+    """kwargs for call_method: JSON objects (and arrays of them) for struct parameters
+    become structs whose every field was checked; other values pass to UE's conversion
+    (a list for a struct is positional fields; a list for an array is its elements)."""
+    if not any(isinstance(v, dict) or (isinstance(v, list) and any(isinstance(e, dict) for e in v))
+               for v in fargs.values()):
+        return fargs
+    params = _ufunction_params(target, fn)
+    if params is None:
+        raise _V2Error("BAD_VALUE", "%s has no Python signature: its struct arguments cannot be checked "
+                       "(pass a struct as a list of its fields in order)" % fn)
+    out = {}
+    for k, v in fargs.items():
+        if k not in params:
+            raise _V2Error("BAD_VALUE", "%s has no parameter %r" % (fn, k), parameters=sorted(params))
+        out[k] = _struct_arg(params[k], v, k)
+    return out
+
+
 def _op_actor_call(args):
     world, name = _v2_world(args, "pie")
     if name != "pie":
@@ -651,7 +723,7 @@ def _op_actor_call(args):
     if parse not in ("", "json"):
         raise _V2Error("BAD_VALUE", "parse must be json (got %r)" % (parse,))
     try:
-        result = target.call_method(fn, kwargs=fargs)
+        result = target.call_method(fn, kwargs=_call_args(target, fn, fargs))
     except Exception as e:
         if "find function" in str(e).lower() or "no function" in str(e).lower():
             raise _V2Error("NOT_FOUND", "%s has no callable function %r" % (target.get_name(), fn)) from e

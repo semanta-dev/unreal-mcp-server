@@ -159,3 +159,90 @@ def test_editor_world_during_pie_is_the_pie_maps_source(v2, ue):
     assert m._editor_world() is editor_map
     ue.get_editor_subsystem = lambda t: _NS(get_editor_world=lambda: None, get_game_world=lambda: None)
     assert m._editor_world() is None
+
+
+def test_object_path_module_class_heads_and_caller_errors(v2, ue):
+    # The game_api spelling @subsystem:Module.Class.prop (review R1 #5).
+    env = call(v2, "observe_paths", {"paths": ["@subsystem:Game.AgentSubsystem.difficulty"]})
+    assert env["ok"] and env["result"]["values"] == {"@subsystem:Game.AgentSubsystem.difficulty": "hard"}, env
+    # An unresolvable class is the caller's error, not "not yet".
+    env = call(v2, "observe_paths", {"paths": ["@subsystem:Nope.difficulty"]})
+    assert env["code"] == "CLASS_UNRESOLVED", env
+    # A getter on a value that is not an object (review R1 #6).
+    ue.sub.props["pos"] = [1, 2]
+    env = call(v2, "observe_paths", {"paths": ["@subsystem:Game.AgentSubsystem.pos.Length()"]})
+    assert env["code"] == "BAD_VALUE" and "not an object" in env["error"], env
+
+
+def test_object_path_properties_need_no_plugin(v2, ue):
+    # R1.3: without the plugin, properties still work; getters and @subsystem do not.
+    gi = Obj("GI", Class("GameInstance", "/Script/Engine.GameInstance"), props={"score": 7})
+    ue.GameplayStatics.get_game_instance = lambda world: gi
+    ue.MCPCoreLibrary = _NS(get_plugin_api_version=lambda: 0)
+    env = call(v2, "observe_paths", {"paths": ["@gameinstance.score"]})
+    assert env["ok"] and env["result"]["values"] == {"@gameinstance.score": 7}, env
+    assert call(v2, "observe_paths", {"paths": ["@gameinstance.GetScore()"]})["code"] == "PLUGIN_MISSING"
+
+
+class _StructBase:
+    """A reflected struct: fields by snake_case name, unknown ones raise (as UE does)."""
+    FIELDS = ()
+
+    def __init__(self):
+        self.f = {k: 0.0 for k in self.FIELDS}
+
+    def get_editor_property(self, k):
+        if k not in self.f:
+            raise Exception("Failed to find property '%s'" % k)
+        return self.f[k]
+
+    def set_editor_property(self, k, v):
+        self.get_editor_property(k)
+        self.f[k] = v
+
+
+class _Vec(_StructBase):
+    FIELDS = ("x", "y", "z")
+
+
+class _Hit(_StructBase):
+    FIELDS = ("location", "damage")
+
+    def __init__(self):
+        super().__init__()
+        self.f["location"] = _Vec()
+
+
+def test_actor_call_struct_args_are_checked(v2, ue):
+    # Review R1 #4 / live: UE's dict conversion drops unknown keys silently ({"X": 1} -> 0).
+    ue.StructBase, ue.Vec, ue.Hit = _StructBase, _Vec, _Hit
+    got = {}
+
+    class Target(Obj):
+        def set_scale(self):
+            """x.set_scale(new_scale, hits) -> None
+
+Args:
+    new_scale (Vec): the scale
+    hits (Array[Hit]): hits
+
+Returns:
+    None"""
+
+    t = Target("T", Class("T", "/Script/Game.T"), functions={"SetScale": lambda **kw: got.update(kw)})
+    ue.sub_target = t
+    m = v2["_mcp2"]
+    out = m._call_args(t, "SetScale", {"new_scale": {"x": 2, "y": 3, "z": 4}, "hits": [{"damage": 5, "location": {"z": 1}}]})
+    assert out["new_scale"].f == {"x": 2, "y": 3, "z": 4}
+    assert out["hits"][0].f["damage"] == 5 and out["hits"][0].f["location"].f["z"] == 1
+    for bad, where in (({"new_scale": {"X": 1}}, "new_scale"), ({"hits": [{"dmg": 1}]}, "hits[0]"),
+                       ({"new_scale": {"x": 1}, "scale2": {"x": 1}}, "scale2")):
+        with pytest.raises(m._V2Error) as e:
+            m._call_args(t, "SetScale", bad)
+        assert e.value.code == "BAD_VALUE" and where in str(e.value), (bad, e.value)
+    # Lists and scalars pass to UE's own conversion untouched.
+    assert m._call_args(t, "SetScale", {"new_scale": [1, 2, 3]}) == {"new_scale": [1, 2, 3]}
+    # No Python method to read the signature from: a struct argument is refused, not guessed.
+    with pytest.raises(m._V2Error) as e:
+        m._call_args(t, "Unknown", {"new_scale": {"x": 1}})
+    assert e.value.code == "BAD_VALUE"

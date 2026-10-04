@@ -84,3 +84,23 @@ func TestDaemonRefusesARequireProject(t *testing.T) {
 		t.Fatalf("refused attaches spawned %d editor(s)", n)
 	}
 }
+
+// R1.4/R1.5: daemon attach turns the game toolset on for a valid game_api, and reports
+// an invalid one without failing the attach.
+func TestDaemonAttachGameAPI(t *testing.T) {
+	e := startDaemon(t, time.Minute, nil)
+	cs := e.connect(t, nil)
+	defer cs.Close()
+	good := gameProject(t, gameAPIJSON, "")
+	out := callTool(t, cs, "project", map[string]any{"op": "attach", "project": good})
+	if out["attached"] != true || !strings.Contains(fmt.Sprint(out["toolsets"]), "game") || out["game_api_error"] != nil {
+		t.Fatalf("attach with a valid game_api = %v", out)
+	}
+	callTool(t, cs, "project", map[string]any{"op": "release"})
+	bad := gameProject(t, strings.Replace(gameAPIJSON, "Game.GameAgentSubsystem", "Engine.GameInstanceSubsystem", 1), "")
+	out = callTool(t, cs, "project", map[string]any{"op": "attach", "project": bad})
+	if out["attached"] != true || strings.Contains(fmt.Sprint(out["toolsets"]), "game") ||
+		!strings.Contains(fmt.Sprint(out["game_api_error"]), "own modules") {
+		t.Fatalf("attach with an invalid game_api = %v", out)
+	}
+}

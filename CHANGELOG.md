@@ -46,17 +46,21 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
 - **The game's own API** (toolset `game`, on when the project's `.umcp.json` declares `game_api` — stdio startup and
   daemon attach): `game` (read-only: `capabilities`, `snapshot`, `events since=<cursor>`; each function must be
   `BlueprintPure`/`const`) and `game_command` (Exec; `request_id` required — a re-send returns the recorded result and
-  never runs twice; a command for a world that restarted is refused as `dedup_expired`, and that `request_id` cannot be
-  re-sent). `game_api` is versioned and strict, its object must be a subsystem in one of the project's own modules, and
+  never runs twice — a re-send goes to the world it was first sent to, so a restarted world refuses it as
+  `dedup_expired`, and that `request_id` cannot be re-sent; a game that reports no `world_epoch` gets no command). `game_api` is versioned and strict, its object must be a subsystem in one of the project's own modules, and
   an invalid declaration disables only `game` (`toolsets op=list` says why; `gate_policy` still applies). Under
   `gate_policy: require`, `game_command` is refused. Contract: [`docs/plans/GAME_CONTRACT.md`](docs/plans/GAME_CONTRACT.md).
 - Object references: `actor_query`, `actor_call`, `reflect` and predicates take `@gameinstance`, `@playerstate[:n]`,
   `@hud` (PIE) and `@subsystem:<Class>` (World / GameInstance / LocalPlayer subsystems; editor and engine subsystems
   only from `reflect`). `actor_call parse=json` decodes a JSON-string return.
-- Predicates (`pie_wait`, playtest rubrics): `and` / `or` / `not` and parentheses; object paths
-  `@ref.prop.Getter().field` call only `BlueprintPure`/`const` getters (another is `INVALID_ARGUMENT`); a bool compares
-  as a bool (`== True` and `== true` both match). `pie_wait timeout_s` goes up to 600 s: past `wait_s` it continues as a
-  `job`.
+- Predicates (`pie_wait`, playtest `wait_until` beats; `actor_call until` reads only its result): `and` / `or` /
+  `not` and parentheses; object paths `@ref.prop.Getter().field` (`@subsystem:` takes `Class`, `Module.Class` or
+  `/Script/Module.Class`) call only `BlueprintPure`/`const` getters (another is `INVALID_ARGUMENT`); properties need no
+  plugin. A bool compares as a bool (`== True` and `== true` both match). `pie_wait timeout_s` goes up to 600 s: past
+  `wait_s` it continues as a `job`.
+- `actor_call args`: a JSON object for a struct parameter (or an array of them) is built field by field from the
+  function's signature — an unknown field or parameter is `INVALID_ARGUMENT` (UE's own conversion silently dropped
+  unknown keys: `{"X": 1}` zeroed a Vector); a list is positional fields / array elements.
 - `polyworld` is deprecated in favour of `game` / `game_command`
   ([`docs/polyworld-migration.md`](docs/polyworld-migration.md)); it is removed in v2.3.
 

@@ -166,3 +166,65 @@ func TestLongPieWaitIsAJob(t *testing.T) {
 	}
 	h.call(t, "job", map[string]any{"op": "cancel", "job_id": out["job_id"]})
 }
+
+// Review R1 #1: a command re-sent after a restart goes to the world it was first sent
+// to — the new world refuses it — so it never runs twice, even when the agent read the
+// new world in between.
+func TestGameCommandResendAfterRestartNeverRunsTwice(t *testing.T) {
+	h := startHarness(t, harnessOpts{project: gameProject(t, gameAPIJSON, ""), toolsets: []spec.Toolset{spec.Game}})
+	h.world.StartPIE()
+	defer h.world.StopPIE()
+	if res := structured(t, h.call(t, "game_command", map[string]any{"name": "start_wave", "request_id": "u1"})); res["accepted"] != true {
+		t.Fatalf("first send = %v", res)
+	}
+	h.world.Game.Restart("epoch-2")
+	structured(t, h.call(t, "game", map[string]any{"op": "snapshot"})) // the server learns epoch-2
+	e := errorOf(t, h.call(t, "game_command", map[string]any{"name": "start_wave", "request_id": "u1"}))
+	if d, _ := e["details"].(map[string]any); d["game_error"] != "dedup_expired" || h.world.Game.Runs != 1 {
+		t.Fatalf("re-send after a restart = %v (runs %d)", e, h.world.Game.Runs)
+	}
+	// The current world is still known: a new id runs there at once.
+	if res := structured(t, h.call(t, "game_command", map[string]any{"name": "start_wave", "request_id": "u2"})); res["world_epoch"] != "epoch-2" {
+		t.Fatalf("a new id after the refusal = %v", res)
+	}
+}
+
+// Review R1 #2: no world_epoch, no command.
+func TestGameCommandNeedsAnEpoch(t *testing.T) {
+	h := startHarness(t, harnessOpts{project: gameProject(t, gameAPIJSON, ""), toolsets: []spec.Toolset{spec.Game}})
+	h.world.StartPIE()
+	defer h.world.StopPIE()
+	h.world.Game.NoEpoch = true
+	e := errorOf(t, h.call(t, "game_command", map[string]any{"name": "start_wave", "request_id": "n1"}))
+	if e["code"] != "OPERATION_FAILED" || !strings.Contains(fmt.Sprint(e["message"]), "world_epoch") || h.world.Game.Runs != 0 {
+		t.Fatalf("a game without an epoch = %v (runs %d)", e, h.world.Game.Runs)
+	}
+}
+
+// Review R1 #9: pie start/stop forget the epoch, so the first command in a world the
+// server itself restarted reads it instead of being refused.
+func TestPieRestartForgetsTheGameWorld(t *testing.T) {
+	h := startHarness(t, harnessOpts{project: gameProject(t, gameAPIJSON, ""), toolsets: []spec.Toolset{spec.Game}})
+	h.world.StartPIE()
+	structured(t, h.call(t, "game_command", map[string]any{"name": "start_wave", "request_id": "p1"}))
+	h.call(t, "pie", map[string]any{"op": "stop"})
+	h.world.Game.Restart("epoch-2")
+	h.call(t, "pie", map[string]any{"op": "start"})
+	defer h.world.StopPIE()
+	if res := structured(t, h.call(t, "game_command", map[string]any{"name": "start_wave", "request_id": "p2"})); res["accepted"] != true || res["world_epoch"] != "epoch-2" {
+		t.Fatalf("the first command after pie start = %v", res)
+	}
+}
+
+// Review R1 #3/#5: actor_call until reads the call's result, not object paths; the
+// /Script/ form of an object path parses.
+func TestUntilRefusesObjectPaths(t *testing.T) {
+	h := startHarness(t, harnessOpts{})
+	h.world.StartPIE()
+	defer h.world.StopPIE()
+	e := errorOf(t, h.call(t, "actor_call", map[string]any{"actor": "@pawn", "function": "GetHealth",
+		"until": "@subsystem:/Script/Game.AgentSubsystem.wave >= 1", "timeout_s": 1}))
+	if e["code"] != "INVALID_ARGUMENT" || !strings.Contains(fmt.Sprint(e["hint"]), "pie_wait") {
+		t.Fatalf("until with an object path = %v", e)
+	}
+}

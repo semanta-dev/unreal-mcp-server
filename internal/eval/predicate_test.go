@@ -1,6 +1,9 @@
 package eval
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Guards the LookupPath []any branch: a numeric path segment indexes a JSON array
 // (pie_verify's flagship predicate nodes.0.SupplyRatio). Committed coverage for the
@@ -198,6 +201,22 @@ func TestPredicateBoolSpellings(t *testing.T) {
 		}
 		if got, _ := p.Eval(state); got != want {
 			t.Errorf("%q = %v, want %v", expr, got, want)
+		}
+	}
+}
+
+// Review R1 #5: the game_api spelling of a subsystem (Module.Class or /Script/Module.Class).
+func TestObjectPathClassForms(t *testing.T) {
+	for _, expr := range []string{
+		"@subsystem:/Script/Game.AgentSubsystem.wave >= 1",
+		"@subsystem:Game.AgentSubsystem.PeekSnapshotJson().wave >= 1",
+	} {
+		p, err := ParsePredicate(expr)
+		if err != nil {
+			t.Fatalf("parse %q: %v", expr, err)
+		}
+		if got := p.ObjectPaths(); len(got) != 1 || got[0] != strings.Fields(expr)[0] {
+			t.Fatalf("%q: ObjectPaths = %v", expr, got)
 		}
 	}
 }

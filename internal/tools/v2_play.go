@@ -104,6 +104,8 @@ func pieHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		}
 	}
 	out, err := v2Op(ctx, c, py, pick(c.Args, "simulate"))
+	// A new (or no) game world: the next game_command reads its epoch first.
+	forgetGameWorld(c)
 	for k, v := range pre {
 		if out != nil {
 			out[k] = v

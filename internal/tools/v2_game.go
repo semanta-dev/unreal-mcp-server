@@ -38,17 +38,60 @@ func gameAPIOf(c *spec.Call) (*session.GameAPI, error) {
 
 // worldEpochs remembers each project's last-seen game world_epoch (from any game read),
 // so game_command can name the world it means (GAME_CONTRACT.md).
-var worldEpochs sync.Map // project dir -> epoch
+var worldEpochs sync.Map // project key -> epoch
 
-// refusedIDs remembers request_ids the game refused as dedup_expired (per project): a
-// refused id must not be re-sent — once the server learns the new world, the same id
-// would run there, though the agent cannot know whether it already ran in the old one.
-var refusedIDs sync.Map // project dir + "|" + request_id -> struct{}
+// gameProject keys the per-project game state: the canonical project key, so two
+// daemon sessions spelling one project differently share it.
+func gameProject(c *spec.Call) string { return session.ProjectKey(c.Deps.ProjectDir) }
+
+// forgetGameWorld drops the project's known epoch: PIE started or stopped, so the next
+// command reads the new world first instead of being refused for the old one.
+func forgetGameWorld(c *spec.Call) { worldEpochs.Delete(gameProject(c)) }
 
 func noteEpoch(c *spec.Call, out map[string]any) {
 	if e, ok := out["world_epoch"].(string); ok && e != "" {
-		worldEpochs.Store(c.Deps.ProjectDir, e)
+		worldEpochs.Store(gameProject(c), e)
 	}
+}
+
+// gameRequest is what the server remembers of one request_id: the world it was FIRST
+// sent to, and whether that world refused it. A re-send (after outcome:unknown) always
+// goes to that same world — never the current one, where it has no record and would run
+// again — so a restarted world refuses it (dedup_expired) and it is never run twice.
+type gameRequest struct {
+	epoch   any
+	refused bool
+}
+
+// gameRequests is bounded (the oldest ids are forgotten first): a long-lived daemon
+// must not grow without limit. An id older than the last maxGameRequests commands of
+// its project is treated as new.
+const maxGameRequests = 4096
+
+var gameRequests = struct {
+	sync.Mutex
+	m     map[string]gameRequest
+	order []string
+}{m: map[string]gameRequest{}}
+
+func loadGameRequest(key string) (gameRequest, bool) {
+	gameRequests.Lock()
+	defer gameRequests.Unlock()
+	r, ok := gameRequests.m[key]
+	return r, ok
+}
+
+func storeGameRequest(key string, r gameRequest) {
+	gameRequests.Lock()
+	defer gameRequests.Unlock()
+	if _, ok := gameRequests.m[key]; !ok {
+		gameRequests.order = append(gameRequests.order, key)
+		if len(gameRequests.order) > maxGameRequests {
+			delete(gameRequests.m, gameRequests.order[0])
+			gameRequests.order = gameRequests.order[1:]
+		}
+	}
+	gameRequests.m[key] = r
 }
 
 // gameRead calls one of the game API's read functions (capabilities, snapshot,
@@ -125,7 +168,9 @@ func gameCommandSpec() *spec.Spec {
 		// Exec, always: a game declares its own tiers (shown by game op=capabilities), but
 		// gating, annotations and retries are decided from this static tier before the
 		// call runs. Idempotent ONLY because the game deduplicates request_id within one
-		// world (and refuses another world's epoch): a re-send never runs twice.
+		// world (and refuses another world's epoch), and a re-send always carries the epoch
+		// it was first sent with (gameRequests): a re-send never runs twice, even after a
+		// restart.
 		Ops: []spec.OpSpec{{Tier: spec.Exec, Idempotent: true, Required: []string{"name", "request_id"}, Reaches: []string{"game_read", "game_command"}, Needs: []string{"pie", "plugin>=3"}}},
 		Description: "Run one of the game's commands (its own API; PIE) → {accepted, result}. request_id is required: " +
 			"after outcome:unknown, re-send the SAME request_id (the game returns the recorded result). A command for a " +
@@ -140,17 +185,28 @@ func gameCommandSpec() *spec.Spec {
 			if err != nil {
 				return nil, err
 			}
-			if _, refused := refusedIDs.Load(c.Deps.ProjectDir + "|" + in.RequestID); refused {
+			key := gameProject(c) + "|" + in.RequestID
+			prior, seen := loadGameRequest(key)
+			if prior.refused {
 				return nil, envelope.New(envelope.InvalidArgument, "request_id %q was refused for an earlier game world (dedup_expired)", in.RequestID).
 					WithHint("send the command with a NEW request_id once you have read the new world")
 			}
-			epoch, _ := worldEpochs.Load(c.Deps.ProjectDir)
-			if epoch == nil {
-				// Never send a command without an epoch: learn the world first.
-				if _, err := gameRead(ctx, c, api, api.Capabilities, []any{}); err != nil {
-					return nil, err
+			epoch := prior.epoch
+			if !seen {
+				epoch, _ = worldEpochs.Load(gameProject(c))
+				if epoch == nil {
+					// Never send a command without an epoch: learn the world first.
+					if _, err := gameRead(ctx, c, api, api.Capabilities, []any{}); err != nil {
+						return nil, err
+					}
+					epoch, _ = worldEpochs.Load(gameProject(c))
 				}
-				epoch, _ = worldEpochs.Load(c.Deps.ProjectDir)
+				if epoch == nil {
+					return nil, envelope.New(envelope.OperationFailed, "%s.%s returned no world_epoch: a command is never sent without one", api.Class, api.Capabilities).
+						WithHint("the game API must report world_epoch (docs/plans/GAME_CONTRACT.md)")
+				}
+				// Recorded before sending: an outcome:unknown re-send goes to this world.
+				storeGameRequest(key, gameRequest{epoch: epoch})
 			}
 			req := map[string]any{}
 			for k, v := range in.Args {
@@ -172,8 +228,8 @@ func gameCommandSpec() *spec.Spec {
 				e := envelope.New(envelope.Precondition, "the game refused %s: %s", in.Name, msg).
 					WithDetail("game_error", code).WithDetail("result", res)
 				if code == "dedup_expired" {
-					worldEpochs.Delete(c.Deps.ProjectDir)
-					refusedIDs.Store(c.Deps.ProjectDir+"|"+in.RequestID, struct{}{})
+					worldEpochs.CompareAndDelete(gameProject(c), epoch)
+					storeGameRequest(key, gameRequest{epoch: epoch, refused: true})
 					e.WithHint("the game world changed (PIE restarted?): read it again (game op=snapshot), then send the command with a NEW request_id")
 				}
 				return nil, e

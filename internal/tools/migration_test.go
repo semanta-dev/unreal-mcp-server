@@ -86,3 +86,22 @@ func TestGeneratedDocsAreCurrent(t *testing.T) {
 		}
 	}
 }
+
+// R1.5: game_command is Exec (gating, annotations and retries come from this static
+// tier — a game's declared tiers never relax it) and Idempotent only through request_id.
+func TestGameCommandSpecPinned(t *testing.T) {
+	for _, s := range allSpecs() {
+		if s.Name != "game_command" {
+			continue
+		}
+		if len(s.Ops) != 1 || s.Ops[0].Tier != spec.Exec || !s.Ops[0].Idempotent {
+			t.Fatalf("game_command must be one Exec + Idempotent op: %+v", s.Ops)
+		}
+		req := strings.Join(s.Ops[0].Required, ",")
+		if !strings.Contains(req, "request_id") {
+			t.Fatalf("game_command must require request_id: %v", s.Ops[0].Required)
+		}
+		return
+	}
+	t.Fatal("no game_command spec")
+}

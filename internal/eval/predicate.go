@@ -41,7 +41,7 @@ var Ops = []string{">=", "<=", "==", "!=", ">", "<"}
 
 var (
 	predPath = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)*$`)
-	objPath  = regexp.MustCompile(`^@[A-Za-z_]+(:[A-Za-z0-9_]+)?(\.([A-Za-z_][A-Za-z0-9_]*(\(\))?|[0-9]+))+$`)
+	objPath  = regexp.MustCompile(`^@[A-Za-z_]+(:(/Script/[A-Za-z0-9_]+\.[A-Za-z0-9_]+|[A-Za-z0-9_]+))?(\.([A-Za-z_][A-Za-z0-9_]*(\(\))?|[0-9]+))+$`)
 	predTok  = regexp.MustCompile(`\(\)|\(|\)|>=|<=|==|!=|>|<|"[^"]*"|'[^']*'|[^\s()<>=!"']+(?:\(\)[^\s()<>=!"']*)*|\S`)
 )
 

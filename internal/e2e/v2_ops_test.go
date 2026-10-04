@@ -278,3 +278,19 @@ func TestGitRevertProjectInASubdirectory(t *testing.T) {
 		t.Fatal("an untracked file must be kept")
 	}
 }
+
+// Review R1 #3: a wait_until beat reads object paths (it polled pie_observe only, so an
+// object-path beat never held and failed the run).
+func TestPlaytestWaitUntilReadsObjectPaths(t *testing.T) {
+	h := startHarness(t, harnessOpts{})
+	rec := &bridgetest.Recorder{Dir: t.TempDir(), Frames: 3, State: func(i int) map[string]any {
+		return map[string]any{"gamestate": map[string]any{"wave": float64(i)}}
+	}}
+	rec.Install(h.emu)
+	h.world.SetObject("@subsystem:AgentSubsystem", map[string]any{"Mode": "defend"})
+	scenario := strings.Replace(scenarioJSON, `"rubric"`, `"beats":[{"wait_until":"@subsystem:AgentSubsystem.Mode == 'defend'","timeout_s":2}],"rubric"`, 1)
+	out := structured(t, h.call(t, "playtest", map[string]any{"op": "run", "json": scenario, "wait_s": 20}))
+	if r, _ := out["result"].(map[string]any); out["state"] != "succeeded" || r == nil || r["verdict"] != "PASS" {
+		t.Fatalf("playtest with an object-path wait_until = %v", out)
+	}
+}

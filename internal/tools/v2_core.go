@@ -525,6 +525,10 @@ func actorCall(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	if err != nil {
 		return nil, envelope.New(envelope.InvalidArgument, "until: %v", err)
 	}
+	if len(pred.ObjectPaths()) > 0 {
+		return nil, envelope.New(envelope.InvalidArgument, "until reads the call's result (result.<field>), not object paths").
+			WithHint("wait on an object path with pie_wait predicate=...")
+	}
 	timeout := 20 * time.Second
 	if in.TimeoutS > 0 {
 		timeout = time.Duration(in.TimeoutS * float64(time.Second))

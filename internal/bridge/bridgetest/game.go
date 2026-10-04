@@ -17,7 +17,8 @@ type FakeGame struct {
 	Journal []map[string]any // {seq, kind, ...}
 	done    map[string]map[string]any
 	nextSeq int
-	Runs    int // commands actually run (not deduplicated)
+	Runs    int  // commands actually run (not deduplicated)
+	NoEpoch bool // a non-conforming game: capabilities reports no world_epoch
 }
 
 // NewFakeGame is a game whose API subsystem is /Script/Game.GameAgentSubsystem.
@@ -58,8 +59,11 @@ func (w *World) gameRead(args map[string]any) (any, *OpError) {
 	g := w.Game
 	switch args["function"] {
 	case "GetCapabilitiesJson":
-		return map[string]any{"result": map[string]any{"world_epoch": g.Epoch, "commands": []any{
-			map[string]any{"name": "start_wave", "tier": "ephemeral"}}}}, nil
+		res := map[string]any{"world_epoch": g.Epoch, "commands": []any{map[string]any{"name": "start_wave", "tier": "ephemeral"}}}
+		if g.NoEpoch {
+			delete(res, "world_epoch")
+		}
+		return map[string]any{"result": res}, nil
 	case "PeekSnapshotJson":
 		return map[string]any{"result": map[string]any{"world_epoch": g.Epoch, "wave_number": g.Wave,
 			"events_cursor": fmt.Sprintf("%s:%d", g.Epoch, g.nextSeq-1)}}, nil
