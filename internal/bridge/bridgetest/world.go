@@ -39,6 +39,8 @@ type World struct {
 	Inputs []map[string]any
 	// WorldTimeScale is game seconds per real second (0 = 1; a paused game: tiny).
 	WorldTimeScale float64
+	// StickyPIE: pie_stop answers but PIE keeps running (a hung session).
+	StickyPIE bool
 	// Events is what the events session (R5.1) reports.
 	Events       EventFixture
 	eventSources map[string]any

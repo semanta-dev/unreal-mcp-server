@@ -32,6 +32,9 @@ func (w *World) installPlay(e *Emulator) {
 		return map[string]any{"pie": "starting"}, nil
 	})
 	e.Handle("pie_stop", func(map[string]any) (any, *OpError) {
+		if w.StickyPIE {
+			return map[string]any{"pie": "stopping"}, nil // asked, but it never stops
+		}
 		w.StopPIE()
 		return map[string]any{"pie": "stopping"}, nil
 	})

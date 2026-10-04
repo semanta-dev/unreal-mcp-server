@@ -346,3 +346,24 @@ func TestPlaytestBatchCancelAndExcludedRuns(t *testing.T) {
 		t.Fatalf("a cancelled batch = %v", st)
 	}
 }
+
+// R5 review round 3: a PIE that will not stop fails its run and ends the batch — the next
+// seed must not play inside it.
+func TestPlaytestBatchStopsWhenPIEWillNotStop(t *testing.T) {
+	h := startHarness(t, harnessOpts{project: t.TempDir()})
+	h.world.PluginAPI = 8
+	rec := &bridgetest.Recorder{Dir: t.TempDir(), Frames: 3, State: func(i int) map[string]any {
+		return map[string]any{"gamestate": map[string]any{"wave": float64(i)}}
+	}}
+	rec.Install(h.emu)
+	h.world.StickyPIE = true
+	sc := `{"schema":"scenario/v1","name":"sticky","mode":"pie","duration_s":0.2,"interval_s":0.1,
+	 "rubric":[{"id":"waves","kind":"reached","path":"gamestate.wave","params":{"value":2}}]}`
+	out := structured(t, h.call(t, "playtest", map[string]any{"op": "batch", "json": sc, "seeds": []any{1, 2, 3}, "wait_s": 25}))
+	r, _ := out["result"].(map[string]any)
+	runs, _ := r["runs"].([]any)
+	if r == nil || len(runs) != 1 || r["verdict"] != "FAIL" || len(h.world.Events.Seeds) != 1 ||
+		!strings.Contains(fmt.Sprint(runs[0]), "did not stop") {
+		t.Fatalf("a sticky PIE batch = %v (seeds %v)", out, h.world.Events.Seeds)
+	}
+}

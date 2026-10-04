@@ -750,12 +750,16 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 	defer cancel()
 	b, _ := v2Bridge(c)
 	raw, stopErr := b.Call(cctx, "capture_stop", map[string]any{"session": session})
-	if err := stop(); err != nil {
-		beatErrs = append(beatErrs, "teardown: "+err.Error())
+	teardownErr := stop()
+	if teardownErr != nil {
+		beatErrs = append(beatErrs, "teardown: "+teardownErr.Error())
 	}
 	result := map[string]any{"scenario": sc.Name, "session": session}
 	if seed != nil {
 		result["seed"] = *seed
+	}
+	if teardownErr != nil {
+		result["teardown_error"] = teardownErr.Error() // the editor may still be playing: nothing more should run
 	}
 	if events != nil {
 		result["events"] = eventSummary(events, engineReport)

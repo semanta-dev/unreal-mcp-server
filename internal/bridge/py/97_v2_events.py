@@ -73,6 +73,7 @@ def _events_world_changed(sess, why, at_t=None):
     if sess.get("world_changed"):
         return
     sess["world_changed"] = why
+    sess.pop("journal", None)  # its subsystem may be the gone world's: hold no reference to it
     for src in ("engine", "journal"):
         if sess["sources"].get(src) == "recorded":
             # The engine was drained up to the loss (at_t); the journal only up to what it took.
@@ -87,6 +88,9 @@ def _events_drain(sess, final=False):
     world = _game_world()
     if world is None:
         sess["world_ended"] = True
+        # PIE is over: hold no reference to its objects (the editor checks for leaked PIE worlds).
+        sess.pop("recorder", None)
+        sess.pop("journal", None)
         return
     now = _events_world_t(world)
     if now < sess["now_t"] - 1e-3:
@@ -98,6 +102,7 @@ def _events_drain(sess, final=False):
     rec = sess.get("recorder")
     if rec is not None and not sess.get("engine_lost"):
         try:
+            complete = False
             for _ in range(1000):
                 out = json.loads(rec.drain_events_json(sess["engine_cursor"], 10000) or "{}")
                 if out.get("generation") != sess["generation"]:
@@ -107,15 +112,20 @@ def _events_drain(sess, final=False):
                     _events_gap(sess, "engine", out.get("reason") or "the plugin's ring buffer overran", out.get("dropped"))
                 _events_add(sess, "engine", out.get("events") or [])
                 sess["engine_cursor"] = int(out.get("next_cursor", sess["engine_cursor"]))
+                if out.get("more"):
+                    continue  # every page first: a lost world still has its last events in the ring
                 if out.get("world_lost"):
                     # The recorded world was torn down (map travel, a restart): nothing after it.
                     sess["engine_lost"] = True
                     _events_world_changed(sess, "the recorded world was torn down (map travel or restart): the recording "
                                           "ends there", at_t=float(out.get("lost_t") or sess["now_t"]))
                     return
-                if not out.get("more"):
-                    break
-            sess["taken"]["engine"] = sess["now_t"]
+                complete = True
+                break
+            if complete:
+                sess["taken"]["engine"] = sess["now_t"]
+            else:
+                _events_gap(sess, "engine", "the engine ring had more than 1000 pages to read in one drain")
         except Exception as e:
             _events_gap(sess, "engine", "drain failed: %s" % e)  # taken stays: the gap runs from there
     j = sess.get("journal")
@@ -214,7 +224,7 @@ def _op_events_start(args):
     # stop never came (the server went away), it is evicted rather than blocking for good.
     evicted = []
     for s, v in list(_MCP_EVENT_SESSIONS.items()):
-        if v.get("world_ended") or v.get("world_changed") or v.get("world") is not world:
+        if v.get("world_ended") or v.get("world_changed") or v.get("world") != world.get_path_name():
             _events_unregister(v)
             _MCP_EVENT_SESSIONS.pop(s, None)
             evicted.append(s)
@@ -223,7 +233,7 @@ def _op_events_start(args):
         # The engine recorder is one per game: a second session would restart it under the first.
         raise _V2Error("CONFLICT", "event session %s is recording: stop it first (one session at a time)" % live[0])
     now = _events_world_t(world)
-    sess = {"session": session, "running": True, "world": world, "start_t": now, "now_t": now, "taken": {}, "events": [], "gaps": [],
+    sess = {"session": session, "running": True, "world": world.get_path_name(), "start_t": now, "now_t": now, "taken": {}, "events": [], "gaps": [],
             "before_window": [], "open_gaps": [], "sources": {"server": "recorded"}, "source_why": {}, "elapsed": 0.0,
             "last_drain": 0.0, "interval_s": max(0.1, float(args.get("interval_s") or 0.5)), "engine_cursor": 0,
             "journal_cursor": "", "journal_kinds": None}
@@ -301,15 +311,15 @@ def _op_events_stop(args):
     if sess["before_window"]:
         out["before_window"] = sess["before_window"]
     rec = sess.get("recorder")
-    if rec is not None:
-        if sess.get("world_ended"):
+    if sess.get("world_ended"):
+        if sess["sources"].get("engine") == "recorded":
             # PIE ended first: the recorder unbound itself with its game instance.
             out["engine"] = {"stopped_with": "pie_end"}
-        else:
-            try:
-                out["engine"] = json.loads(rec.stop_recording() or "{}")
-            except Exception as e:
-                out["engine"] = {"error": str(e)}
+    elif rec is not None:
+        try:
+            out["engine"] = json.loads(rec.stop_recording() or "{}")
+        except Exception as e:
+            out["engine"] = {"error": str(e)}
     if sess.get("world_ended"):
         # Events of the last drain interval before PIE ended were never read.
         for src in ("engine", "journal"):

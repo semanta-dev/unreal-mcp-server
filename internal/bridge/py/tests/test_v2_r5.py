@@ -69,8 +69,14 @@ def ue(v2):
     fake.register_slate_post_tick_callback = lambda cb: ticks.append(cb) or len(ticks)
     fake.unregister_slate_post_tick_callback = lambda h: ticks.__setitem__(h - 1, None)
     fake.rec, fake.journal, fake.clock, fake.ticks, fake.api = rec, journal, clock, ticks, api
-    with installed(v2["_mcp2"], fake):
-        yield fake
+    m = v2["_mcp2"]
+    pie = _NS(get_path_name=lambda: "/Game/Maps/UEDPIE_0_L_Test.L_Test")
+    m._game_world = lambda: pie if fake.pie_actors is not None else None  # a world object, as UE returns
+    try:
+        with installed(m, fake):
+            yield fake
+    finally:
+        del m._game_world
 
 
 def call(v2, op, args):
@@ -329,3 +335,32 @@ def test_a_journal_without_next_cursor_is_a_gap(v2, ue):
     tick(ue, 1.0)
     out = call(v2, "events_stop", {"session": "n1"})["result"]
     assert any("next_cursor" in g["reason"] for g in out["gaps"]), out
+
+
+
+def test_a_lost_world_reads_every_page_first(v2, ue):
+    # The loss is reported on every page: the pages still waiting are read before the stop.
+    call(v2, "events_start", {"session": "lp", "journal": JOURNAL})
+    ue.rec.events = [{"seq": i, "t": 10.0 + 0.01 * i, "kind": "damage"} for i in range(1, 6)]  # 3 pages of 2
+    ue.rec.lost_t = 10.5
+    real = ue.rec.drain_events_json
+
+    def every_page(cursor, n):
+        out = json.loads(real(cursor, n))
+        out["world_lost"], out["lost_t"] = True, 10.5
+        return json.dumps(out)
+
+    ue.rec.drain_events_json = every_page
+    tick(ue)
+    out = call(v2, "events_stop", {"session": "lp"})["result"]
+    assert sum(1 for e in out["events"] if e["kind"] == "damage") == 5, out
+
+
+def test_a_gone_world_holds_no_reference(v2, ue):
+    call(v2, "events_start", {"session": "rf", "journal": JOURNAL})
+    ue.pie_actors = None
+    tick(ue)
+    sess = v2["_mcp2"]._MCP_EVENT_SESSIONS["rf"]
+    assert "recorder" not in sess and "journal" not in sess and isinstance(sess["world"], str)
+    out = call(v2, "events_stop", {"session": "rf"})["result"]
+    assert out["engine"] == {"stopped_with": "pie_end"}

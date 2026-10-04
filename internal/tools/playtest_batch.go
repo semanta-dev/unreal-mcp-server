@@ -101,6 +101,11 @@ func runBatch(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playtestI
 			r.Verdict, r.Error = "CANCELLED", "the batch was cancelled during this run"
 		}
 		runs = append(runs, r)
+		if res != nil && res["teardown_error"] != nil {
+			// PIE would not stop: the next seed would play inside this run's session.
+			progress(prefix + "PIE did not stop: the batch ends here")
+			break
+		}
 	}
 	out := aggregateBatch(id, sc.Name, runs)
 	complete := 0
@@ -111,7 +116,7 @@ func runBatch(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playtestI
 	}
 	if complete < len(in.Seeds) {
 		// Never a verdict over runs that were not played.
-		out["incomplete"] = fmt.Sprintf("cancelled: %d of %d runs complete", complete, len(in.Seeds))
+		out["incomplete"] = fmt.Sprintf("%d of %d runs complete (cancelled, or PIE would not stop)", complete, len(in.Seeds))
 		if rank(fmt.Sprint(out["verdict"])) < rank(eval.VerdictInsufficient) {
 			out["verdict"] = eval.VerdictInsufficient
 		}
