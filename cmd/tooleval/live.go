@@ -107,6 +107,24 @@ type gameTaskFile struct {
 
 // loadGameTasks reads a task file and prepends the prelude to every probe and to the
 // code of every python setup call.
+// loadGameTaskFiles reads a comma-separated list of task files (each with its own
+// prelude): the plan's tasks and, for the final run, the sealed held-out file — merged
+// without anyone opening the sealed one.
+func loadGameTaskFiles(paths string) ([]*gameTask, error) {
+	var all []*gameTask
+	for _, p := range strings.Split(paths, ",") {
+		if p = strings.TrimSpace(p); p == "" {
+			continue
+		}
+		ts, err := loadGameTasks(p)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, ts...)
+	}
+	return all, nil
+}
+
 func loadGameTasks(path string) ([]*gameTask, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {

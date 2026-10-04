@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -248,5 +249,23 @@ func TestClearEvidence(t *testing.T) {
 	}
 	if _, err := os.Stat(keep); err != nil {
 		t.Error("clearEvidence removed an unrelated file")
+	}
+}
+
+func TestLoadGameTaskFilesKeepsEachFilesPrelude(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, prelude, id string) string {
+		p := filepath.Join(dir, name)
+		raw := fmt.Sprintf(`{"prelude": %q, "tasks": [{"id": %q, "goal": "G2", "project": "aesir", "prompt": "x",
+			"checks": [{"name": "c", "probe": "RESULT", "expect": [{"path": "a", "op": "exists"}]}]}]}`, prelude, id)
+		if err := os.WriteFile(p, []byte(raw), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	a, b := write("a.json", "PA", "t1"), write("b.json", "PB", "t2")
+	ts, err := loadGameTaskFiles(a + "," + b)
+	if err != nil || len(ts) != 2 || !strings.HasPrefix(ts[0].Checks[0].Probe, "PA") || !strings.HasPrefix(ts[1].Checks[0].Probe, "PB") {
+		t.Fatalf("%v %+v", err, ts)
 	}
 }

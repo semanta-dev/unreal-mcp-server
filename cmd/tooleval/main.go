@@ -74,7 +74,7 @@ func main() {
 	rerun := flag.String("rerun", "", "full: re-run only the runs that errored in this results .jsonl")
 	only := flag.String("only", "", "comma-separated task ids to run (pilot/full)")
 	merge := flag.String("merge", "", "report only: comma-separated results .jsonl files (a later file's run replaces an earlier one)")
-	gameTasks := flag.String("game-tasks", "docs/validation/gameeval/tasks.json", "live: the game-making task file")
+	gameTasks := flag.String("game-tasks", "docs/validation/gameeval/tasks.json", "live: the game-making task file(s), comma-separated (e.g. + the sealed held-out file)")
 	server := flag.String("server", "dist/unreal-mcp.exe", "live: the server binary under test")
 	serverArgs := flag.String("server-args", "-engine D:/Unreal/Engine/UE_5.7 -group 239.0.0.42:6799 -log-format text -log-level warn", "live: extra server flags")
 	projectsFlag := flag.String("projects", "aesir=../_p7scratch/aesir,polyworld=../_p7scratch/PolyWorld", "live: name=scratch project dir,…")
@@ -87,7 +87,7 @@ func main() {
 	flag.Parse()
 
 	if *mode == "live-lint" || *mode == "live" {
-		gts, err := loadGameTasks(*gameTasks)
+		gts, err := loadGameTaskFiles(*gameTasks)
 		must(err)
 		projects := kv(*projectsFlag)
 		var names []string
