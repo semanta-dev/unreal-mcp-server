@@ -83,6 +83,7 @@ func prepareShutdown(ctx context.Context, c *spec.Call, discard bool, what strin
 	}
 	if st.PIE {
 		progress("stopping PIE")
+		forgetGameWorld(c)
 		if _, err := v2Op(ctx, c, "pie_stop", nil); err != nil {
 			return nil, err
 		}

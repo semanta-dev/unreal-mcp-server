@@ -1395,7 +1395,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Run one of the game's commands (its own API; PIE) → {accepted, result}. request_id is required: after outcome:unknown, re-send the SAME request_id (the game returns the recorded result). A command for a world that restarted is refused (dedup_expired): read the game again, then send it with a new request_id.",
+      "description": "Run one of the game's commands (its own API; PIE) → {accepted, result}. request_id is required: after outcome:unknown, re-send the SAME request_id (the game returns the recorded result). A command for a world that restarted is refused (dedup_expired): read the game again, then send it with a new request_id. The server remembers a project's last 4096 request_ids.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

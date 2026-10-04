@@ -648,6 +648,7 @@ def _op_actor_set_properties(args):
 
 
 _ARG_DOC = re.compile(r"^\s+(\w+) \(([^)]+)\):", re.M)
+_FIELD_DOC = re.compile(r"^- ``(\w+)`` \(([^)]+)\):", re.M)  # a struct's "Editor Properties" list
 
 
 def _ufunction_params(target, fn):
@@ -657,11 +658,16 @@ def _ufunction_params(target, fn):
     UE's Python names do not follow one rule (SetActorScale3D -> set_actor_scale3d)."""
     want = fn.lower().replace("_", "")
     alt = want[2:] if want.startswith("k2") else want
-    for attr in dir(type(target)):
-        if attr.lower().replace("_", "") in (want, alt):
-            doc = getattr(getattr(type(target), attr, None), "__doc__", None) or ""
-            return dict(_ARG_DOC.findall(doc.split("Returns:")[0]))
-    return None
+    names = [a for a in dir(type(target)) if a.lower().replace("_", "") in (want, alt)]
+    # The exact name first (K2_GetFoo and GetFoo can both exist); never first-match.
+    exact = [a for a in names if a.lower().replace("_", "") == want]
+    names = exact or names
+    if not names:
+        return None
+    if len(names) > 1:
+        raise _V2Error("CONFLICT", "%s matches several Python methods: %s" % (fn, ", ".join(sorted(names))))
+    doc = getattr(getattr(type(target), names[0], None), "__doc__", None) or ""
+    return dict(_ARG_DOC.findall(doc.split("Returns:")[0]))
 
 
 def _struct_arg(tname, value, where, st=None):
@@ -675,6 +681,7 @@ def _struct_arg(tname, value, where, st=None):
     if not isinstance(value, dict) or base is None or not (isinstance(st, type) and issubclass(st, base)):
         return value
     out = st()
+    fields = {n.lower(): t for n, t in _FIELD_DOC.findall(st.__doc__ or "")}
     for k, v in value.items():
         try:
             cur = out.get_editor_property(k)
@@ -682,6 +689,14 @@ def _struct_arg(tname, value, where, st=None):
             raise _V2Error("BAD_VALUE", "%s: %s has no field %r" % (where, tname, k)) from None
         if isinstance(v, dict) and isinstance(cur, base):
             v = _struct_arg(type(cur).__name__, v, "%s.%s" % (where, k), type(cur))
+        elif isinstance(v, list) and any(isinstance(e, dict) for e in v):
+            # An array-of-structs field: each element is built and checked too (UE's own
+            # conversion would drop unknown keys here as well).
+            ftype = fields.get(k.lower())
+            if not ftype:
+                raise _V2Error("BAD_VALUE", "%s.%s: the field's type is not documented, so its elements cannot be "
+                               "checked (pass each element as a list of its fields in order)" % (where, k))
+            v = _struct_arg(ftype, v, "%s.%s" % (where, k))
         try:
             out.set_editor_property(k, v)
         except Exception as e:

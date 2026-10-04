@@ -63,16 +63,17 @@ type gameRequest struct {
 	refused bool
 }
 
-// gameRequests is bounded (the oldest ids are forgotten first): a long-lived daemon
-// must not grow without limit. An id older than the last maxGameRequests commands of
-// its project is treated as new.
+// gameRequests is bounded per project (its oldest ids are forgotten first): a
+// long-lived daemon must not grow without limit, and one busy project must not evict
+// another's ids. An id older than its project's last maxGameRequests commands is
+// treated as new (the game_command description states the bound).
 const maxGameRequests = 4096
 
 var gameRequests = struct {
 	sync.Mutex
-	m     map[string]gameRequest
-	order []string
-}{m: map[string]gameRequest{}}
+	m     map[string]gameRequest // project + "|" + request_id
+	order map[string][]string    // project -> its keys, oldest first
+}{m: map[string]gameRequest{}, order: map[string][]string{}}
 
 func loadGameRequest(key string) (gameRequest, bool) {
 	gameRequests.Lock()
@@ -81,15 +82,16 @@ func loadGameRequest(key string) (gameRequest, bool) {
 	return r, ok
 }
 
-func storeGameRequest(key string, r gameRequest) {
+func storeGameRequest(project, key string, r gameRequest) {
 	gameRequests.Lock()
 	defer gameRequests.Unlock()
 	if _, ok := gameRequests.m[key]; !ok {
-		gameRequests.order = append(gameRequests.order, key)
-		if len(gameRequests.order) > maxGameRequests {
-			delete(gameRequests.m, gameRequests.order[0])
-			gameRequests.order = gameRequests.order[1:]
+		order := append(gameRequests.order[project], key)
+		if len(order) > maxGameRequests {
+			delete(gameRequests.m, order[0])
+			order = order[1:]
 		}
+		gameRequests.order[project] = order
 	}
 	gameRequests.m[key] = r
 }
@@ -174,7 +176,8 @@ func gameCommandSpec() *spec.Spec {
 		Ops: []spec.OpSpec{{Tier: spec.Exec, Idempotent: true, Required: []string{"name", "request_id"}, Reaches: []string{"game_read", "game_command"}, Needs: []string{"pie", "plugin>=3"}}},
 		Description: "Run one of the game's commands (its own API; PIE) → {accepted, result}. request_id is required: " +
 			"after outcome:unknown, re-send the SAME request_id (the game returns the recorded result). A command for a " +
-			"world that restarted is refused (dedup_expired): read the game again, then send it with a new request_id.",
+			"world that restarted is refused (dedup_expired): read the game again, then send it with a new request_id. " +
+			"The server remembers a project's last 4096 request_ids.",
 		Schema: spec.SchemaFor[gameCommandIn](nil, "name", "request_id"),
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			var in gameCommandIn
@@ -206,7 +209,7 @@ func gameCommandSpec() *spec.Spec {
 						WithHint("the game API must report world_epoch (docs/plans/GAME_CONTRACT.md)")
 				}
 				// Recorded before sending: an outcome:unknown re-send goes to this world.
-				storeGameRequest(key, gameRequest{epoch: epoch})
+				storeGameRequest(gameProject(c), key, gameRequest{epoch: epoch})
 			}
 			req := map[string]any{}
 			for k, v := range in.Args {
@@ -229,7 +232,7 @@ func gameCommandSpec() *spec.Spec {
 					WithDetail("game_error", code).WithDetail("result", res)
 				if code == "dedup_expired" {
 					worldEpochs.CompareAndDelete(gameProject(c), epoch)
-					storeGameRequest(key, gameRequest{epoch: epoch, refused: true})
+					storeGameRequest(gameProject(c), key, gameRequest{epoch: epoch, refused: true})
 					e.WithHint("the game world changed (PIE restarted?): read it again (game op=snapshot), then send the command with a NEW request_id")
 				}
 				return nil, e

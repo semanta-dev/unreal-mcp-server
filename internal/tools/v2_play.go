@@ -15,7 +15,6 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"github.com/jdziat/unreal-mcp-server/internal/crash"
 	"github.com/jdziat/unreal-mcp-server/internal/desktop"
 	"github.com/jdziat/unreal-mcp-server/internal/eval"
@@ -356,6 +355,17 @@ func observeState(ctx context.Context, c *spec.Call, pred *eval.Predicate, args 
 	return state, nil
 }
 
+// transientWaitError says whether a poll's error is worth polling past: PIE not
+// running (yet), or any error the envelope marks retryable — a remote-exec timeout, an
+// unreachable editor, a retryable op error — whatever its Go type (a transport error is
+// not a *bridge.OpError; an op error with editor log lines arrives as an envelope.Error).
+// A malformed predicate, a non-pure getter or a bad target is not.
+func transientWaitError(err error) (transient, notInPIE bool) {
+	e := envelope.Classify(err, false)
+	notInPIE = e.Code == envelope.PIENotRunning
+	return notInPIE || e.Retryable, notInPIE
+}
+
 // waitFor polls until the predicate holds, PIE stops after running, or timeout.
 func waitFor(ctx context.Context, c *spec.Call, pred *eval.Predicate, args map[string]any, timeout, interval time.Duration) (*spec.Result, error) {
 	start := time.Now()
@@ -372,13 +382,13 @@ func waitFor(ctx context.Context, c *spec.Call, pred *eval.Predicate, args map[s
 		polls++
 		running := err == nil
 		if err != nil {
-			var oe *bridge.OpError
 			// PIE still starting (NOT_IN_PIE) or a transient editor error: keep waiting —
 			// unless PIE was running and has now ended (game over / stopped): the answer is final.
-			if !errors.As(err, &oe) || !(oe.Retryable || oe.Code == "NOT_IN_PIE") {
+			transient, notInPIE := transientWaitError(err)
+			if !transient {
 				return nil, err
 			}
-			if oe.Code == "NOT_IN_PIE" && seen {
+			if notInPIE && seen {
 				return answer(false, false, "PIE stopped before the condition was met"), nil
 			}
 		} else {

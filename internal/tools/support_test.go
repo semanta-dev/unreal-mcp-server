@@ -1,10 +1,13 @@
 package tools
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"github.com/jdziat/unreal-mcp-server/internal/eval"
+	"github.com/jdziat/unreal-mcp-server/internal/tools/envelope"
+	"github.com/jdziat/unreal-mcp-server/internal/uexec"
 )
 
 // v7ToolNames are the tools added for playtest capture, high-level design, and
@@ -77,6 +80,29 @@ func TestFinalVerdict(t *testing.T) {
 		got, reasons := finalVerdict(tc.rubric, tc.beats, tc.crashed, tc.mode)
 		if got != tc.want || len(reasons) != tc.reasons {
 			t.Errorf("finalVerdict(%s, %v, %v, %q) = %s %v, want %s (%d reasons)", tc.rubric, tc.beats, tc.crashed, tc.mode, got, reasons, tc.want, tc.reasons)
+		}
+	}
+}
+
+// Review R1 round 2 #1: a wait (pie_wait, playtest wait_until) polls past a transient
+// editor error of any Go type, and stops on a caller's error.
+func TestTransientWaitError(t *testing.T) {
+	for _, c := range []struct {
+		name                string
+		err                 error
+		transient, notInPIE bool
+	}{
+		{"remote-exec timeout", fmt.Errorf("read: %w", uexec.ErrTimeout), true, false},
+		{"connection lost", uexec.ErrConnectionLost, true, false},
+		{"retryable op error", &bridge.OpError{Code: "EDITOR_BUSY", Retryable: true}, true, false},
+		{"op error with editor log (an envelope)", func() error { e := envelope.New(envelope.EditorUnreachable, "x"); e.Retryable = true; return e }(), true, false},
+		{"PIE not running", &bridge.OpError{Code: "NOT_IN_PIE"}, true, true},
+		{"non-pure getter", &bridge.OpError{Code: "BAD_VALUE"}, false, false},
+		{"unresolvable class", &bridge.OpError{Code: "CLASS_UNRESOLVED"}, false, false},
+	} {
+		tr, nip := transientWaitError(c.err)
+		if tr != c.transient || nip != c.notInPIE {
+			t.Errorf("%s: transient=%v notInPIE=%v, want %v %v", c.name, tr, nip, c.transient, c.notInPIE)
 		}
 	}
 }

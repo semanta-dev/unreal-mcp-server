@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jdziat/unreal-mcp-server/internal/bridge"
 	"github.com/jdziat/unreal-mcp-server/internal/build"
 	"github.com/jdziat/unreal-mcp-server/internal/eval"
 	"github.com/jdziat/unreal-mcp-server/internal/headless"
@@ -656,10 +654,12 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 			cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 			defer cancel()
 			_, _ = v2Op(cctx, c, "pie_stop", nil)
+			forgetGameWorld(c)
 		}
 	}
 	if playing {
 		progress("starting " + mode)
+		forgetGameWorld(c)
 		if _, err := v2Op(ctx, c, "pie_start", map[string]any{"simulate": mode == "simulate"}); err != nil {
 			return crashed(err)
 		}
@@ -860,7 +860,7 @@ func waitUntil(ctx context.Context, c *spec.Call, expr string, timeoutS float64)
 			if ok, _ := pred.Eval(st); ok {
 				return true, nil
 			}
-		} else if oe := (*bridge.OpError)(nil); !errors.As(err, &oe) || !(oe.Retryable || oe.Code == "NOT_IN_PIE") {
+		} else if transient, _ := transientWaitError(err); !transient {
 			return false, err // a malformed or non-pure path will not fix itself
 		}
 		if sleepCtx(ctx, 250*time.Millisecond) != nil {

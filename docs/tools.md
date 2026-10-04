@@ -1192,7 +1192,7 @@ Read the running game through its own agent API (the project's .umcp.json game_a
 
 _tier exec_
 
-Run one of the game's commands (its own API; PIE) → {accepted, result}. request_id is required: after outcome:unknown, re-send the SAME request_id (the game returns the recorded result). A command for a world that restarted is refused (dedup_expired): read the game again, then send it with a new request_id.
+Run one of the game's commands (its own API; PIE) → {accepted, result}. request_id is required: after outcome:unknown, re-send the SAME request_id (the game returns the recorded result). A command for a world that restarted is refused (dedup_expired): read the game again, then send it with a new request_id. The server remembers a project's last 4096 request_ids.
 
 | tier | required | needs |
 |---|---|---|

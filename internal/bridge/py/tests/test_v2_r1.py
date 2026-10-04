@@ -185,27 +185,40 @@ def test_object_path_properties_need_no_plugin(v2, ue):
 
 
 class _StructBase:
-    """A reflected struct: fields by snake_case name, unknown ones raise (as UE does)."""
+    """A reflected struct: fields by snake_case name, matched without regard to case (as
+    UE 5.7 does, live: {"X": 1} sets x); unknown ones raise. The class docstring lists
+    the fields the way UE generates it."""
     FIELDS = ()
 
     def __init__(self):
         self.f = {k: 0.0 for k in self.FIELDS}
 
     def get_editor_property(self, k):
-        if k not in self.f:
+        if k.lower() not in self.f:
             raise Exception("Failed to find property '%s'" % k)
-        return self.f[k]
+        return self.f[k.lower()]
 
     def set_editor_property(self, k, v):
         self.get_editor_property(k)
-        self.f[k] = v
+        self.f[k.lower()] = v
 
 
 class _Vec(_StructBase):
+    """**Editor Properties:**
+
+- ``x`` (float):  [Read-Write]
+- ``y`` (float):  [Read-Write]
+- ``z`` (float):  [Read-Write]
+"""
     FIELDS = ("x", "y", "z")
 
 
 class _Hit(_StructBase):
+    """**Editor Properties:**
+
+- ``location`` (Vec):  [Read-Write]
+- ``damage`` (float):  [Read-Write]
+"""
     FIELDS = ("location", "damage")
 
     def __init__(self):
@@ -213,9 +226,17 @@ class _Hit(_StructBase):
         self.f["location"] = _Vec()
 
 
+class _Burst(_StructBase):
+    """**Editor Properties:**
+
+- ``hits`` (Array[Hit]):  [Read-Write]
+"""
+    FIELDS = ("hits", "undocumented")
+
+
 def test_actor_call_struct_args_are_checked(v2, ue):
     # Review R1 #4 / live: UE's dict conversion drops unknown keys silently ({"X": 1} -> 0).
-    ue.StructBase, ue.Vec, ue.Hit = _StructBase, _Vec, _Hit
+    ue.StructBase, ue.Vec, ue.Hit, ue.Burst = _StructBase, _Vec, _Hit, _Burst
     got = {}
 
     class Target(Obj):
@@ -235,7 +256,9 @@ Returns:
     out = m._call_args(t, "SetScale", {"new_scale": {"x": 2, "y": 3, "z": 4}, "hits": [{"damage": 5, "location": {"z": 1}}]})
     assert out["new_scale"].f == {"x": 2, "y": 3, "z": 4}
     assert out["hits"][0].f["damage"] == 5 and out["hits"][0].f["location"].f["z"] == 1
-    for bad, where in (({"new_scale": {"X": 1}}, "new_scale"), ({"hits": [{"dmg": 1}]}, "hits[0]"),
+    # Field names match without regard to case, as in UE ({"X": 1} sets x, live).
+    assert m._call_args(t, "SetScale", {"new_scale": {"X": 1}})["new_scale"].f["x"] == 1
+    for bad, where in (({"new_scale": {"q": 1}}, "new_scale"), ({"hits": [{"dmg": 1}]}, "hits[0]"),
                        ({"new_scale": {"x": 1}, "scale2": {"x": 1}}, "scale2")):
         with pytest.raises(m._V2Error) as e:
             m._call_args(t, "SetScale", bad)
@@ -246,3 +269,49 @@ Returns:
     with pytest.raises(m._V2Error) as e:
         m._call_args(t, "Unknown", {"new_scale": {"x": 1}})
     assert e.value.code == "BAD_VALUE"
+
+
+def test_struct_fields_that_are_arrays_of_structs_are_checked(v2, ue):
+    # Review R1 round 2 #2: {"hits": [{"dmg": 1}]} inside a struct went to UE unchecked.
+    m = v2["_mcp2"]
+    ue.StructBase, ue.Vec, ue.Hit, ue.Burst = _StructBase, _Vec, _Hit, _Burst
+    b = m._struct_arg("Burst", {"hits": [{"damage": 3}]}, "burst")
+    assert b.f["hits"][0].f["damage"] == 3
+    with pytest.raises(m._V2Error) as e:
+        m._struct_arg("Burst", {"hits": [{"dmg": 3}]}, "burst")
+    assert "burst.hits[0]" in str(e.value) and "dmg" in str(e.value)
+    with pytest.raises(m._V2Error) as e:
+        m._struct_arg("Burst", {"undocumented": [{"a": 1}]}, "burst")
+    assert "not documented" in str(e.value)
+
+
+def test_ufunction_params_never_first_match(v2, ue):
+    # Review R1 round 2 #4: K2_GetFoo and GetFoo can both exist.
+    m = v2["_mcp2"]
+
+    class T:
+        def get_foo(self):
+            """x.get_foo(a) -> None
+
+Args:
+    a (int): a"""
+
+        def k2_get_foo(self):
+            """x.k2_get_foo(b) -> None
+
+Args:
+    b (int): b"""
+
+    assert m._ufunction_params(T(), "GetFoo") == {"a": "int"}
+    assert m._ufunction_params(T(), "K2_GetFoo") == {"b": "int"}
+
+    class U:
+        def get_foo(self):
+            pass
+
+        def getfoo(self):
+            pass
+
+    with pytest.raises(m._V2Error) as e:
+        m._ufunction_params(U(), "GetFoo")
+    assert e.value.code == "CONFLICT"
