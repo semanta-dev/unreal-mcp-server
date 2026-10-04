@@ -143,16 +143,22 @@ private:
 
 	class APlayerController* ResolvePC() const;
 	bool DispatchKey(const struct FKey& Key, bool bPressed);
-	void ScheduleRelease(const FString& KeyName, float DelaySeconds);
+	void ScheduleRelease(const FString& KeyName, float DelaySeconds, bool bHold);
 
 	// Keys currently held via HoldKey/TapKey, so ReleaseAll / Deinitialize can
 	// clear them and we don't leak a stuck key if PIE ends mid-hold.
 	UPROPERTY(Transient)
 	TSet<FString> HeldKeys;
 
-	// One pending auto-release per key (seconds left), counted in Tick: re-pressing a
-	// held key replaces its old release (a longer hold isn't cut short by an earlier one).
-	TMap<FString, float> KeyReleases;
+	// One pending auto-release per key, counted in Tick: re-pressing a held key replaces
+	// its old release (a longer hold isn't cut short by an earlier one). A hold waits
+	// while the game is paused; a tap does not.
+	struct FKeyRelease
+	{
+		float Remaining = 0.f;
+		bool bHold = false;
+	};
+	TMap<FString, FKeyRelease> KeyReleases;
 
 	struct FAxisHold
 	{

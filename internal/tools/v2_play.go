@@ -84,7 +84,8 @@ func pieSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "pie", Title: "Play In Editor", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
 		Description: "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop; everything changed in the pie world is discarded.\n" +
-			"- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s.\n" +
+			"- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s " +
+			"(hold and axis durations are game time: they wait while the game is paused).\n" +
 			"- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate — your OS cursor is never moved or captured; " +
 			"the game's cursor stays there until action=release.\n" +
 			"- ui_click widget=<name>: click a visible widget (refused if hidden, ambiguous or covered). Needs the UnrealMCP plugin.",

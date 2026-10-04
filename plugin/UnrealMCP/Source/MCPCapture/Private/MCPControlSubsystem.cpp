@@ -101,12 +101,13 @@ bool UMCPControlSubsystem::InjectKeyByName(const FString& KeyName, bool bPressed
 	return true;
 }
 
-void UMCPControlSubsystem::ScheduleRelease(const FString& KeyName, float DelaySeconds)
+void UMCPControlSubsystem::ScheduleRelease(const FString& KeyName, float DelaySeconds, bool bHold)
 {
 	// One pending release per key: re-pressing/extending a hold replaces the earlier one
 	// (a longer hold is not cut short). Counted in Tick, which runs while the game is
-	// paused too — a tap in a paused game is released on time (TimerManager is paused).
-	KeyReleases.Add(KeyName, FMath::Max(DelaySeconds, 0.01f));
+	// paused too: a tap is released on time (TimerManager is paused); a hold, like an
+	// axis hold, is game time and waits while the game is paused.
+	KeyReleases.Add(KeyName, FKeyRelease{FMath::Max(DelaySeconds, 0.01f), bHold});
 }
 
 bool UMCPControlSubsystem::TapKey(const FString& KeyName)
@@ -116,7 +117,7 @@ bool UMCPControlSubsystem::TapKey(const FString& KeyName)
 	{
 		return false;
 	}
-	ScheduleRelease(KeyName, 0.05f);
+	ScheduleRelease(KeyName, 0.05f, /*bHold=*/false);
 	return true;
 }
 
@@ -126,7 +127,7 @@ bool UMCPControlSubsystem::HoldKey(const FString& KeyName, float DurationSeconds
 	{
 		return false;
 	}
-	ScheduleRelease(KeyName, DurationSeconds);
+	ScheduleRelease(KeyName, DurationSeconds, /*bHold=*/true);
 	return true;
 }
 
@@ -373,8 +374,12 @@ void UMCPControlSubsystem::Tick(float DeltaTime)
 	const bool bPaused = World && World->IsPaused();
 	for (auto It = KeyReleases.CreateIterator(); It; ++It)
 	{
-		It.Value() -= DeltaTime;
-		if (It.Value() <= 0.f)
+		if (bPaused && It.Value().bHold)
+		{
+			continue;
+		}
+		It.Value().Remaining -= DeltaTime;
+		if (It.Value().Remaining <= 0.f)
 		{
 			const FString Key = It.Key();
 			It.RemoveCurrent();
