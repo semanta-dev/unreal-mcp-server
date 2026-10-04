@@ -16,6 +16,11 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
   which its screenshots slow down, not the game. It is now `recorder.tick_ms` / `recorder.max_tick_ms`, and a rubric
   check on `perf.*` — or on `recorder.*` without `"allow_perturbed": true` — is a scenario error (`playtest`,
   `analyze op=rubric`). Measure the game's frame rate with a CsvProfiler capture and `analyze op=perf`.
+- `design_audit` refuses missing evidence: an empty input (no points, events, frames, actors…) is `PRECONDITION` with
+  `details.reason: insufficient_evidence` and `details.missing`, never a clean report. Each kind names its evidence
+  (description and `evidence` in the result). `luminance` refuses frames from a `game_scene` capture (the capture's
+  own exposure) unless `source_exposure` states it.
+- `design_explore` says what it is: an abstract wave-defense model, not the project's game.
 
 ## v2.0.2 — 2026-10-03
 

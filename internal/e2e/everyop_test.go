@@ -157,7 +157,7 @@ func opArgs(sp *spec.Spec, op spec.OpSpec, dir, png string) map[string]any {
 		"scaffold": map[string]any{"waves": []any{map[string]any{"count": 3.0, "hp": 10.0, "spike": false}}, "base_damage": 5.0, "focus": 1.0, "spread": 1.0, "splash_min": 0.0, "expand_growth": 0.0},
 		"seed": map[string]any{"policy": map[string]any{"s": 0.5, "splash": 0.2, "e": 0.3},
 			"scaffold": map[string]any{"waves": []any{map[string]any{"count": 3.0, "hp": 10.0, "spike": false}}, "base_damage": 5.0, "focus": 1.0, "spread": 1.0, "splash_min": 0.0, "expand_growth": 0.0}},
-		"input": map[string]any{"points": []any{}},
+		"input": map[string]any{"points": []any{map[string]any{"t": 1, "available": []any{"a", "b"}, "chosen": "a"}}},
 	}
 	required := append([]string{}, op.Required...)
 	if sp.Schema != nil {

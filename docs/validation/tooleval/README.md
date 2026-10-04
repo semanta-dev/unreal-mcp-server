@@ -3,6 +3,11 @@
 Plan §3.5: does consolidating 155 v1 tools into 45 v2 tools hurt an agent's tool use? Harness: `cmd/tooleval`;
 tasks: `cmd/tooleval/tasks.json`; full numbers: [`full-merged.md`](full-merged.md).
 
+**Scope.** This measures tool *selection and argument validity* against a stateful op emulator: whether an agent
+picks the right v2 tool and fills it correctly. It does **not** measure whether the tools can make or judge a game —
+no live editor, no real game, no gameplay outcome. That is the game-making eval of the remediation plan
+([`../../plans/REMEDIATION_PLAN.md`](../../plans/REMEDIATION_PLAN.md) §2), run live on scratch projects.
+
 ## Result
 
 | surface | runs | correct first tool | valid first args | end-to-end success (95% CI) | python calls/run |

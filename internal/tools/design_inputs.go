@@ -87,3 +87,77 @@ func boolKeyedFloatMap(in map[bool]float64) map[string]float64 {
 	}
 	return out
 }
+
+// Evidence (R0.8): every audit names what it scores and where that comes from, and
+// refuses — PRECONDITION, details.reason insufficient_evidence — when the evidence is
+// missing, instead of scoring an empty input as a clean pass.
+
+// missingEvidence is implemented by audit inputs; it lists the absent evidence fields.
+type missingEvidence interface{ missing() []string }
+
+func (in primitiveAuditIn) missing() []string {
+	if len(in.Scene.Actors) == 0 {
+		return []string{"scene.actors"}
+	}
+	return nil
+}
+
+func (in decisionAuditIn) missing() []string {
+	if len(in.Points) == 0 {
+		return []string{"points"}
+	}
+	return nil
+}
+
+func (in noveltyAuditIn) missing() []string {
+	if in.Trace.Duration <= 0 {
+		return []string{"trace.duration"}
+	}
+	return nil
+}
+
+func (in feelAuditIn) missing() []string {
+	if len(in.Events) == 0 {
+		return []string{"events"}
+	}
+	return nil
+}
+
+func (in verbResponseIn) missing() []string {
+	if len(in.Burst) < 2 {
+		return []string{"burst (≥ 2 samples)"}
+	}
+	return nil
+}
+
+func (in inMotionAuditIn) missing() []string {
+	if len(in.Samples) == 0 {
+		return []string{"samples"}
+	}
+	return nil
+}
+
+func (in renderHealthIn) missing() []string {
+	if in.Config.GameDefaultMap == "" {
+		return []string{"config.game_default_map"}
+	}
+	return nil
+}
+
+func (in audioAuditIn) missing() []string {
+	var m []string
+	if len(in.Track) == 0 {
+		m = append(m, "track")
+	}
+	if len(in.Events) == 0 {
+		m = append(m, "events")
+	}
+	return m
+}
+
+func (in assetUtilizationIn) missing() []string {
+	if len(in.Inventory.AllAssets) == 0 {
+		return []string{"inventory.all_assets"}
+	}
+	return nil
+}

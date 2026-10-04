@@ -38,7 +38,7 @@ func TestGatePolicyRequireFailsClosed(t *testing.T) {
 	if e := errorOf(t, h.call(t, "python", map[string]any{"op": "run", "code": "1"})); e["code"] != "PRECONDITION" {
 		t.Fatalf("an exec op under require must be refused: %v", e)
 	}
-	if res := h.call(t, "design_audit", map[string]any{"kind": "decision", "input": map[string]any{"points": []any{}}}); res.IsError {
+	if res := h.call(t, "design_audit", map[string]any{"kind": "decision", "input": map[string]any{"points": []any{map[string]any{"t": 1, "available": []any{"a", "b"}, "chosen": "a"}}}}); res.IsError {
 		t.Fatalf(".umcp.json toolsets were not applied: %s", text(res))
 	}
 	if res := h.call(t, "widget_query", map[string]any{"op": "describe"}); res.IsError && strings.Contains(text(res), "toolset") {

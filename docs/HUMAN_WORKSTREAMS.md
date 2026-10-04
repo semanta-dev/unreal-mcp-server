@@ -11,21 +11,21 @@ critic/persona earned the right to gate.** Never let an un-cleared instrument ga
 
 ---
 
-## 1. Visual calibration corpus → feeds `internal/critique`
+## 1. Visual calibration corpus → feeds `internal/calibration` (critic)
 
 **Goal:** prove the LLM art-critic can *order the mid-quality band* on each dimension,
-per genre, before it's allowed to gate quality (§7.4). The harness (`critique.Calibrate`)
+per genre, before it's allowed to gate quality (§7.4). The harness (`calibration.CalibrateCritic`)
 holds it to **held-out Spearman ≥ 0.70 per dimension per genre**; dimensions that clear
 go in `Trusted` (may gate), the rest stay `Diagnostic` (human-in-loop).
 
 **What to produce:** a set of scenes, each **human-ranked** on each dimension, plus the
-**critic's score** for the same scene/dimension. One row = one `critique.Sample`:
+**critic's score** for the same scene/dimension. One row = one `calibration.Sample`:
 
 ```json
 { "ID": "wd_lighting_017", "Genre": "wave-defense", "Dimension": "lighting",
   "HumanScore": 0.62, "CriticScore": 0.58, "HeldOut": true }
 ```
-Fields (must match `internal/critique/critique.go`): `ID, Genre, Dimension, HumanScore,
+Fields (must match `internal/calibration/critique.go`): `ID, Genre, Dimension, HumanScore,
 CriticScore, HeldOut`.
 
 **How (step by step):**
@@ -49,20 +49,20 @@ CriticScore, HeldOut`.
 7. **Ownership:** a **named human** builds the rungs. The Art-Director agent may *maintain*
    the ladder later but **must never author the rungs it is graded on** (circular).
 
-**Check it cleared:** load your samples and run `critique.Calibrate(samples, 0.70)`. Inspect
+**Check it cleared:** load your samples and run `calibration.CalibrateCritic(samples, 0.70)`. Inspect
 `Report.Trusted` (dimensions that may now gate) vs `Report.Diagnostic` (stay human-in-loop).
 A random or inverted critic will land in `Diagnostic` — that's the gate working.
 
 ---
 
-## 2. Persona ladders (TWO separate bets) → feeds `internal/persona`
+## 2. Persona ladders (TWO separate bets) → feeds `internal/calibration` (persona)
 
 **Goal:** the player-persona reports retention/delight/feel from play, but may only gate the
 *in-loop gradient* after its predictions clear a held-out gate vs **known human outcomes**
 (§7.4c). Two bets, calibrated **separately** — feel-quality is the hardest and expected to
 lag (its permanent fallback is the human feel-pulse).
 
-**What to produce:** one row per play session = one `persona.Session` (human ground truth +
+**What to produce:** one row per play session = one `calibration.Session` (human ground truth +
 the persona's prediction for the same session):
 
 ```json
@@ -93,7 +93,7 @@ the persona's prediction for the same session):
 **Held-out:** mark ~30% `HeldOut: true`; the harness requires **≥3 held-out sessions per
 genre** before it will clear a leg (no trusting thin data).
 
-**Check it cleared:** `persona.Calibrate(sessions, 0.70, 0.70)`. `ClearedLegs` = legs that may
+**Check it cleared:** `calibration.CalibratePersona(sessions, 0.70, 0.70)`. `ClearedLegs` = legs that may
 gate the in-loop gradient; `DiagnosticLegs` = carried by the permanent human pulse.
 
 ---

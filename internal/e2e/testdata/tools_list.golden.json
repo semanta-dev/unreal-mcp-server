@@ -806,7 +806,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Deterministic design audits over evidence you already captured (offline, read-only) → a report with pass/fail findings. `kind` and its `input`:\n- audio: {track: [...], events: [...]} (audio op=capture_stop output)\n- decision: {points: [...]}\n- feel: {events: [...], within_ms? (120), max_fx_per_event? (4)}\n- in_motion: {samples: [...]}\n- luminance: {frame_paths: [...]}\n- novelty: {trace, max_dead_stretch?}\n- primitive: {scene: {level, actors: [...]}}\n- render: {config, timeline? | timeline_path?}\n- style: {frame_paths: [...]}\n- utilization: {inventory}\n- verb: {burst: [...], envelope}",
+      "description": "Deterministic design audits over evidence you already captured (offline, read-only) → a report with pass/fail findings; missing evidence is PRECONDITION (insufficient_evidence), never a pass. `kind`: `input` — evidence:\n- audio: {track: [...], events: [...]} — the audio envelope (audio op=capture_stop) and the gameplay events it should answer\n- decision: {points: [...]} — decision points of a play session (no recorder source yet: you build them)\n- feel: {events: [...], within_ms? (120), max_fx_per_event? (4)} — gameplay events with VFX/SFX/camera response times (no recorder source yet: you build them)\n- in_motion: {samples: [...]} — motion samples (a playtest timeline's tracked actors)\n- luminance: {frame_paths: [...], source_exposure?} — captured frames; game_scene frames need source_exposure\n- novelty: {trace, max_dead_stretch?} — new elements over a session (you build the trace)\n- primitive: {scene: {level, actors: [...]}} — a level's actors (actor_query)\n- render: {config, timeline? | timeline_path?} — DefaultEngine.ini map settings, optionally a playtest timeline\n- style: {frame_paths: [...]} — captured frames (capture, screenshot)\n- utilization: {inventory} — a pack's assets and the subset the build references\n- verb: {burst: [...], envelope} — a 60 fps burst of pawn/weapon state around one input (you build it)",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -847,7 +847,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Offline design analysis.\n- op=sweep: simulate every policy on a grid over a wave `scaffold` → dominant policy?, degenerate optimum?, axis liveness, fenced corners, win rate by spike, plus a pass/fail gate.\n- op=explore: MAP-Elites style search from `seed` → filled cells and the top_k elite genotypes.",
+      "description": "Offline analysis of an ABSTRACT wave-defense model, not your game: results describe the `scaffold` you pass, not the project's code or data (for the game's own balance, run its tests: headless op=tests).\n- op=sweep: simulate every policy on a grid over a wave `scaffold` → dominant policy?, degenerate optimum?, axis liveness, fenced corners, win rate by spike, plus a pass/fail gate.\n- op=explore: MAP-Elites style search from `seed` → filled cells and the top_k elite genotypes.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

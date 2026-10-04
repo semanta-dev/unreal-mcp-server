@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -239,20 +241,48 @@ func projectSpec(pm session.ProjectManager) *spec.Spec {
 // designAudits maps each audit kind to its input decoder + runner. Inputs are
 // decoded strictly (unknown fields are an error) from `input`.
 var designAudits = map[string]struct {
-	shape string
-	run   func(raw []byte) (any, error)
+	shape    string
+	evidence string // what the audit scores and where that evidence comes from today
+	run      func(raw []byte) (any, error)
 }{
-	"primitive":   {"{scene: {level, actors: [...]}}", auditOf(func(in primitiveAuditIn) any { return audit.Audit(in.Scene) })},
-	"decision":    {"{points: [...]}", auditOf(func(in decisionAuditIn) any { return audit.DecisionAudit(in.Points) })},
-	"novelty":     {"{trace, max_dead_stretch?}", auditOf(novelty)},
-	"feel":        {"{events: [...], within_ms? (120), max_fx_per_event? (4)}", auditOf(feel)},
-	"verb":        {"{burst: [...], envelope}", auditOf(func(in verbResponseIn) any { return audit.VerbResponse(in.Burst, in.Envelope) })},
-	"in_motion":   {"{samples: [...]}", auditOf(func(in inMotionAuditIn) any { return audit.InMotionAuditDefault(in.Samples) })},
-	"render":      {"{config, timeline? | timeline_path?}", renderAudit},
-	"audio":       {"{track: [...], events: [...]} (audio op=capture_stop output)", auditOf(func(in audioAuditIn) any { return audit.AudioAuditDefault(in.Track, in.Events) })},
-	"utilization": {"{inventory}", auditOf(func(in assetUtilizationIn) any { return audit.Utilization(in.Inventory) })},
-	"luminance":   {"{frame_paths: [...]}", framesAudit(visual.AnalyzeLuminanceFrames)},
-	"style":       {"{frame_paths: [...]}", framesAudit(visual.AnalyzeStyleFrames)},
+	"primitive": {"{scene: {level, actors: [...]}}", "a level's actors (actor_query)",
+		auditOf(func(in primitiveAuditIn) any { return audit.Audit(in.Scene) })},
+	"decision": {"{points: [...]}", "decision points of a play session (no recorder source yet: you build them)",
+		auditOf(func(in decisionAuditIn) any { return audit.DecisionAudit(in.Points) })},
+	"novelty": {"{trace, max_dead_stretch?}", "new elements over a session (you build the trace)",
+		auditOf(novelty)},
+	"feel": {"{events: [...], within_ms? (120), max_fx_per_event? (4)}", "gameplay events with VFX/SFX/camera response times (no recorder source yet: you build them)",
+		auditOf(feel)},
+	"verb": {"{burst: [...], envelope}", "a 60 fps burst of pawn/weapon state around one input (you build it)",
+		auditOf(func(in verbResponseIn) any { return audit.VerbResponse(in.Burst, in.Envelope) })},
+	"in_motion": {"{samples: [...]}", "motion samples (a playtest timeline's tracked actors)",
+		auditOf(func(in inMotionAuditIn) any { return audit.InMotionAuditDefault(in.Samples) })},
+	"render": {"{config, timeline? | timeline_path?}", "DefaultEngine.ini map settings, optionally a playtest timeline",
+		renderAudit},
+	"audio": {"{track: [...], events: [...]}", "the audio envelope (audio op=capture_stop) and the gameplay events it should answer",
+		auditOf(func(in audioAuditIn) any { return audit.AudioAuditDefault(in.Track, in.Events) })},
+	"utilization": {"{inventory}", "a pack's assets and the subset the build references",
+		auditOf(func(in assetUtilizationIn) any { return audit.Utilization(in.Inventory) })},
+	"luminance": {"{frame_paths: [...], source_exposure?}", "captured frames; game_scene frames need source_exposure",
+		luminanceAudit},
+	"style": {"{frame_paths: [...]}", "captured frames (capture, screenshot)",
+		framesAudit(visual.AnalyzeStyleFrames)},
+}
+
+// insufficientEvidence is the R0.8 refusal: an audit never scores missing evidence.
+func insufficientEvidence(missing []string, why string) error {
+	return envelope.New(envelope.Precondition, "insufficient evidence: %s", why).
+		WithDetail("reason", "insufficient_evidence").WithDetail("missing", missing).
+		WithHint("the design_audit description lists what each kind needs and where it comes from")
+}
+
+func checkEvidence(in any) error {
+	if m, ok := in.(missingEvidence); ok {
+		if miss := m.missing(); len(miss) > 0 {
+			return insufficientEvidence(miss, "the input has no "+strings.Join(miss, ", "))
+		}
+	}
+	return nil
 }
 
 func strictDecode(raw []byte, v any) error {
@@ -268,6 +298,9 @@ func auditOf[In any](f func(In) any) func([]byte) (any, error) {
 	return func(raw []byte) (any, error) {
 		var in In
 		if err := strictDecode(raw, &in); err != nil {
+			return nil, err
+		}
+		if err := checkEvidence(in); err != nil {
 			return nil, err
 		}
 		return f(in), nil
@@ -288,6 +321,9 @@ func feel(in feelAuditIn) any {
 func renderAudit(raw []byte) (any, error) {
 	var in renderHealthIn
 	if err := strictDecode(raw, &in); err != nil {
+		return nil, err
+	}
+	if err := checkEvidence(in); err != nil {
 		return nil, err
 	}
 	timeline := in.Timeline
@@ -337,7 +373,7 @@ func framesAudit[R any](f func([]audit.Frame) ([]R, R, error)) func([]byte) (any
 			return nil, err
 		}
 		if len(in.FramePaths) == 0 {
-			return nil, envelope.New(envelope.InvalidArgument, "input.frame_paths is empty")
+			return nil, insufficientEvidence([]string{"frame_paths"}, "no frames")
 		}
 		per, agg, err := f(framesFromPaths(in.FramePaths))
 		if err != nil {
@@ -345,6 +381,61 @@ func framesAudit[R any](f func([]audit.Frame) ([]R, R, error)) func([]byte) (any
 		}
 		return map[string]any{"aggregate": agg, "per_frame": per}, nil
 	}
+}
+
+// luminanceAudit scores frame brightness, which says nothing about the game when the
+// frames were not exposed like the game: the plugin's game_scene capture renders with
+// its own exposure, so those frames are scored only once the caller states it.
+func luminanceAudit(raw []byte) (any, error) {
+	var in struct {
+		FramePaths     []string `json:"frame_paths"`
+		SourceExposure string   `json:"source_exposure"`
+	}
+	if err := strictDecode(raw, &in); err != nil {
+		return nil, err
+	}
+	if len(in.FramePaths) == 0 {
+		return nil, insufficientEvidence([]string{"frame_paths"}, "no frames")
+	}
+	if captureSources(in.FramePaths)["game_scene"] && in.SourceExposure == "" {
+		return nil, insufficientEvidence([]string{"source_exposure"}, "game_scene frames use the capture's own "+
+			"exposure, not the game's: state it in source_exposure (e.g. \"auto\", \"manual EV 1.5\"), or audit "+
+			"frames captured with source=pie_highres")
+	}
+	per, agg, err := visual.AnalyzeLuminanceFrames(framesFromPaths(in.FramePaths))
+	if err != nil {
+		return nil, envelope.New(envelope.InvalidArgument, "%v", err)
+	}
+	out := map[string]any{"aggregate": agg, "per_frame": per}
+	if in.SourceExposure != "" {
+		out["source_exposure"] = in.SourceExposure
+	}
+	return out, nil
+}
+
+// captureSources reads the capture manifest beside the frames (capture writes one per
+// session directory) and returns the capture sources it names.
+func captureSources(paths []string) map[string]bool {
+	out := map[string]bool{}
+	seen := map[string]bool{}
+	for _, p := range paths {
+		dir := filepath.Dir(p)
+		if seen[dir] {
+			continue
+		}
+		seen[dir] = true
+		b, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+		if err != nil {
+			continue
+		}
+		var m struct {
+			Source string `json:"source"`
+		}
+		if json.Unmarshal(b, &m) == nil && m.Source != "" {
+			out[m.Source] = true
+		}
+	}
+	return out
 }
 
 type designAuditIn struct {
@@ -360,11 +451,11 @@ func designAuditSpec() *spec.Spec {
 	sort.Strings(kinds)
 	var b strings.Builder
 	b.WriteString("Deterministic design audits over evidence you already captured (offline, read-only) → a report with " +
-		"pass/fail findings. `kind` and its `input`:\n")
+		"pass/fail findings; missing evidence is PRECONDITION (insufficient_evidence), never a pass. `kind`: `input` — evidence:\n")
 	enum := make([]any, len(kinds))
 	for i, k := range kinds {
 		enum[i] = k
-		fmt.Fprintf(&b, "- %s: %s\n", k, designAudits[k].shape)
+		fmt.Fprintf(&b, "- %s: %s — %s\n", k, designAudits[k].shape, designAudits[k].evidence)
 	}
 	return &spec.Spec{
 		Name: "design_audit", Title: "Design audits", Toolset: spec.Design, Offline: true, Timeout: sync20, Max: sync28,
@@ -379,11 +470,12 @@ func designAuditSpec() *spec.Spec {
 				return nil, err
 			}
 			raw, _ := json.Marshal(projectPaths(c, in.Input))
-			report, err := designAudits[in.Kind].run(raw)
+			a := designAudits[in.Kind]
+			report, err := a.run(raw)
 			if err != nil {
 				return nil, err
 			}
-			return &spec.Result{Data: map[string]any{"kind": in.Kind, "report": report}, Summary: in.Kind + " audit done"}, nil
+			return &spec.Result{Data: map[string]any{"kind": in.Kind, "evidence": a.evidence, "report": report}, Summary: in.Kind + " audit done"}, nil
 		},
 	}
 }
@@ -408,7 +500,8 @@ func designExploreSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "design_explore", Title: "Balance and design search", Toolset: spec.Design, Offline: true, Timeout: sync25, Max: sync28, Ops: ops,
-		Description: "Offline design analysis.\n" +
+		Description: "Offline analysis of an ABSTRACT wave-defense model, not your game: results describe the `scaffold` " +
+			"you pass, not the project's code or data (for the game's own balance, run its tests: headless op=tests).\n" +
 			"- op=sweep: simulate every policy on a grid over a wave `scaffold` → dominant policy?, degenerate optimum?, " +
 			"axis liveness, fenced corners, win rate by spike, plus a pass/fail gate.\n" +
 			"- op=explore: MAP-Elites style search from `seed` → filled cells and the top_k elite genotypes.",

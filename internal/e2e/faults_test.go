@@ -1,7 +1,13 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"image"
+	"image/png"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jdziat/unreal-mcp-server/internal/daemon"
+	"github.com/jdziat/unreal-mcp-server/internal/tools/spec"
 )
 
 // deadLiveness reports every PID dead (the editor process crashed).
@@ -70,7 +77,7 @@ func TestToolsetsEnableDisableDescribe(t *testing.T) {
 	if res := structured(t, h.call(t, "toolsets", map[string]any{"op": "enable", "toolset": "design"})); len(res["enabled"].([]any)) < 2 {
 		t.Fatalf("enable = %v", res)
 	}
-	if res := h.call(t, "design_audit", map[string]any{"kind": "decision", "input": map[string]any{"points": []any{}}}); res.IsError {
+	if res := h.call(t, "design_audit", map[string]any{"kind": "decision", "input": map[string]any{"points": []any{map[string]any{"t": 1, "available": []any{"a", "b"}, "chosen": "a"}}}}); res.IsError {
 		t.Fatalf("design_audit after enable: %s", text(res))
 	}
 	if e := errorOf(t, h.call(t, "toolsets", map[string]any{"op": "disable", "toolset": "core"})); e["code"] != "INVALID_ARGUMENT" {
@@ -98,5 +105,41 @@ func TestToolsetsListChangedReachesTheClient(t *testing.T) {
 	case <-changed:
 	case <-time.After(5 * time.Second):
 		t.Fatal("no notifications/tools/list_changed after enabling a toolset")
+	}
+}
+
+// TestDesignAuditRefusesMissingEvidence (R0.8): an audit with no evidence is
+// PRECONDITION insufficient_evidence, never a clean report; luminance refuses game_scene
+// frames (the capture's own exposure) until source_exposure says what it was.
+func TestDesignAuditRefusesMissingEvidence(t *testing.T) {
+	h := startHarness(t, harnessOpts{noEditor: true, toolsets: []spec.Toolset{spec.Design}})
+	for kind, input := range map[string]map[string]any{
+		"decision": {"points": []any{}}, "feel": {"events": []any{}}, "audio": {"track": []any{}, "events": []any{}},
+		"primitive": {"scene": map[string]any{"level": "/Game/L"}}, "luminance": {"frame_paths": []any{}},
+		"render": {"config": map[string]any{}}, "utilization": {"inventory": map[string]any{"pack": "p"}},
+	} {
+		e := errorOf(t, h.call(t, "design_audit", map[string]any{"kind": kind, "input": input}))
+		d, _ := e["details"].(map[string]any)
+		if e["code"] != "PRECONDITION" || d["reason"] != "insufficient_evidence" || d["missing"] == nil {
+			t.Errorf("%s with no evidence = %v", kind, e)
+		}
+	}
+	dir := t.TempDir()
+	frame := filepath.Join(dir, "f00000.png")
+	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(frame, buf.Bytes(), 0o644)
+	os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(`{"source":"game_scene"}`), 0o644)
+	e := errorOf(t, h.call(t, "design_audit", map[string]any{"kind": "luminance", "input": map[string]any{"frame_paths": []any{frame}}}))
+	if d, _ := e["details"].(map[string]any); e["code"] != "PRECONDITION" || fmt.Sprint(d["missing"]) != "[source_exposure]" {
+		t.Fatalf("game_scene frames without source_exposure = %v", e)
+	}
+	res := structured(t, h.call(t, "design_audit", map[string]any{"kind": "luminance",
+		"input": map[string]any{"frame_paths": []any{frame}, "source_exposure": "auto"}}))
+	if res["evidence"] == nil || res["report"].(map[string]any)["source_exposure"] != "auto" {
+		t.Fatalf("luminance with source_exposure = %v", res)
 	}
 }

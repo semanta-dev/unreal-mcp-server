@@ -879,18 +879,18 @@ Run work in a SEPARATE UnrealEditor-Cmd process (async job), off the interactive
 
 _tier readonly · offline_
 
-Deterministic design audits over evidence you already captured (offline, read-only) → a report with pass/fail findings. `kind` and its `input`:
-- audio: {track: [...], events: [...]} (audio op=capture_stop output)
-- decision: {points: [...]}
-- feel: {events: [...], within_ms? (120), max_fx_per_event? (4)}
-- in_motion: {samples: [...]}
-- luminance: {frame_paths: [...]}
-- novelty: {trace, max_dead_stretch?}
-- primitive: {scene: {level, actors: [...]}}
-- render: {config, timeline? | timeline_path?}
-- style: {frame_paths: [...]}
-- utilization: {inventory}
-- verb: {burst: [...], envelope}
+Deterministic design audits over evidence you already captured (offline, read-only) → a report with pass/fail findings; missing evidence is PRECONDITION (insufficient_evidence), never a pass. `kind`: `input` — evidence:
+- audio: {track: [...], events: [...]} — the audio envelope (audio op=capture_stop) and the gameplay events it should answer
+- decision: {points: [...]} — decision points of a play session (no recorder source yet: you build them)
+- feel: {events: [...], within_ms? (120), max_fx_per_event? (4)} — gameplay events with VFX/SFX/camera response times (no recorder source yet: you build them)
+- in_motion: {samples: [...]} — motion samples (a playtest timeline's tracked actors)
+- luminance: {frame_paths: [...], source_exposure?} — captured frames; game_scene frames need source_exposure
+- novelty: {trace, max_dead_stretch?} — new elements over a session (you build the trace)
+- primitive: {scene: {level, actors: [...]}} — a level's actors (actor_query)
+- render: {config, timeline? | timeline_path?} — DefaultEngine.ini map settings, optionally a playtest timeline
+- style: {frame_paths: [...]} — captured frames (capture, screenshot)
+- utilization: {inventory} — a pack's assets and the subset the build references
+- verb: {burst: [...], envelope} — a 60 fps burst of pawn/weapon state around one input (you build it)
 
 | tier | required | needs |
 |---|---|---|
@@ -905,7 +905,7 @@ Deterministic design audits over evidence you already captured (offline, read-on
 
 _tier readonly · offline_
 
-Offline design analysis.
+Offline analysis of an ABSTRACT wave-defense model, not your game: results describe the `scaffold` you pass, not the project's code or data (for the game's own balance, run its tests: headless op=tests).
 - op=sweep: simulate every policy on a grid over a wave `scaffold` → dominant policy?, degenerate optimum?, axis liveness, fenced corners, win rate by spike, plus a pass/fail gate.
 - op=explore: MAP-Elites style search from `seed` → filled cells and the top_k elite genotypes.
 
