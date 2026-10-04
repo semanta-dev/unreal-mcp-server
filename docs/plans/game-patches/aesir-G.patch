@@ -1,9 +1,9 @@
 diff --git a/Source/AesirWaveDefense/AesirAgentSubsystem.cpp b/Source/AesirWaveDefense/AesirAgentSubsystem.cpp
 new file mode 100644
-index 0000000..77396ee
+index 0000000..8a2f4db
 --- /dev/null
 +++ b/Source/AesirWaveDefense/AesirAgentSubsystem.cpp
-@@ -0,0 +1,387 @@
+@@ -0,0 +1,391 @@
 +#include "AesirAgentSubsystem.h"
 +
 +#include "AesirCharacter.h"
@@ -61,6 +61,10 @@ index 0000000..77396ee
 +
 +void UAesirAgentSubsystem::ResetForWorld(UWorld* World, const UWorld::InitializationValues IVS)
 +{
++	// Engine order: map travel (UEngine::LoadMap) sets the new world's game instance
++	// BEFORE InitWorld, so this fires for every world the game travels to. The first PIE
++	// world gets its game instance AFTER InitWorld (it is filtered out here) and keeps the
++	// epoch made in Initialize — also a fresh one. Verified live: docs (G.md, map travel).
 +	if (!World || World->GetGameInstance() != GetGameInstance())
 +	{
 +		return; // another game instance's world (another PIE client, the editor)

@@ -184,7 +184,13 @@ def _observe_path(world, name, path, lib):
     reflection; a getter is called only if it is BlueprintPure or const (checked by the
     plugin — Python cannot read function flags); a string a getter returns is decoded as
     JSON when the path continues into it."""
-    head, _, rest = path.partition(".")
+    # The object ref ends before the first property: "@subsystem:/Script/Mod.Class.prop"
+    # has a dot inside the class path, so split after the class, not at the first dot.
+    if path.startswith("@subsystem:/Script/"):
+        m = re.match(r"^(@subsystem:/Script/\w+\.\w+)\.(.*)$", path)
+    else:
+        m = re.match(r"^(@[A-Za-z_]+(?::\w+)?)\.(.*)$", path)
+    head, rest = (m.group(1), m.group(2)) if m else (path, "")
     if not rest:
         raise _V2Error("BAD_VALUE", "%s: an object path needs a property after the object" % path)
     cur = _resolve_object(world, name, head)

@@ -72,3 +72,12 @@ Through the server's own `game` / `game_command` tools (the scratch copies' `.um
 | aim at enemies + 14 `LeftMouseButton` taps | 14 `hit` events (2 `kill`), each with `data.visual_t` stamped when the HUD drew the hit marker: 0–8 ms after the hit (same frame or the next — this game draws its marker in the frame's HUD pass) |
 | `DT_Waves` regenerated: `Wave_01`–`Wave_13` (the formula's 40 cap at wave 13); past the table the game uses its built-in formula | rows present |
 | poly-world automation `PolyWorld.AgentApi` via `headless op=tests` (incl. the new `UnrealMcpContract` test: epoch, peek without a revision bump, events fields, bad/old cursors, dedup_expired not run, request_id echo) | 3/3 passed — after fixing the server's parser, which counted no results because UE 5.7 prints `Result={Success}` |
+
+## Re-check 2 (G review A → A+ items)
+
+| Check | Result |
+|---|---|
+| map travel inside a running game (`console open L_Arena`, same game instance) after `set_difficulty hard` | a new `world_epoch`, difficulty back to `normal`, the old cursor reports `world_changed` (`ResetForWorld` on `OnPostWorldInitialization`) |
+| poly-world `ExecuteCommandJson("not json")` after a command with `request_id pw-1` | refused with `request_id: ""` (no stale id) |
+| server: re-sending a `request_id` refused as `dedup_expired` | `INVALID_ARGUMENT` — it would otherwise run in the new world (e2e `TestGameAPIReadsAndIdempotentCommands`) |
+| poly-world peek before the first tick | `{"error": "snapshot_not_ready", "world_epoch": …}`; the cached copy is rebuilt on every revision or cycle change and after every command |

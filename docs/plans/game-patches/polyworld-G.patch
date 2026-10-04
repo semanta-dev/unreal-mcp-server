@@ -60,7 +60,7 @@ index 128a44a..2b2e4b1 100644
  	"PolyWorld.AgentApi.Integration.FreshCoffeeCompany",
  	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 diff --git a/Source/PolyWorld/PolyWorldAgentSubsystem.cpp b/Source/PolyWorld/PolyWorldAgentSubsystem.cpp
-index f718323..f3657a0 100644
+index f718323..ac96f0e 100644
 --- a/Source/PolyWorld/PolyWorldAgentSubsystem.cpp
 +++ b/Source/PolyWorld/PolyWorldAgentSubsystem.cpp
 @@ -86,6 +86,10 @@ namespace
@@ -74,17 +74,20 @@ index f718323..f3657a0 100644
  	const bool bRequested = !GIsEditor || FParse::Param(FCommandLine::Get(), TEXT("PolyWorldGrpc"));
  	if (!bRequested) { return; }
  	int32 Port = 50051;
-@@ -100,8 +104,20 @@ void UPolyWorldAgentSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+@@ -100,8 +104,23 @@ void UPolyWorldAgentSubsystem::Initialize(FSubsystemCollectionBase& Collection)
  	else UE_LOG(LogTemp, Display, TEXT("[AgentAPI] gRPC listening on %s"), *Address);
  }
  
 +bool UPolyWorldAgentSubsystem::TickRevision(float DeltaSeconds)
 +{
 +	RefreshRevision();
-+	if (CachedSnapshot.IsEmpty() || CachedRevision != Revision)
++	const ACompanyManager* Manager = ACompanyManager::Get(this);
++	const int64 Cycle = Manager ? Manager->CycleCounter : -1;
++	if (CachedSnapshot.IsEmpty() || CachedRevision != Revision || CachedCycle != Cycle)
 +	{
 +		CachedSnapshot = BuildSnapshotJson(false);
 +		CachedRevision = Revision;
++		CachedCycle = Cycle;
 +	}
 +	return true;
 +}
@@ -95,7 +98,7 @@ index f718323..f3657a0 100644
  	if (GrpcServer) { GrpcServer->Stop(); GrpcServer.Reset(); }
  	Super::Deinitialize();
  }
-@@ -131,6 +147,7 @@ uint64 UPolyWorldAgentSubsystem::RefreshRevision()
+@@ -131,6 +150,7 @@ uint64 UPolyWorldAgentSubsystem::RefreshRevision()
  		Event.Type = TEXT("world.revised");
  		Event.EntityId = Manager->CompanyName;
  		Event.PayloadJson = FString::Printf(TEXT("{\"economy_digest\":\"%llu\",\"capital\":%lld}"), Digest, Manager->Capital);
@@ -103,7 +106,7 @@ index f718323..f3657a0 100644
  		if (EventJournal.Num() > 512) { EventJournal.RemoveAt(0, EventJournal.Num() - 512, EAllowShrinking::No); }
  	}
  	LastDigest = Digest;
-@@ -153,6 +170,98 @@ FString UPolyWorldAgentSubsystem::GetCapabilitiesJson() const
+@@ -153,6 +173,98 @@ FString UPolyWorldAgentSubsystem::GetCapabilitiesJson() const
  		Features.Add(MakeShared<FJsonValueString>(Feature));
  	}
  	Root->SetArrayField(TEXT("features"), Features);
@@ -202,7 +205,7 @@ index f718323..f3657a0 100644
  	return JsonString(Root);
  }
  
-@@ -177,6 +286,25 @@ FString UPolyWorldAgentSubsystem::GetEventsJson(uint64 AfterRevision)
+@@ -177,6 +289,29 @@ FString UPolyWorldAgentSubsystem::GetEventsJson(uint64 AfterRevision)
  }
  
  FString UPolyWorldAgentSubsystem::GetSnapshotJson(bool bIncludeGraphs)
@@ -221,14 +224,18 @@ index f718323..f3657a0 100644
 +{
 +	// No side effects: building a snapshot hydrates the economy (it writes), so the ticker
 +	// does that and this returns its copy.
-+	return CachedSnapshot.IsEmpty() ? FString(TEXT("{\"error\":\"snapshot_not_ready\"}")) : CachedSnapshot;
++	// The ticker rebuilds the copy whenever the revision (economy digest, simulation speed,
++	// active city) or the cycle changes, and every command rebuilds it.
++	return CachedSnapshot.IsEmpty()
++		? FString::Printf(TEXT("{\"error\":\"snapshot_not_ready\",\"world_epoch\":\"%s\"}"), *WorldEpoch)
++		: CachedSnapshot;
 +}
 +
 +FString UPolyWorldAgentSubsystem::BuildSnapshotJson(bool bIncludeGraphs) const
  {
  	ACompanyManager* Manager = ACompanyManager::Get(this);
  	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-@@ -190,9 +318,10 @@ FString UPolyWorldAgentSubsystem::GetSnapshotJson(bool bIncludeGraphs)
+@@ -190,9 +325,10 @@ FString UPolyWorldAgentSubsystem::GetSnapshotJson(bool bIncludeGraphs)
  	Cmvp_HydrateEconomyState(*Manager, State);
  	TArray<FEconSample> History; Manager->ReadHistory(false, 2, History);
  	const uint64 Digest = Manager->WholeCompanyDigest(State);
@@ -240,7 +247,7 @@ index f718323..f3657a0 100644
  	Root->SetStringField(TEXT("economy_digest"), LexToString(Digest));
  	Root->SetStringField(TEXT("company_name"), Manager->CompanyName);
  	Root->SetStringField(TEXT("world_seed"), LexToString(Manager->WorldSeed));
-@@ -610,6 +739,13 @@ FString UPolyWorldAgentSubsystem::ResultJson(bool bAccepted, const FString& Erro
+@@ -610,6 +746,13 @@ FString UPolyWorldAgentSubsystem::ResultJson(bool bAccepted, const FString& Erro
  	RefreshRevision();
  	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
  	Root->SetBoolField(TEXT("accepted"), bAccepted);
@@ -254,7 +261,15 @@ index f718323..f3657a0 100644
  	Root->SetStringField(TEXT("revision"), LexToString(Revision));
  	Root->SetNumberField(TEXT("cycle"), Manager ? (double)Manager->CycleCounter : 0.0);
  	Root->SetStringField(TEXT("economy_digest"), LexToString(LastDigest));
-@@ -650,7 +786,16 @@ FString UPolyWorldAgentSubsystem::ExecuteCommandJson(const FString& RequestJson)
+@@ -643,6 +786,7 @@ void UPolyWorldAgentSubsystem::Remember(const FString& RequestId, const FString&
+ 
+ FString UPolyWorldAgentSubsystem::ExecuteCommandJson(const FString& RequestJson)
+ {
++	CurrentRequestId.Reset(); // a refusal before the request is parsed must not echo the previous id
+ 	TSharedPtr<FJsonObject> Request;
+ 	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(RequestJson);
+ 	if (!FJsonSerializer::Deserialize(Reader, Request) || !Request.IsValid())
+@@ -650,7 +794,16 @@ FString UPolyWorldAgentSubsystem::ExecuteCommandJson(const FString& RequestJson)
  		return ResultJson(false, TEXT("invalid_argument"), TEXT("Request is not valid JSON."));
  	}
  	const FString RequestId = Request->GetStringField(TEXT("request_id"));
@@ -271,7 +286,7 @@ index f718323..f3657a0 100644
  	if (const FString* Prior = CompletedRequests.Find(RequestId)) { return *Prior; }
  
  	RefreshRevision();
-@@ -982,5 +1127,9 @@ FString UPolyWorldAgentSubsystem::ExecuteCommandJson(const FString& RequestJson)
+@@ -982,5 +1135,9 @@ FString UPolyWorldAgentSubsystem::ExecuteCommandJson(const FString& RequestJson)
  	Request->TryGetBoolField(TEXT("return_snapshot"), bReturnSnapshot);
  	const FString Response = ResultJson(bAccepted, ErrorCode, ErrorMessage, bReturnSnapshot);
  	Remember(RequestId, Response);
@@ -282,7 +297,7 @@ index f718323..f3657a0 100644
  	return Response;
  }
 diff --git a/Source/PolyWorld/PolyWorldAgentSubsystem.h b/Source/PolyWorld/PolyWorldAgentSubsystem.h
-index 383a3b2..4a08852 100644
+index 383a3b2..52d922f 100644
 --- a/Source/PolyWorld/PolyWorldAgentSubsystem.h
 +++ b/Source/PolyWorld/PolyWorldAgentSubsystem.h
 @@ -1,6 +1,7 @@
@@ -309,7 +324,7 @@ index 383a3b2..4a08852 100644
  	UFUNCTION(BlueprintCallable, Category="PolyWorld|Agent") FString GetBuildCatalogJson(const FString& CityId, const FString& Category);
  	UFUNCTION(BlueprintCallable, Category="PolyWorld|Agent") FString ValidatePlacementJson(const FString& CityId, int32 OptionId, FIntPoint Anchor, int32 Orientation);
  	UFUNCTION(BlueprintCallable, Category="PolyWorld|Agent") FString GetBuildingGraphJson(int32 BuildingId);
-@@ -34,6 +41,14 @@ public:
+@@ -34,6 +41,15 @@ public:
  	uint64 CurrentRevision();
  
  private:
@@ -319,12 +334,13 @@ index 383a3b2..4a08852 100644
 +	FString WorldEpoch;
 +	FString CachedSnapshot;      // PeekSnapshotJson's copy
 +	uint64 CachedRevision = 0;
++	int64 CachedCycle = -1;
 +	FString CurrentRequestId;    // the command being answered (ResultJson echoes it)
 +	FTSTicker::FDelegateHandle RevisionTicker;
  	uint64 Revision = 0;
  	uint64 LastDigest = 0;
  	uint64 LastFingerprint = 0;
-@@ -47,6 +62,7 @@ private:
+@@ -47,6 +63,7 @@ private:
  		FString Type;
  		FString EntityId;
  		FString PayloadJson;

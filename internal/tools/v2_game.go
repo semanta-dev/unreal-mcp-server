@@ -40,6 +40,11 @@ func gameAPIOf(c *spec.Call) (*session.GameAPI, error) {
 // so game_command can name the world it means (GAME_CONTRACT.md).
 var worldEpochs sync.Map // project dir -> epoch
 
+// refusedIDs remembers request_ids the game refused as dedup_expired (per project): a
+// refused id must not be re-sent — once the server learns the new world, the same id
+// would run there, though the agent cannot know whether it already ran in the old one.
+var refusedIDs sync.Map // project dir + "|" + request_id -> struct{}
+
 func noteEpoch(c *spec.Call, out map[string]any) {
 	if e, ok := out["world_epoch"].(string); ok && e != "" {
 		worldEpochs.Store(c.Deps.ProjectDir, e)
@@ -135,6 +140,10 @@ func gameCommandSpec() *spec.Spec {
 			if err != nil {
 				return nil, err
 			}
+			if _, refused := refusedIDs.Load(c.Deps.ProjectDir + "|" + in.RequestID); refused {
+				return nil, envelope.New(envelope.InvalidArgument, "request_id %q was refused for an earlier game world (dedup_expired)", in.RequestID).
+					WithHint("send the command with a NEW request_id once you have read the new world")
+			}
 			epoch, _ := worldEpochs.Load(c.Deps.ProjectDir)
 			if epoch == nil {
 				// Never send a command without an epoch: learn the world first.
@@ -164,6 +173,7 @@ func gameCommandSpec() *spec.Spec {
 					WithDetail("game_error", code).WithDetail("result", res)
 				if code == "dedup_expired" {
 					worldEpochs.Delete(c.Deps.ProjectDir)
+					refusedIDs.Store(c.Deps.ProjectDir+"|"+in.RequestID, struct{}{})
 					e.WithHint("the game world changed (PIE restarted?): read it again (game op=snapshot), then send the command with a NEW request_id")
 				}
 				return nil, e
