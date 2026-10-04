@@ -77,6 +77,26 @@ func (d *playtestDoc) window(fromT, toT *float64, kinds []string) (float64, floa
 	return lo, hi, nil
 }
 
+// kindCounts lists the recorded event kinds with their counts ("hit 3, kill 1"; "none").
+func (d *playtestDoc) kindCounts() string {
+	n := map[string]int{}
+	for _, e := range d.Events {
+		n[e.Kind]++
+	}
+	if len(n) == 0 {
+		return "none"
+	}
+	ks := make([]string, 0, len(n))
+	for k := range n {
+		ks = append(ks, k)
+	}
+	sort.Strings(ks)
+	for i, k := range ks {
+		ks[i] = fmt.Sprintf("%s %d", k, n[k])
+	}
+	return strings.Join(ks, ", ")
+}
+
 func (d *playtestDoc) pick(kind string, lo, hi float64) []eval.Event {
 	var out []eval.Event
 	for _, e := range d.Events {
@@ -129,8 +149,20 @@ func feelFromPlaytest(raw []byte) (any, error) {
 			missing = append(missing, "events."+name)
 		}
 	}
+	hits := 0
+	for _, k := range kinds {
+		hits += len(d.pick(k, math.Inf(-1), math.Inf(1)))
+	}
+	if hits == 0 {
+		// No hits at all: feedback follows hits, so its channels are empty too — the
+		// scenario never attacked, which is not the game failing to report.
+		return nil, insufficientEvidence(append([]string{"events." + strings.Join(kinds, "/")}, missing...),
+			fmt.Sprintf("the run recorded no %s events (recorded: %s), so there is no feedback to time: give the scenario input beats that attack (e.g. hold the fire key while enemies are in play) and run it again",
+				strings.Join(kinds, "/"), d.kindCounts()))
+	}
 	if len(missing) > 0 {
-		return nil, insufficientEvidence(missing, "the run journalled no "+strings.Join(missing, ", ")+": the game may not report that channel")
+		return nil, insufficientEvidence(missing, fmt.Sprintf("the run journalled no %s (recorded: %s): the game may not report that channel",
+			strings.Join(missing, ", "), d.kindCounts()))
 	}
 	first := func(evs []eval.Event, t float64) float64 {
 		for _, e := range evs {

@@ -163,3 +163,20 @@ func TestFeelAuditWindowEdgesAndUndeclaredKinds(t *testing.T) {
 		t.Fatalf("undeclared kind: %v", err)
 	}
 }
+
+// Final eval (aesir_feel_audit): a playtest with no input beats records no hits, so no
+// feedback either; the audit said "the game may not report that channel" and the agent
+// gave up. It now names the missing hits and the recorded kinds.
+func TestFeelAuditWithoutHitsSaysTheScenarioNeverAttacked(t *testing.T) {
+	doc := feelDoc()
+	doc["events"] = []any{ev(2, "spawned", false, nil), ev(3, "damage", false, nil), ev(4, "damage", false, nil)}
+	p := writeDoc(t, doc)
+	_, err := feelFromPlaytest([]byte(`{"source":"` + filepath.ToSlash(p) + `"}`))
+	e, ok := asPrecondition(err)
+	if !ok || !strings.Contains(e.Message, "no hit events (recorded: damage 2, spawned 1)") || !strings.Contains(e.Message, "input beats") {
+		t.Fatalf("no hits: %v", err)
+	}
+	if miss := e.Details["missing"].([]string); miss[0] != "events.hit" {
+		t.Fatalf("missing = %v", miss)
+	}
+}
