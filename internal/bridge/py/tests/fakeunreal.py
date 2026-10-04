@@ -167,6 +167,8 @@ class Actor(Object):
 
 class _Tx:
     log = []
+    kept = []          # the undo buffer: titles of transactions UE kept
+    drop_next = False  # model UE dropping a transaction that changed nothing
 
     def __init__(self, label):
         self.label = label
@@ -177,6 +179,10 @@ class _Tx:
 
     def __exit__(self, *exc):
         _Tx.log.append(("end", self.label))
+        if _Tx.drop_next:
+            _Tx.drop_next = False
+        else:
+            _Tx.kept.append(self.label)
         return False
 
 
@@ -232,6 +238,8 @@ class Fake:
         self.SceneComponent, self.ComponentMobility = SceneComponent, ComponentMobility
         self.ScopedEditorTransaction = _Tx
         _Tx.log = []
+        _Tx.kept = []
+        _Tx.drop_next = False
         self.tx = _Tx.log
         self.EditorActorSubsystem, self.UnrealEditorSubsystem = "EditorActorSubsystem", "UnrealEditorSubsystem"
         self.LevelEditorSubsystem = "LevelEditorSubsystem"

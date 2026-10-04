@@ -206,6 +206,8 @@ func TestAnswerFormats(t *testing.T) {
 		{answerCheck{From: "p.max", Key: "max"}, "ANSWER: min=12,345, max=20,000.5", true},
 		{answerCheck{From: "p.max", Key: "max", RelTolerance: 0.01}, "ANSWER: min=1, max=20,150", true},
 		{answerCheck{From: "p.max", Key: "max", RelTolerance: 0.001}, "ANSWER: min=1, max=20,150", false},
+		{answerCheck{From: "p.cap", RelTolerance: 0.1}, "ANSWER: $12.3k", false}, // abbreviated: unparseable, not 12.3
+		{answerCheck{From: "p.cap"}, "ANSWER: 12,345 credits", true},
 	} {
 		if got := answerHolds(c.a, probes, c.reply); got != c.want {
 			t.Errorf("%+v on %q = %v, want %v", c.a, c.reply, got, c.want)

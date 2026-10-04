@@ -31,7 +31,7 @@ import (
 // it, so listing several candidate values cannot pass.
 const liveSystemPrompt = systemPrompt + ` When the task asks for a value or a verdict, end your final reply with ` +
 	`exactly one line "ANSWER: <value>" (several values: "ANSWER: name=<value>, name=<value>"; a verdict: ` +
-	`"ANSWER: PASS" or "ANSWER: FAIL").`
+	`"ANSWER: PASS" or "ANSWER: FAIL"). Write numbers in full digits (12500, not 12.5k).`
 
 // gameTask is one live task (docs/validation/gameeval/tasks.json).
 type gameTask struct {
@@ -454,6 +454,8 @@ func answerNumbers(s string) []float64 {
 	return out
 }
 
+var abbreviated = regexp.MustCompile(`\d\s*(?:[kKmMbB]|bn|mn)\b`)
+
 // keyedValue is the text after "<key>=" up to the next ", <name>=" (or the end), so a
 // thousands separator inside the value is kept.
 func keyedValue(line, key string) (string, bool) {
@@ -496,6 +498,9 @@ func answerHolds(a answerCheck, probes map[string]map[string]any, reply string) 
 			return false
 		}
 		part = v
+	}
+	if abbreviated.MatchString(part) {
+		return false // "1.5k" is not 1.5: an abbreviated number is unparseable, not a guess
 	}
 	ns := answerNumbers(part)
 	tol := math.Max(a.Tolerance, a.RelTolerance*math.Abs(want))

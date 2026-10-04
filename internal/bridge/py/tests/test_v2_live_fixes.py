@@ -1,6 +1,8 @@
 """Regression tests for companion defects found in the P7 live run
 (docs/validation/T4-2026-10-03.md): each models the UE 5.7 Python surface that
 differed from what the op assumed."""
+import json
+
 import pytest
 from conftest import run_dispatch
 from fakeunreal import _NS, Fake, installed
@@ -163,12 +165,41 @@ def test_undo_journal_refuses_to_step_past_untracked_edits(v2, ue):
 def test_transaction_records_a_journal_step(v2, ue):
     m = v2["_mcp2"]
     del m._MCP_EDITS[:]
+    tx = ue.ScopedEditorTransaction
+    ue.MCPCoreLibrary = _NS(get_plugin_api_version=lambda: 3, peek_undo_title=lambda: tx.kept[-1] if tx.kept else "")
     with m._transaction("MCP: scene arena"):
         pass
     with m._transaction("MCP: scene arena"):
         pass
     (k1, t1), (k2, t2) = m._MCP_EDITS
     assert k1 == k2 == "tx" and t1.startswith("MCP: scene arena [") and t1 != t2  # unique titles
+
+
+def test_a_transaction_ue_dropped_is_not_journaled(v2, ue):
+    # R0 review: UE drops a transaction that changed nothing (a no-op transform); a
+    # journal entry for it would block every later undo. A no-op, then undo, undoes the
+    # previous real edit.
+    m = v2["_mcp2"]
+    del m._MCP_EDITS[:]
+    tx = ue.ScopedEditorTransaction
+    stepped = []
+
+    def undo(prefix):
+        top = tx.kept[-1] if tx.kept else ""
+        ok = top.startswith(prefix)
+        if ok:
+            stepped.append(tx.kept.pop())
+        return json.dumps({"ok": ok, "title": top, "reason": None if ok else "title_mismatch"})
+    ue.MCPCoreLibrary = _NS(get_plugin_api_version=lambda: 3, peek_undo_title=lambda: tx.kept[-1] if tx.kept else "",
+                            undo_if_titled=undo)
+    with m._transaction("MCP: spawn A"):
+        pass
+    tx.drop_next = True
+    with m._transaction("MCP: transform A"):  # changed nothing: UE drops it
+        pass
+    assert len(m._MCP_EDITS) == 1 and m._MCP_EDITS[0][1] == tx.kept[-1]  # only the kept spawn
+    env = call(v2, "editor_undo", {})
+    assert env["ok"] and env["result"]["undone"].startswith("MCP: spawn A ["), env
 
 
 def test_editor_ping_survives_a_broken_plugin(v2, ue):

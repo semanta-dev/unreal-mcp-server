@@ -15,9 +15,25 @@ def _transaction(label):
         return
     _MCP_TX_SEQ[0] += 1
     title = "%s [%d]" % (label, _MCP_TX_SEQ[0])
-    with tx(title) as t:
+    try:
+        with tx(title) as t:
+            yield t
+    finally:
+        _journal_tx(title)
+
+
+def _journal_tx(title):
+    """Journal a closed transaction only if the engine kept it: UE drops a transaction
+    that changed nothing (a no-op transform, an unchanged scene, an op that raised
+    first), and a journal entry for a step the undo buffer does not have would block
+    every later undo. Without the plugin (API 3) undo is unavailable anyway."""
+    lib = getattr(unreal, "MCPCoreLibrary", None)
+    try:
+        kept = lib is not None and lib.peek_undo_title() == title
+    except Exception:
+        kept = False
+    if kept:
         _note_edit("tx", title)
-        yield t
 
 
 def _resolve_spawn_class(placement):
