@@ -420,9 +420,22 @@ func callMatches(c toolCall, spec string) bool {
 }
 
 func calledHolds(cc calledCheck, calls []toolCall) bool {
-	want := cc.Tool
-	if cc.Op != "" {
-		want += "/" + cc.Op
+	// Op may list alternatives ("input|aim"): a call with any of them counts.
+	var wants []string
+	for _, op := range strings.Split(cc.Op, "|") {
+		w := cc.Tool
+		if op != "" {
+			w += "/" + op
+		}
+		wants = append(wants, w)
+	}
+	matches := func(c toolCall) bool {
+		for _, w := range wants {
+			if callMatches(c, w) {
+				return true
+			}
+		}
+		return false
 	}
 	min := cc.Min
 	if min == 0 {
@@ -435,7 +448,7 @@ func calledHolds(cc calledCheck, calls []toolCall) bool {
 			armed = true
 			continue
 		}
-		if armed && callMatches(c, want) {
+		if armed && matches(c) {
 			n++
 		}
 	}

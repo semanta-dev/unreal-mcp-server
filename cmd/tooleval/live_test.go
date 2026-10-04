@@ -301,3 +301,19 @@ func TestWithHistoryCacheMarksOnlyTheLastBlock(t *testing.T) {
 		}
 	}
 }
+
+// A called check's op may list alternatives: aesir_aim_kill aims with pie op=input
+// (mouse axes) or op=aim (the same input, closed-loop) and fires with op=input.
+func TestCalledOpAlternatives(t *testing.T) {
+	cc := calledCheck{Tool: "pie", Op: "input|aim", Min: 2}
+	aimFire := []toolCall{{Tool: "pie", Args: map[string]any{"op": "aim"}}, {Tool: "pie", Args: map[string]any{"op": "input"}}}
+	if !calledHolds(cc, aimFire) {
+		t.Fatal("aim + fire should count as two")
+	}
+	if calledHolds(cc, []toolCall{{Tool: "pie", Args: map[string]any{"op": "start"}}, {Tool: "pie", Args: map[string]any{"op": "input"}}}) {
+		t.Fatal("start is not input or aim")
+	}
+	if !calledHolds(calledCheck{Tool: "pie", Op: "input"}, aimFire) || calledHolds(calledCheck{Tool: "pie", Op: "input", Min: 2}, aimFire) {
+		t.Fatal("a single op still matches only itself")
+	}
+}

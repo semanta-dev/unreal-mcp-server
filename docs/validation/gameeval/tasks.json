@@ -236,7 +236,7 @@
           "name": "aimed",
           "called": {
             "tool": "pie",
-            "op": "input",
+            "op": "input|aim",
             "min": 2
           }
         }
