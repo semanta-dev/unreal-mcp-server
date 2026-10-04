@@ -49,3 +49,38 @@ Paid runs other than pilots of ≤ 3 tasks need the user's approval each time.
 - `pilot/` — R0.4's 3-task harness pilot on v2.0.2.
 - `baseline/` — v2.0.2 on the post-G game copies (G.7).
 - `final/` — after R6.
+
+### Final record pass 1 — 2026-10-04 (`final/live-20261004T213016Z.*`)
+
+Server and harness at `97368d0`; per-run cost cap raised to $4 (eval cap $300) by the user's decision (the plan
+says $1.50; the router serves Opus on some turns, at 5× the price). **16/25 tasks pass; pass bar NOT MET**: G6 has
+1 passing task (needs 2) and python calls are 0.55/run (needs ≤ 0.1). $56.49; served sonnet-5-5 1131 turns, opus-5-5 12.
+
+| goal | tasks | pass | failing |
+|---|---|---|---|
+| G1 | 1 | 1 | |
+| G2 | 6 | 5 | ho_pw_cheapest_research |
+| G3 | 4 | 3 | ho_aesir_dash_skirmish |
+| G4 | 6 | 3 | aesir_player_damage, aesir_wave2_more, ho_aesir_endgame_waves |
+| G5 | 4 | 3 | ho_aesir_hud_score |
+| G6 | 4 | 1 | aesir_feel_audit, aesir_ttk, aesir_batch_variance |
+
+What the failures were (held-out tasks are not analysed beyond their check names):
+
+- aesir_player_damage, aesir_ttk: agents measured by playing (pie start / aim / fire, game events) instead of a
+  `playtest op=run`, which the checks require.
+- aesir_batch_variance: no seeded run cleared wave 1 — the scenarios never aimed (playtest input steps can).
+- aesir_wave2_more: proving wave 2 needs wave 1 cleared; the run that passed did it, two hit the turn/cost limits.
+- aesir_feel_audit: 2 of 3 answered the audit's median latency (0 ms) and the probe disagreed; under investigation.
+- ho_aesir_hud_score: its `bound` / `hud` checks have the shape of the two plan-task checks found unpassable this
+  day (a CDO `bindings` property; live_tree `text` at the top level); the held-out file is sealed and was not changed.
+- python: 41 calls — reading `playtest.json` and writing scenario files (playtest evidence: `analyze op=events`
+  exists), reading data assets, editing C++ sources (no source-writing tool exists).
+
+Harness and task fixes made on the way here (each applies to any later run, baseline included): the reset stops PIE
+and removes files agents created (untracked) with an editor restart and a UBT rebuild when sources changed — earlier
+passes ran with earlier runs' widgets and with agent C++ compiled into the Aesir module; each turn is priced at the
+model that served it; a rolling prompt-cache breakpoint; the system prompt says the work is checked afterwards; task
+fixes for aesir_start_wave (opening intermission), aesir_hud_enemies (prompt + a probe that could not pass),
+pw_road_connect (no existing roads to connect to), aesir_hud_wave (a check that could not pass) and aesir_aim_kill
+(pie op=aim counts). Earlier, superseded passes are kept uncommitted in `final/diagnostic/` (not a record).
