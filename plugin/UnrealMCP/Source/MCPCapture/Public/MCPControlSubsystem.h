@@ -150,10 +150,9 @@ private:
 	UPROPERTY(Transient)
 	TSet<FString> HeldKeys;
 
-	// One pending auto-release timer per key: re-pressing a held key cancels its
-	// old release (so a longer hold isn't cut short by an earlier one) and handles
-	// are dropped as they fire, so the set can't grow unbounded.
-	TMap<FString, FTimerHandle> ReleaseTimers;
+	// One pending auto-release per key (seconds left), counted in Tick: re-pressing a
+	// held key replaces its old release (a longer hold isn't cut short by an earlier one).
+	TMap<FString, float> KeyReleases;
 
 	struct FAxisHold
 	{
@@ -198,6 +197,8 @@ private:
 	bool Click(const FVector2D& Viewport, const FKey& Button, FString& OutHit, FString& OutRefusal);
 
 	FString PointerResult(const FVector2D& Viewport, bool bHandled, const FString& Hit, const FString& Widget = FString()) const;
+	/** A release that cannot go where it was pressed still reaches the game viewport. */
+	bool ReleaseOnViewport(const FVector2D& Viewport, const FKey& Button);
 
 	/** The virtual Slate user the pointer events come from: its hover, press and capture
 	 *  are its own, so the real cursor (and whatever has captured it) never interferes. */

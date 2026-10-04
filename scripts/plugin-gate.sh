@@ -58,6 +58,14 @@ out="$(dist/mcpcall.exe -timeout 30m -- dist/unreal-mcp.exe -project "$proj" -en
   printf '%s\n' "$out" | grep '"job_id":"job-2"' | tail -1
   printf '%s\n' "$out" | grep '"tool":"editor"' | tail -1
 } >> "$log"
+# The build itself must have succeeded: UBT links the modules that compiled, so a failed
+# module can leave an editor that reports the new API from another module (live R3: a
+# compile error in MCPAuthoring while MCPCore rebuilt to the new API — the gate passed).
+build="$(printf '%s\n' "$out" | grep '"job_id":"job-1"' | tail -1)"
+if ! printf '%s' "$build" | grep -q '"success":true'; then
+  echo "[plugin-gate] FAIL: the build did not succeed: $(printf '%s' "$build" | grep -o '"diagnostics":[^]]*]' | head -c 2000)" >&2
+  exit 1
+fi
 health="$(printf '%s\n' "$out" | grep '"tool":"editor"' | tail -1)"
 if printf '%s' "$health" | grep -q '"healthy":true' && printf '%s' "$health" | grep -q "\"plugin_api\":$api[,}]"; then
   echo "[plugin-gate] PASS: $proj reports plugin API $api"

@@ -367,3 +367,23 @@ func TestPlaytestWorldClockAcrossTravel(t *testing.T) {
 		t.Fatalf("a beat after a map travel = %v", out)
 	}
 }
+
+// R2 review round 2: the same map restarting (same world path, clock back to 0) fails
+// the beat too — never a beat that silently runs world0 seconds late.
+func TestPlaytestWorldClockRestart(t *testing.T) {
+	h := startHarness(t, harnessOpts{})
+	h.world.PluginAPI = 5
+	rec := &bridgetest.Recorder{Dir: t.TempDir(), Frames: 2, State: func(i int) map[string]any {
+		return map[string]any{"gamestate": map[string]any{"wave": float64(2)}}
+	}}
+	rec.Install(h.emu)
+	time.AfterFunc(600*time.Millisecond, h.world.RestartClock)
+	scenario := `{"schema":"scenario/v1","name":"restart","mode":"pie","duration_s":1.5,"interval_s":0.1,
+	 "beats":[{"at_world_s":1.2,"input":{"key":"W"}}],
+	 "rubric":[{"id":"waves","kind":"reached","path":"gamestate.wave","params":{"value":2}}]}`
+	out := structured(t, h.call(t, "playtest", map[string]any{"op": "run", "json": scenario, "wait_s": 20}))
+	r, _ := out["result"].(map[string]any)
+	if r == nil || !strings.Contains(fmt.Sprint(r["beat_errors"]), "clock went back") || len(h.world.RecordedInputs()) != 0 {
+		t.Fatalf("a beat after a level restart = %v", out)
+	}
+}

@@ -41,8 +41,15 @@ type World struct {
 	WorldTimeScale float64
 	// PIEWorld is the running game world's path pie_time reports (a test changes it to
 	// model a map travel).
-	PIEWorld string
-	pieStarted     time.Time
+	PIEWorld   string
+	pieStarted time.Time
+}
+
+// RestartClock models the level restarting on the same map: the game clock starts over.
+func (w *World) RestartClock() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.pieStarted = time.Now()
 }
 
 // TravelTo models a map travel inside the running game: pie_time reports a new world.

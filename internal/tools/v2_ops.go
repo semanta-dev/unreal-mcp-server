@@ -850,7 +850,7 @@ func runBeatsV2(ctx context.Context, c *spec.Call, beats []eval.Beat, duration f
 	for i, bt := range ordered {
 		if worldClock {
 			if bt.AtWorldS > 0 {
-				if err := waitGameTime(ctx, c, worldName, world0+bt.AtWorldS, end); err != nil {
+				if err := waitGameTime(ctx, c, worldName, world0, world0+bt.AtWorldS, end); err != nil {
 					if ctx.Err() != nil {
 						return errs
 					}
@@ -952,13 +952,16 @@ func gameTime(ctx context.Context, c *spec.Call) (float64, string, error) {
 // waitGameTime polls the game clock until it reaches target, or fails when the window
 // ends first (a paused or slowed game) — never runs a beat early. The clock belongs to
 // one world: after a map travel it restarts, so a changed world fails the beat.
-func waitGameTime(ctx context.Context, c *spec.Call, world string, target float64, end time.Time) error {
-	last := -1.0
+func waitGameTime(ctx context.Context, c *spec.Call, world string, start, target float64, end time.Time) error {
+	last := start
 	for {
 		t, w, err := gameTime(ctx, c)
 		if err == nil {
 			if world != "" && w != world {
 				return fmt.Errorf("the game world changed (%s → %s, a map travel?): at_world_s counts game time in one world", world, w)
+			}
+			if t < last {
+				return fmt.Errorf("the game clock went back (%.2fs → %.2fs: the level restarted?): at_world_s counts game time in one world", last, t)
 			}
 			if t >= target {
 				return nil

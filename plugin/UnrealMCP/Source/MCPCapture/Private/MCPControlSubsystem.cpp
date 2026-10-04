@@ -103,31 +103,10 @@ bool UMCPControlSubsystem::InjectKeyByName(const FString& KeyName, bool bPressed
 
 void UMCPControlSubsystem::ScheduleRelease(const FString& KeyName, float DelaySeconds)
 {
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return;
-	}
-	// Cancel any pending release for this key first, so re-pressing/extending a
-	// hold doesn't get cut short by the earlier timer.
-	if (FTimerHandle* Existing = ReleaseTimers.Find(KeyName))
-	{
-		World->GetTimerManager().ClearTimer(*Existing);
-	}
-	FTimerHandle Handle;
-	TWeakObjectPtr<UMCPControlSubsystem> WeakThis(this);
-	World->GetTimerManager().SetTimer(
-		Handle,
-		FTimerDelegate::CreateLambda([WeakThis, KeyName]()
-		{
-			if (UMCPControlSubsystem* Self = WeakThis.Get())
-			{
-				Self->ReleaseTimers.Remove(KeyName); // one-shot fired; drop the handle
-				Self->InjectKeyByName(KeyName, false);
-			}
-		}),
-		FMath::Max(DelaySeconds, 0.01f), /*bLoop=*/false);
-	ReleaseTimers.Add(KeyName, Handle);
+	// One pending release per key: re-pressing/extending a hold replaces the earlier one
+	// (a longer hold is not cut short). Counted in Tick, which runs while the game is
+	// paused too — a tap in a paused game is released on time (TimerManager is paused).
+	KeyReleases.Add(KeyName, FMath::Max(DelaySeconds, 0.01f));
 }
 
 bool UMCPControlSubsystem::TapKey(const FString& KeyName)
@@ -160,14 +139,7 @@ void UMCPControlSubsystem::ReleaseAll()
 		DispatchKey(FKey(FName(*K)), false);
 	}
 	HeldKeys.Reset();
-	if (UWorld* World = GetWorld())
-	{
-		for (TPair<FString, FTimerHandle>& Pair : ReleaseTimers)
-		{
-			World->GetTimerManager().ClearTimer(Pair.Value);
-		}
-	}
-	ReleaseTimers.Reset();
+	KeyReleases.Reset();
 	// Axes: a mouse delta just stops; a stick/trigger returns to rest on the next tick,
 	// alone in its frame (this frame may already have had its value).
 	for (auto It = Axes.CreateIterator(); It; ++It)
@@ -391,7 +363,7 @@ ETickableTickType UMCPControlSubsystem::GetTickableTickType() const
 
 bool UMCPControlSubsystem::IsTickable() const
 {
-	return Axes.Num() > 0 || Drag.IsSet() || PendingUps.Num() > 0;
+	return Axes.Num() > 0 || Drag.IsSet() || PendingUps.Num() > 0 || KeyReleases.Num() > 0;
 }
 
 void UMCPControlSubsystem::Tick(float DeltaTime)
@@ -399,6 +371,16 @@ void UMCPControlSubsystem::Tick(float DeltaTime)
 	APlayerController* PC = ResolvePC();
 	const UWorld* World = GetWorld();
 	const bool bPaused = World && World->IsPaused();
+	for (auto It = KeyReleases.CreateIterator(); It; ++It)
+	{
+		It.Value() -= DeltaTime;
+		if (It.Value() <= 0.f)
+		{
+			const FString Key = It.Key();
+			It.RemoveCurrent();
+			InjectKeyByName(Key, false);
+		}
+	}
 	for (auto It = Axes.CreateIterator(); It; ++It)
 	{
 		const FKey Key = FKey(FName(*It.Key()));
@@ -472,7 +454,7 @@ bool UMCPControlSubsystem::ViewportToScreen(const FVector2D& Viewport, FVector2D
 	UWorld* World = GetWorld();
 	UGameViewportClient* GVC = World ? World->GetGameViewport() : nullptr;
 	TSharedPtr<SViewport> Widget = GVC ? GVC->GetGameViewportWidget() : nullptr;
-	FVector2D Pixels;
+	FVector2D Pixels(0.0, 0.0);
 	if (GVC)
 	{
 		GVC->GetViewportSize(Pixels);
@@ -511,7 +493,7 @@ FVector2D UMCPControlSubsystem::ScreenToViewport(const FVector2D& Screen) const
 		return FVector2D(-1.0, -1.0);
 	}
 	const FGeometry& G = Widget->GetTickSpaceGeometry();
-	FVector2D Pixels;
+	FVector2D Pixels(0.0, 0.0);
 	GVC->GetViewportSize(Pixels);
 	const FVector2D Local(G.GetLocalSize());
 	if (Local.X <= 0.0 || Local.Y <= 0.0)
@@ -524,13 +506,25 @@ FVector2D UMCPControlSubsystem::ScreenToViewport(const FVector2D& Screen) const
 bool UMCPControlSubsystem::SendPointer(const FVector2D& Viewport, const FKey& Button, int32 Kind, bool bHeld, FString* OutHit,
 	bool* OutGameViewport, FString* OutRefusal)
 {
-	FVector2D Screen;
-	FString Why;
-	if (!FSlateApplication::IsInitialized() || !ViewportToScreen(Viewport, Screen, &Why))
+	if (!FSlateApplication::IsInitialized())
 	{
 		if (OutRefusal)
 		{
-			*OutRefusal = Why.IsEmpty() ? FString(TEXT("Slate is not running")) : Why;
+			*OutRefusal = TEXT("Slate is not running");
+		}
+		return false;
+	}
+	FVector2D Screen;
+	FString Why;
+	if (!ViewportToScreen(Viewport, Screen, &Why))
+	{
+		if (Kind == 2)
+		{
+			return ReleaseOnViewport(Viewport, Button);
+		}
+		if (OutRefusal)
+		{
+			*OutRefusal = Why;
 		}
 		return false;
 	}
@@ -549,6 +543,11 @@ bool UMCPControlSubsystem::SendPointer(const FVector2D& Viewport, const FKey& Bu
 	const TSharedPtr<SViewport> GameViewport = GVC ? GVC->GetGameViewportWidget() : nullptr;
 	if (!Path.IsValid() || !GameViewport.IsValid() || !Path.ContainsWidget(GameViewport.Get()))
 	{
+		if (Kind == 2)
+		{
+			// Whatever covers the point now, the button must come up: never leave it down.
+			return ReleaseOnViewport(Viewport, Button);
+		}
 		// Something that is not the game (an editor menu, a dialog) is on top there.
 		if (OutRefusal)
 		{
@@ -601,6 +600,41 @@ bool UMCPControlSubsystem::SendPointer(const FVector2D& Viewport, const FKey& Bu
 	default:
 		return App.RoutePointerMoveEvent(Path, Event, /*bIsSynthetic=*/false);
 	}
+}
+
+bool UMCPControlSubsystem::ReleaseOnViewport(const FVector2D& Viewport, const FKey& Button)
+{
+	// A release whose point is no longer the game's (a toast window over it, a window
+	// resized smaller than a drag's end): route it to the game viewport itself, at the
+	// nearest viewport pixel. A widget holding the virtual user's capture gets it anyway
+	// (Slate routes a release to its captor).
+	UWorld* World = GetWorld();
+	UGameViewportClient* GVC = World ? World->GetGameViewport() : nullptr;
+	const TSharedPtr<SViewport> GameViewport = GVC ? GVC->GetGameViewportWidget() : nullptr;
+	if (!GameViewport.IsValid() || !VirtualUser.IsValid() || !FSlateApplication::IsInitialized())
+	{
+		return false;
+	}
+	FSlateApplication& App = FSlateApplication::Get();
+	FVector2D Pixels(0.0, 0.0);
+	GVC->GetViewportSize(Pixels);
+	const FVector2D Clamped(FMath::Clamp(Viewport.X, 0.0, FMath::Max(Pixels.X - 1.0, 0.0)), FMath::Clamp(Viewport.Y, 0.0, FMath::Max(Pixels.Y - 1.0, 0.0)));
+	FVector2D Screen;
+	FWidgetPath Path;
+	if (!ViewportToScreen(Clamped, Screen, nullptr) || !App.FindPathToWidget(GameViewport.ToSharedRef(), Path, EVisibility::All))
+	{
+		return false;
+	}
+	const TSet<FKey> NonePressed;
+	const FPointerEvent Event(IPlatformInputDeviceMapper::Get().GetDefaultInputDevice(), /*PointerIndex=*/0, Screen, Screen,
+		NonePressed, Button, 0.f, FModifierKeysState(), VirtualUser->GetUserIndex());
+	const bool bWasHandlingInactive = App.GetHandleDeviceInputWhenApplicationNotActive();
+	App.SetHandleDeviceInputWhenApplicationNotActive(true);
+	ON_SCOPE_EXIT
+	{
+		App.SetHandleDeviceInputWhenApplicationNotActive(bWasHandlingInactive);
+	};
+	return App.RoutePointerUpEvent(Path, Event).IsEventHandled();
 }
 
 // Pointer results are JSON the companion parses: built with the engine's serializer
