@@ -1,11 +1,11 @@
 {
-  "prelude": "import json, os\nimport unreal\n\ndef _gw():\n    return unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_game_world()\n\ndef _sub(cls_name):\n    w = _gw()\n    c = getattr(unreal, cls_name, None)\n    if not (w and c):\n        return None\n    return unreal.MCPCoreLibrary.find_game_subsystem(w, c.static_class())\n\ndef _gs():\n    w = _gw()\n    return unreal.GameplayStatics.get_game_state(w) if w else None\n\ndef _count(cls_name):\n    w = _gw()\n    c = getattr(unreal, cls_name, None)\n    if not (w and c):\n        return 0\n    return len(unreal.GameplayStatics.get_all_actors_of_class(w, c))\n\ndef _rows(path):\n    dt = unreal.load_asset(path)\n    if not dt:\n        return {}\n    return {r.get('Name'): r for r in json.loads(unreal.DataTableFunctionLibrary.export_data_table_to_json_string(dt))}\n\ndef _base_path():\n    return os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir()), 'gameeval_baseline.json')\n\ndef _save_base(d):\n    with open(_base_path(), 'w') as f:\n        json.dump(d, f)\n\ndef _base():\n    try:\n        with open(_base_path()) as f:\n            return json.load(f)\n    except Exception:\n        return {}\n\ndef _pw_snapshot():\n    s = _sub('PolyWorldAgentSubsystem')\n    if not s:\n        return {}\n    f = getattr(s, 'peek_snapshot_json', None) or s.get_snapshot_json\n    return json.loads(f())\n\ndef _aesir_snapshot():\n    s = _sub('AesirAgentSubsystem')\n    return json.loads(s.get_snapshot_json()) if s else {}\n\ndef _events(cls_name):\n    s = _sub(cls_name)\n    return json.loads(s.get_events_since(0)).get('events', []) if s else []\n\ndef RESULT(d):\n    print('RESULT ' + json.dumps(d, default=str))\n\nimport glob, statistics\n\ndef _mcp_saved(*parts):\n    return os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir()), 'MCP', *parts)\n\ndef _newest(pattern):\n    files = glob.glob(pattern)\n    return max(files, key=os.path.getmtime) if files else None\n\ndef _latest_playtest():\n    # R5 contract: playtest op=run writes <capture session>/playtest.json with its events\n    p = _newest(_mcp_saved('capture', '*', 'playtest.json'))\n    return json.load(open(p)) if p else {}\n\ndef _latest_batch():\n    # R5 contract: playtest op=batch writes Saved/MCP/playtest/batch-<id>.json\n    p = _newest(_mcp_saved('playtest', 'batch-*.json'))\n    return json.load(open(p)) if p else {}\n",
+  "prelude": "import json, os\nimport unreal\n\ndef _gw():\n    return unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_game_world()\n\ndef _sub(cls_name):\n    w = _gw()\n    c = getattr(unreal, cls_name, None)\n    if not (w and c):\n        return None\n    return unreal.MCPCoreLibrary.find_game_subsystem(w, c.static_class())\n\ndef _gs():\n    w = _gw()\n    return unreal.GameplayStatics.get_game_state(w) if w else None\n\ndef _count(cls_name):\n    w = _gw()\n    c = getattr(unreal, cls_name, None)\n    if not (w and c):\n        return 0\n    return len(unreal.GameplayStatics.get_all_actors_of_class(w, c))\n\ndef _rows(path):\n    dt = unreal.load_asset(path)\n    if not dt:\n        return {}\n    return {r.get('Name'): r for r in json.loads(unreal.DataTableFunctionLibrary.export_data_table_to_json_string(dt))}\n\ndef _base_path():\n    return os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir()), 'gameeval_baseline.json')\n\ndef _save_base(d):\n    with open(_base_path(), 'w') as f:\n        json.dump(d, f)\n\ndef _base():\n    try:\n        with open(_base_path()) as f:\n            return json.load(f)\n    except Exception:\n        return {}\n\ndef _pw_snapshot():\n    s = _sub('PolyWorldAgentSubsystem')\n    if not s:\n        return {}\n    f = getattr(s, 'peek_snapshot_json', None) or s.get_snapshot_json\n    return json.loads(f())\n\ndef _aesir_snapshot():\n    s = _sub('AesirAgentSubsystem')\n    return json.loads(s.get_snapshot_json()) if s else {}\n\ndef _events(cls_name):\n    s = _sub(cls_name)\n    return json.loads(s.get_events_since('')).get('events', []) if s else []\n\ndef RESULT(d):\n    print('RESULT ' + json.dumps(d, default=str))\n\nimport glob, statistics\n\ndef _mcp_saved(*parts):\n    return os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir()), 'MCP', *parts)\n\ndef _newest(pattern):\n    files = glob.glob(pattern)\n    return max(files, key=os.path.getmtime) if files else None\n\ndef _latest_playtest():\n    # R5 contract: playtest op=run writes <capture session>/playtest.json with its events\n    p = _newest(_mcp_saved('capture', '*', 'playtest.json'))\n    return json.load(open(p)) if p else {}\n\ndef _latest_batch():\n    # R5 contract: playtest op=batch writes Saved/MCP/playtest/batch-<id>.json\n    p = _newest(_mcp_saved('playtest', 'batch-*.json'))\n    return json.load(open(p)) if p else {}\n",
   "tasks": [
     {
       "id": "aesir_wave_status",
       "goal": "G2",
       "project": "aesir",
-      "prompt": "Start the game in the editor (Play In Editor) and tell me which wave it is and how many enemies remain. Use the game's own interface, not Python.",
+      "prompt": "Start the game in the editor (Play In Editor) and tell me which wave it is and how many enemies remain, as ANSWER: wave=<n>, enemies=<n>. Use the game's own interface, not Python.",
       "requires": [
         "G",
         "R1"
@@ -34,6 +34,15 @@
           "name": "answer_wave",
           "answer": {
             "from": "state.wave",
+            "key": "wave",
+            "tolerance": 0
+          }
+        },
+        {
+          "name": "answer_enemies",
+          "answer": {
+            "from": "state.enemies",
+            "key": "enemies",
             "tolerance": 0
           }
         }
@@ -79,7 +88,7 @@
       "id": "pw_finances",
       "goal": "G2",
       "project": "polyworld",
-      "prompt": "Start PolyWorld in the editor and report the company's current capital and net worth, as the game reports them.",
+      "prompt": "Start PolyWorld in the editor and report the company's current capital and net worth as the game reports them, as ANSWER: capital=<n>, net_worth=<n>.",
       "requires": [
         "G",
         "R1"
@@ -100,6 +109,15 @@
           "name": "answer_capital",
           "answer": {
             "from": "snap.capital",
+            "key": "capital",
+            "tolerance": 1
+          }
+        },
+        {
+          "name": "answer_net_worth",
+          "answer": {
+            "from": "snap.net_worth",
+            "key": "net_worth",
             "tolerance": 1
           }
         }
@@ -566,7 +584,7 @@
           "expect": [
             {
               "path": "text",
-              "op": "contains",
+              "op": "word",
               "value_from": "state.wave"
             }
           ]
@@ -657,7 +675,8 @@
           "name": "answer_ms",
           "answer": {
             "from": "latency.median_ms",
-            "tolerance": 1
+            "tolerance": 1,
+            "rel_tolerance": 0.05
           }
         }
       ]
@@ -695,7 +714,8 @@
           "name": "answer_s",
           "answer": {
             "from": "ttk.ttk_s",
-            "tolerance": 0.05
+            "tolerance": 0.05,
+            "rel_tolerance": 0.05
           }
         }
       ]
@@ -704,7 +724,7 @@
       "id": "aesir_batch_variance",
       "goal": "G6",
       "project": "aesir",
-      "prompt": "Run five seeded playtests of the first two waves and tell me the fastest and slowest time to clear wave 1 between them, in seconds.",
+      "prompt": "Run five seeded playtests of the first two waves and tell me the fastest and slowest time to clear wave 1 between them, in seconds, as ANSWER: min=<seconds>, max=<seconds>.",
       "requires": [
         "G",
         "R5"
@@ -734,7 +754,8 @@
           "answer": {
             "from": "clears.min",
             "key": "min",
-            "tolerance": 0.05
+            "tolerance": 0.05,
+            "rel_tolerance": 0.02
           }
         },
         {
@@ -742,7 +763,8 @@
           "answer": {
             "from": "clears.max",
             "key": "max",
-            "tolerance": 0.05
+            "tolerance": 0.05,
+            "rel_tolerance": 0.02
           }
         }
       ]

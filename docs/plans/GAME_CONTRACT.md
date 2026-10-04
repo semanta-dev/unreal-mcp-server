@@ -13,7 +13,7 @@ declared in the project's `.umcp.json` `game_api` (R1.4). Every function is a `U
 |---|---|---|
 | `GetCapabilitiesJson()` | pure, const | `{api_version, world_epoch, commands: [{name, tier, args}], event_kinds: [...]}` — `tier` is informational (R1.5: `game_command` is always Exec) |
 | `PeekSnapshotJson()` | pure, const, **no side effects** | the game state + `world_epoch`, `events_cursor` |
-| `GetEventsSince(int64 Cursor)` | pure, const | `{events: [...], next_cursor, gap: bool, dropped: n, world_epoch, reason?}` |
+| `GetEventsSince(FString Cursor)` | pure, const | `{events: [...], next_cursor, gap: bool, dropped: n, world_epoch, reason?}` — the cursor is `""` (from the start) or `"<world_epoch>:<seq>"` (it carries the epoch, so it is a string, not the `int64` of plan r6) |
 | `ExecuteCommandJson(FString RequestJson)` | callable | `{accepted, request_id, world_epoch, result?, error_code?, message?}` |
 
 - **`world_epoch`**: a GUID made when the subsystem initialises (a new one per PIE session). Cursors encode it
@@ -25,7 +25,18 @@ declared in the project's `.umcp.json` `game_api` (R1.4). Every function is a `U
   `request_id` is required. Repeats of a `request_id` within the same world are deduplicated: the recorded response
   is returned, nothing runs again, and at least 256 ids are remembered. A request whose `world_epoch` is not the
   current one returns `accepted: false, error_code: "dedup_expired"` and **does not run**.
-- An event is `{seq, t (world seconds), kind, actor?, instigator?, by_player?, data?}`.
+- An event is `{seq, t (world seconds), kind, actor?, target?, by_player, data?}`; a `hit` carries `data.visual_t`
+  (when its visual feedback was drawn), which the playtest timeline lifts to `visual_t`.
+
+## Server outputs the eval probes read (R5 contract)
+
+- `playtest op=run` writes `<capture session dir>/playtest.json` (`Saved/MCP/capture/<session>/`) with the verdict,
+  rubric and the merged event timeline `events: [{t, kind, actor?, target?, by_player, data?, visual_t?}]`.
+- `playtest op=batch` writes `Saved/MCP/playtest/batch-<id>.json` with `runs: [{seed, verdict, waves: [{wave,
+  clear_s}]}]`.
+- Definitions (the feel audit and telemetry kinds use the same ones): **hit-to-visual latency** = `visual_t − t` of
+  a `hit` event (seconds; reported in ms); **time-to-kill** of a target = the `kill` event's `t` − the first `hit` on
+  that target by the weapon; **wave clear time** = `wave_end.data.clear_s`.
 
 ## aesir-wave-defense
 

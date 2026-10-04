@@ -123,6 +123,11 @@ the emulator cannot:
    a duplicated label returns CONFLICT; class short names resolve (and are CONFLICT when ambiguous).
 2. Undo: `actor_edit` and `snapshot_restore` are one Ctrl+Z step each; the `undo` tool steps them back and forth,
    refuses a human's edit on top (`CONFLICT`) and refuses during PIE.
+
+**Undo limits.** The companion keeps a journal of the server's edits so `undo` never steps past an edit that made no
+undo step (asset/widget edits, imports, `console`, `python` — including `python evaluate=true`, which may have side
+effects). That journal lives in the editor's Python module: after the module is reinstalled (a new server build or an
+editor restart) it starts empty, and `undo` falls back to checking only that the next step is titled `MCP: …`.
 3. `asset_create op=replace` over an existing asset (delete, then create at the same path in the same tick).
 4. `screenshot op=viewport|pie|orbit`, `asset_query op=thumbnail`, `widget_query op=render` return images (absolute
    paths); HighResShot's real output location; `capture start/stop` with each source.

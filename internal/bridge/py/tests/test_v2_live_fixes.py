@@ -165,7 +165,10 @@ def test_transaction_records_a_journal_step(v2, ue):
     del m._MCP_EDITS[:]
     with m._transaction("MCP: scene arena"):
         pass
-    assert m._MCP_EDITS == [("tx", "MCP: scene arena")]
+    with m._transaction("MCP: scene arena"):
+        pass
+    (k1, t1), (k2, t2) = m._MCP_EDITS
+    assert k1 == k2 == "tx" and t1.startswith("MCP: scene arena [") and t1 != t2  # unique titles
 
 
 def test_editor_ping_survives_a_broken_plugin(v2, ue):

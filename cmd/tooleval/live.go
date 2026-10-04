@@ -93,7 +93,9 @@ type answerCheck struct {
 	From      string  `json:"from,omitempty"`
 	Key       string  `json:"key,omitempty"`
 	Tolerance float64 `json:"tolerance,omitempty"`
-	Regex     string  `json:"regex,omitempty"`
+	// RelTolerance widens Tolerance to this fraction of the expected value.
+	RelTolerance float64 `json:"rel_tolerance,omitempty"`
+	Regex        string  `json:"regex,omitempty"`
 }
 
 // gameTaskFile is the task file: Python helpers shared by every probe and python
@@ -183,7 +185,7 @@ func lintGameTasks(ts []*gameTask, projects []string, minPerGoal, minMulti int) 
 					errs = append(errs, cw+": a probe needs a name")
 				}
 				for _, e := range c.Expect {
-					if !contains([]string{"eq", "ne", "gt", "gte", "lt", "lte", "contains", "exists"}, e.Op) || e.Path == "" {
+					if !contains([]string{"eq", "ne", "gt", "gte", "lt", "lte", "contains", "word", "exists"}, e.Op) || e.Path == "" {
 						errs = append(errs, fmt.Sprintf("%s: bad expectation %+v", cw, e))
 					}
 					if e.ValueFrom != "" && !earlier(e.ValueFrom) {
@@ -216,6 +218,22 @@ func lintGameTasks(ts []*gameTask, projects []string, minPerGoal, minMulti int) 
 			}
 			if n != 1 {
 				errs = append(errs, cw+": exactly one of probe, call, called, answer")
+			}
+		}
+		// Answers: one value may be plain; several must each have a key, and the prompt
+		// must show the agent every key ("<key>=").
+		var answers []*answerCheck
+		for i := range t.Checks {
+			if t.Checks[i].Answer != nil && t.Checks[i].Answer.From != "" {
+				answers = append(answers, t.Checks[i].Answer)
+			}
+		}
+		for _, a := range answers {
+			if len(answers) > 1 && a.Key == "" {
+				errs = append(errs, where+": several answer values: every answer check needs a key")
+			}
+			if a.Key != "" && !strings.Contains(t.Prompt, a.Key+"=") {
+				errs = append(errs, fmt.Sprintf("%s: the prompt never shows the answer key %q (write %s=<value>)", where, a.Key, a.Key))
 			}
 		}
 		if t.Goal != "G1" && nProbe == 0 {
@@ -318,6 +336,17 @@ func expectHolds(m map[string]any, e expectation) bool {
 			}
 		}
 		return eq == (e.Op == "eq")
+	case "word":
+		// a whole word/number of a string ("WAVE 3" has 3; "100 HP" has no 1)
+		s, ok := got.(string)
+		if !ok || e.Value == nil {
+			return false
+		}
+		want := fmt.Sprint(e.Value)
+		if f, isNum := e.Value.(float64); isNum && f == math.Trunc(f) {
+			want = strconv.FormatFloat(f, 'f', -1, 64)
+		}
+		return regexp.MustCompile(`(^|[^0-9A-Za-z])` + regexp.QuoteMeta(want) + `([^0-9A-Za-z]|$)`).MatchString(s)
 	case "contains":
 		if e.Value == nil {
 			return false
@@ -403,22 +432,36 @@ func describeCalled(cc calledCheck) string {
 	return s
 }
 
-// A number in an ANSWER line: thousands separators allowed ("12,345"); a sign only at
-// the start or after a space, "=", ":" or "(" (so "wave-2" is 2, not -2).
-var numberRE = regexp.MustCompile(`(?:^|[\s=:(])(-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)`)
+// A number in an ANSWER line: thousands separators allowed ("12,345"), an optional
+// currency sign ("$12,345", "-$5"), a sign only at the start or after a space, "=", ":",
+// "(" or a currency sign (so "wave-2" is 2, not -2). U+2212 (−) is a minus.
+var numberRE = regexp.MustCompile(`(?:^|[\s=:($€£])(-?[$€£]?-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?[$€£]?-?\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)`)
 
 func answerNumbers(s string) []float64 {
+	s = strings.ReplaceAll(s, "−", "-")
 	var out []float64
 	for _, m := range numberRE.FindAllStringSubmatch(s, -1) {
 		v := m[1]
 		if v == "" {
 			v = m[2]
 		}
-		if f, err := strconv.ParseFloat(strings.ReplaceAll(v, ",", ""), 64); err == nil {
+		v = strings.NewReplacer(",", "", "$", "", "€", "", "£", "").Replace(v)
+		v = strings.Replace(v, "--", "-", 1)
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			out = append(out, f)
 		}
 	}
 	return out
+}
+
+// keyedValue is the text after "<key>=" up to the next ", <name>=" (or the end), so a
+// thousands separator inside the value is kept.
+func keyedValue(line, key string) (string, bool) {
+	m := regexp.MustCompile(`(?i)(?:^|[\s,;])` + regexp.QuoteMeta(key) + `\s*=\s*(.*?)\s*(?:[,;]\s*[A-Za-z_][A-Za-z0-9_]*\s*=|$)`).FindStringSubmatch(line)
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
 }
 
 // answerLine is the content of the reply's last "ANSWER:" line ("" when there is none).
@@ -448,14 +491,15 @@ func answerHolds(a answerCheck, probes map[string]map[string]any, reply string) 
 	}
 	part := line
 	if a.Key != "" {
-		m := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(a.Key) + `\s*=\s*([^,;]+)`).FindStringSubmatch(line)
-		if m == nil {
+		v, ok := keyedValue(line, a.Key)
+		if !ok {
 			return false
 		}
-		part = m[1]
+		part = v
 	}
 	ns := answerNumbers(part)
-	return len(ns) == 1 && math.Abs(ns[0]-want) <= a.Tolerance
+	tol := math.Max(a.Tolerance, a.RelTolerance*math.Abs(want))
+	return len(ns) == 1 && math.Abs(ns[0]-want) <= tol
 }
 
 // parseProbe finds the last "RESULT {...}" line of a python tool result's output.
@@ -603,6 +647,18 @@ func reset(ctx context.Context, s *liveSession, tag string) error {
 	return err
 }
 
+// clearEvidence removes the server-written outputs probes read, in a project's Saved/.
+func clearEvidence(project string) error {
+	saved := filepath.Join(project, "Saved")
+	for _, p := range []string{filepath.Join(saved, "MCP", "capture"), filepath.Join(saved, "MCP", "playtest"),
+		filepath.Join(saved, "gameeval_baseline.json")} {
+		if err := os.RemoveAll(p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // runLive runs one task once: reset, setup, the agent loop, then the probes.
 func runLive(ctx context.Context, cl *client, o liveOpts, t *gameTask, run int, logf *os.File) (r liveResult) {
 	start := time.Now()
@@ -615,6 +671,13 @@ func runLive(ctx context.Context, cl *client, o liveOpts, t *gameTask, run int, 
 	}
 	defer s.cs.Close()
 	if err := reset(ctx, s, o.checkpoint[t.Project]); err != nil {
+		r.Err, r.Aborted = "reset: "+err.Error(), "error"
+		return r
+	}
+	// Saved/ is not in git, so the reset keeps it: clear the evidence the probes read
+	// (playtest and batch outputs, the setup baseline) so no run is scored on an earlier
+	// run's files.
+	if err := clearEvidence(o.projects[t.Project]); err != nil {
 		r.Err, r.Aborted = "reset: "+err.Error(), "error"
 		return r
 	}

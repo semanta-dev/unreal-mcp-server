@@ -156,3 +156,22 @@ func truthy(v any) bool {
 	}
 	return true
 }
+
+// UndoClass says how each editing companion op relates to the editor's undo buffer, for
+// the undo tool's journal (95_v2_core.py): "tx" (one "MCP: …" transaction when it edits
+// the editor world), "untracked" (an edit with no undo step), "untracked_world"
+// (untracked when it acts on the editor world, i.e. outside PIE), "pie" (only the
+// transient game world) or "none" (no level edit: saves, quits, undo itself; open_level
+// resets the journal). TestUndoClassMatchesCompanion keeps the companion's untracked sets
+// equal to this table, and every op of tier ≥ mutating must be classified.
+var UndoClass = map[string]string{
+	"actor_call": "pie", "pie_exec": "pie",
+	"actor_delete": "tx", "actor_set_properties": "tx", "actor_spawn": "tx", "actor_transform": "tx",
+	"scene_apply": "tx", "scene_clear": "tx", "scene_prune": "tx", "snapshot_restore": "tx",
+	"asset_create": "untracked", "asset_edit": "untracked", "asset_reimport": "untracked", "import_assets": "untracked",
+	"datatable_import": "untracked", "widget_compose": "untracked", "widget_compile": "untracked",
+	"set_world_gamemode": "untracked", "live_coding_compile": "untracked",
+	"apply_level_recipe": "untracked_world", "console": "untracked_world", "company_build": "untracked_world",
+	"company_road": "untracked_world", "company_demolish": "untracked_world", "company_select": "untracked_world",
+	"editor_undo": "none", "open_level": "none", "quit_editor": "none", "save_all": "none",
+}

@@ -293,10 +293,11 @@ _MCP_REDO = []
 
 # Ops that change the editor without an undo transaction (asset edits, imports, game
 # commands, console and recipes). World ops count only outside PIE (in PIE they change
-# the transient game world, not the level).
+# the transient game world, not the level). Kept equal to spec.UndoClass by a Go test.
 _UNTRACKED_EDIT_OPS = frozenset(("asset_create", "asset_edit", "asset_reimport", "import_assets", "datatable_import",
                                  "widget_compose", "widget_compile", "set_world_gamemode", "live_coding_compile"))
-_UNTRACKED_WORLD_OPS = frozenset(("company_build", "company_road", "company_demolish", "console", "apply_level_recipe"))
+_UNTRACKED_WORLD_OPS = frozenset(("company_build", "company_road", "company_demolish", "company_select", "console",
+                                  "apply_level_recipe"))
 
 
 def _note_edit(kind, what):

@@ -1,15 +1,22 @@
 # --- declarative scene realize + design lint --------------------------------
 
+_MCP_TX_SEQ = [0]
+
+
 @contextlib.contextmanager
 def _transaction(label):
     """One atomic, named undo unit if ScopedEditorTransaction is available;
-    otherwise a no-op (the realize still runs, just not coalesced)."""
+    otherwise a no-op (the realize still runs, just not coalesced). The title gets a
+    unique " [n]" suffix so undo can name exactly this step (two spawns of one class
+    would otherwise share a title)."""
     tx = getattr(unreal, "ScopedEditorTransaction", None)
     if tx is None:
         yield None
         return
-    with tx(label) as t:
-        _note_edit("tx", label)
+    _MCP_TX_SEQ[0] += 1
+    title = "%s [%d]" % (label, _MCP_TX_SEQ[0])
+    with tx(title) as t:
+        _note_edit("tx", title)
         yield t
 
 

@@ -285,7 +285,7 @@ func (w *World) actorSpawn(args map[string]any) (any, *OpError) {
 		}
 	}
 	w.editor[a.Path] = a
-	w.record("MCP: spawn "+class, func() { delete(w.editor, a.Path) }, func() { w.editor[a.Path] = a })
+	w.record(fmt.Sprintf("MCP: spawn %s [%d]", class, w.seq), func() { delete(w.editor, a.Path) }, func() { w.editor[a.Path] = a })
 	return map[string]any{"world": "editor", "spawned": view(a, "editor"), "property_errors": []any{}}, nil
 }
 
@@ -308,7 +308,8 @@ func (w *World) actorDelete(args map[string]any) (any, *OpError) {
 	}
 	delete(actors, a.Path)
 	if name == "editor" {
-		w.record("MCP: delete "+a.Label, func() { actors[a.Path] = a }, func() { delete(actors, a.Path) })
+		w.seq++
+		w.record(fmt.Sprintf("MCP: delete %s [%d]", a.Label, w.seq), func() { actors[a.Path] = a }, func() { delete(actors, a.Path) })
 	}
 	return map[string]any{"world": name, "deleted": view(a, name)}, nil
 }

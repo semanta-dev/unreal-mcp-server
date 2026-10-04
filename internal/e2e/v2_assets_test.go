@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -186,10 +187,10 @@ func TestUndoOnlyStepsTheServersEdits(t *testing.T) {
 	}
 	before := count()
 	h.call(t, "actor_edit", map[string]any{"op": "spawn", "world": "editor", "class": "/Script/Engine.Actor", "label": "Undoable"})
-	if res := structured(t, h.call(t, "undo", map[string]any{"op": "undo"})); res["undone"] != "MCP: spawn /Script/Engine.Actor" || count() != before {
+	if res := structured(t, h.call(t, "undo", map[string]any{"op": "undo"})); !strings.HasPrefix(fmt.Sprint(res["undone"]), "MCP: spawn /Script/Engine.Actor [") || count() != before {
 		t.Fatalf("undo = %v (actors %d, want %d)", res, count(), before)
 	}
-	if res := structured(t, h.call(t, "undo", map[string]any{"op": "redo"})); res["redone"] != "MCP: spawn /Script/Engine.Actor" || count() != before+1 {
+	if res := structured(t, h.call(t, "undo", map[string]any{"op": "redo"})); !strings.HasPrefix(fmt.Sprint(res["redone"]), "MCP: spawn /Script/Engine.Actor [") || count() != before+1 {
 		t.Fatalf("redo = %v", res)
 	}
 	// A python run makes no undo step: undoing now would revert the spawn underneath it.

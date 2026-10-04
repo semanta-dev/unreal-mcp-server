@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -184,5 +186,65 @@ func TestRunCostFailsClosed(t *testing.T) {
 	}
 	if _, ok := runCost(u, []string{"a", "unknown-model"}, o); ok {
 		t.Fatal("a served model without a price must be reported unpriced")
+	}
+}
+
+// TestAnswerFormats: currency signs, Unicode minus and thousands separators inside a
+// keyed value parse as written (R0 review #2).
+func TestAnswerFormats(t *testing.T) {
+	probes := map[string]map[string]any{"p": {"cap": 12345.0, "loss": -150.0, "min": 12345.0, "max": 20000.5}}
+	for _, c := range []struct {
+		a     answerCheck
+		reply string
+		want  bool
+	}{
+		{answerCheck{From: "p.cap"}, "ANSWER: $12,345", true},
+		{answerCheck{From: "p.loss"}, "ANSWER: \u2212150", true},
+		{answerCheck{From: "p.loss"}, "ANSWER: -$150", true},
+		{answerCheck{From: "p.loss"}, "ANSWER: 150", false},
+		{answerCheck{From: "p.min", Key: "min"}, "ANSWER: min=12,345, max=20,000.5", true},
+		{answerCheck{From: "p.max", Key: "max"}, "ANSWER: min=12,345, max=20,000.5", true},
+		{answerCheck{From: "p.max", Key: "max", RelTolerance: 0.01}, "ANSWER: min=1, max=20,150", true},
+		{answerCheck{From: "p.max", Key: "max", RelTolerance: 0.001}, "ANSWER: min=1, max=20,150", false},
+	} {
+		if got := answerHolds(c.a, probes, c.reply); got != c.want {
+			t.Errorf("%+v on %q = %v, want %v", c.a, c.reply, got, c.want)
+		}
+	}
+}
+
+func TestWordExpectationAndKeyLint(t *testing.T) {
+	m := map[string]any{"hud": "WAVE 1 // 100 HP", "other": "100 HP"}
+	if !expectHolds(m, expectation{Path: "hud", Op: "word", Value: 1.0}) || expectHolds(m, expectation{Path: "other", Op: "word", Value: 1.0}) {
+		t.Fatal("word must match a whole number, not a digit inside 100")
+	}
+	ts := []*gameTask{{ID: "two", Goal: "G2", Project: "aesir", Prompt: "tell me x and y", Checks: []liveCheck{
+		{Name: "p", Probe: "x"}, {Name: "a", Answer: &answerCheck{From: "p.x"}}, {Name: "b", Answer: &answerCheck{From: "p.y", Key: "y"}}}}}
+	errs := strings.Join(lintGameTasks(ts, []string{"aesir"}, 0, 0), "\n")
+	for _, want := range []string{"every answer check needs a key", `never shows the answer key "y"`} {
+		if !strings.Contains(errs, want) {
+			t.Errorf("lint misses %q:\n%s", want, errs)
+		}
+	}
+}
+
+func TestClearEvidence(t *testing.T) {
+	dir := t.TempDir()
+	keep := filepath.Join(dir, "Saved", "Logs", "Game.log")
+	for _, p := range []string{filepath.Join(dir, "Saved", "MCP", "capture", "s1", "playtest.json"),
+		filepath.Join(dir, "Saved", "MCP", "playtest", "batch-1.json"), filepath.Join(dir, "Saved", "gameeval_baseline.json"), keep} {
+		_ = os.MkdirAll(filepath.Dir(p), 0o755)
+		_ = os.WriteFile(p, []byte("{}"), 0o644)
+	}
+	if err := clearEvidence(dir); err != nil {
+		t.Fatal(err)
+	}
+	for _, gone := range []string{"Saved/MCP/capture", "Saved/MCP/playtest", "Saved/gameeval_baseline.json"} {
+		if _, err := os.Stat(filepath.Join(dir, gone)); err == nil {
+			t.Errorf("%s survived", gone)
+		}
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Error("clearEvidence removed an unrelated file")
 	}
 }
