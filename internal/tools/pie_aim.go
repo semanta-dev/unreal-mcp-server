@@ -19,11 +19,12 @@ import (
 // mouse would: no rotation is ever set.
 
 const (
-	aimTolDeg   = 1.0
-	aimMaxSteps = 12
-	aimProbe    = 10.0   // axis units sent while a gain is unknown
-	aimMaxUnits = 5000.0 // one tick's largest delta
-	aimSettle   = 120 * time.Millisecond
+	aimTolDeg     = 1.0
+	aimMaxSteps   = 12
+	aimProbe      = 10.0   // axis units sent while a gain is unknown
+	aimMaxUnits   = 5000.0 // one tick's largest delta
+	aimSettle     = 120 * time.Millisecond
+	aimTargetWait = 5 * time.Second // pie op=aim: how long a missing target may take to appear
 )
 
 var aimAxes = [2]struct{ key, errKey, angKey string }{
@@ -44,7 +45,16 @@ func pieAim(ctx context.Context, c *spec.Call, in pieIn) (*spec.Result, error) {
 	if (in.Actor == "") == (in.Class == "") {
 		return nil, envelope.New(envelope.InvalidArgument, "aim needs actor or class (one of them)")
 	}
-	out, err := aimOnce(ctx, c, pick(c.Args, "actor", "class"))
+	target := pick(c.Args, "actor", "class")
+	out, err := aimOnce(ctx, c, target)
+	// No target yet (a wave just started spawning): wait a little for one to appear.
+	for deadline := time.Now().Add(aimTargetWait); err != nil && envelope.Classify(err, false).Code == envelope.NotFound &&
+		time.Now().Before(deadline); {
+		if sleepCtx(ctx, 300*time.Millisecond) != nil {
+			return nil, ctx.Err()
+		}
+		out, err = aimOnce(ctx, c, target)
+	}
 	if err != nil {
 		return nil, err
 	}

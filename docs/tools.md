@@ -455,7 +455,7 @@ Play In Editor.
 - input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s (game time: paused, they wait).
 - cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate (never your OS cursor); the game's cursor stays until action=release.
 - ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the plugin.
-- aim: turn the view onto `actor` (or nearest `class`) by mouse input; then fire with input.
+- aim: turn the view onto `actor` (or nearest `class`) by mouse input, then fire with input (playtest steps aim too).
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -606,7 +606,7 @@ Results list any map the capture actors dirtied.
 
 _tier ephemeral_
 
-Film the world: an in-editor recorder saves a frame + state every interval_s.
+Film the world: a frame + state every interval_s.
 - start → session.
 - status.
 - stop: ONE contact sheet + a timeline (world time, state, cell).

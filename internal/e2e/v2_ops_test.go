@@ -538,3 +538,18 @@ func TestPlaytestResultCompactsTheTimeline(t *testing.T) {
 		t.Fatalf("rubric with neither timeline nor path = %v", e)
 	}
 }
+
+// aim right after a wave starts: the enemies are still spawning. aim waits for the first
+// one (live: a NOT_FOUND straight after start_wave cost the agent turns).
+func TestPieAimWaitsForATargetToSpawn(t *testing.T) {
+	h := startHarness(t, harnessOpts{project: t.TempDir()})
+	h.world.PluginAPI = 5
+	h.world.StartPIE()
+	go func() {
+		time.Sleep(600 * time.Millisecond)
+		h.world.SpawnInPIE("EnemyCharacter0", "/Script/Game.EnemyCharacter", [3]float64{1000, 600, 300})
+	}()
+	if out := structured(t, h.call(t, "pie", map[string]any{"op": "aim", "class": "EnemyCharacter"})); out["aimed"] != true {
+		t.Fatalf("aim at a spawning target = %v", out)
+	}
+}

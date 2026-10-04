@@ -635,7 +635,7 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Film the world: an in-editor recorder saves a frame + state every interval_s.\n- start → session.\n- status.\n- stop: ONE contact sheet + a timeline (world time, state, cell).\n- read: a past session or a `path` of frames.\n- clear: a session or all=true.",
+      "description": "Film the world: a frame + state every interval_s.\n- start → session.\n- status.\n- stop: ONE contact sheet + a timeline (world time, state, cell).\n- read: a past session or a `path` of frames.\n- clear: a session or all=true.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1862,7 +1862,7 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop (pie-world changes are discarded).\n- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s (game time: paused, they wait).\n- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate (never your OS cursor); the game's cursor stays until action=release.\n- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the plugin.\n- aim: turn the view onto `actor` (or nearest `class`) by mouse input; then fire with input.",
+      "description": "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop (pie-world changes are discarded).\n- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s (game time: paused, they wait).\n- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate (never your OS cursor); the game's cursor stays until action=release.\n- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the plugin.\n- aim: turn the view onto `actor` (or nearest `class`) by mouse input, then fire with input (playtest steps aim too).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

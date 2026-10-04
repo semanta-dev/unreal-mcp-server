@@ -467,3 +467,16 @@ func (w *World) Snapshot() State {
 	}
 	return st
 }
+
+// SpawnInPIE adds an actor to the running game only (the game spawned it: an enemy of
+// a wave), as AddActor adds one to the level.
+func (w *World) SpawnInPIE(label, class string, loc [3]float64) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.seq++
+	a := &Actor{Label: label, Class: class, Location: loc, Properties: map[string]any{},
+		Path: fmt.Sprintf("/Game/Maps/UEDPIE_0_L_Test.L_Test:PersistentLevel.%s_%d", label, w.seq)}
+	if w.pie != nil {
+		w.pie[a.Path] = a
+	}
+}

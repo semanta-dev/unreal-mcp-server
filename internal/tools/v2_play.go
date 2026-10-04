@@ -94,7 +94,7 @@ func pieSpec() *spec.Spec {
 			"- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate (never your OS cursor); " +
 			"the game's cursor stays until action=release.\n" +
 			"- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the plugin.\n" +
-			"- aim: turn the view onto `actor` (or nearest `class`) by mouse input; then fire with input.",
+			"- aim: turn the view onto `actor` (or nearest `class`) by mouse input, then fire with input (playtest steps aim too).",
 		Schema: spec.SchemaFor[pieIn](map[string][]any{"op": spec.OpEnum(ops...),
 			"action": {"tap", "press", "release", "hold", "axis", "release_all", "move", "click", "drag"}}, "op"),
 		Replaces: []string{"start_play", "stop_play", "pie_input"},
@@ -1084,7 +1084,7 @@ func captureSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "capture", Title: "Record frames", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
-		Description: "Film the world: an in-editor recorder saves a frame + state every interval_s.\n- start → session.\n- status.\n- stop: ONE contact sheet + a timeline (world time, state, cell).\n- read: a past session or a `path` of frames.\n- clear: a session or all=true.",
+		Description: "Film the world: a frame + state every interval_s.\n- start → session.\n- status.\n- stop: ONE contact sheet + a timeline (world time, state, cell).\n- read: a past session or a `path` of frames.\n- clear: a session or all=true.",
 		Schema: spec.SchemaFor[captureIn](map[string][]any{"op": spec.OpEnum(ops...), "world": {"editor", "pie"},
 			"source": {"scene_capture", "pie_highres", "game_scene"}, "camera_mode": {"viewport", "fixed", "actor", "player"}}, "op"),
 		Replaces: []string{"capture_start", "capture_status", "capture_stop", "capture_clear", "read_capture"},
