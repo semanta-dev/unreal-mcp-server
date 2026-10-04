@@ -151,8 +151,17 @@ def _op_reflect(args):
     op = args.get("op")
     shape = {k: args[k] for k in ("include", "exclude", "properties") if args.get(k)}
     if op == "object":
+        ref = args.get("actor") or ""
+        asset = unreal.load_asset(ref) if ref.startswith("/") and ":" not in ref else None
+        if asset:
+            # An asset path (a data asset, a curve...): reflect is read-only, so it may
+            # load one; actor paths carry a ':' (Map.Map:PersistentLevel.Actor).
+            out = _reflect_observe(asset, max_props=int(args.get("max_props", 64)),
+                                   max_str=int(args.get("max_str", 512)), **shape)
+            out["world"] = "asset"
+            return out
         world, name = _v2_world(args, "editor")
-        obj = _resolve_object(world, name, args.get("actor"), editor_subsystems=True)
+        obj = _resolve_object(world, name, ref, editor_subsystems=True)
         out = _reflect_observe(obj, max_props=int(args.get("max_props", 64)),
                                max_str=int(args.get("max_str", 512)), **shape)
         out["world"] = name

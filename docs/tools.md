@@ -254,7 +254,7 @@ Find and inspect Content Browser assets.
 | param | type | description |
 |---|---|---|
 | `asset` | string | info/deps/tags/thumbnail: asset path, e.g. /Game/Meshes/SM_Rock |
-| `blueprints` | boolean | search: Blueprints deriving the classes (a Blueprint's own class is Blueprint) |
+| `blueprints` | boolean | search: Blueprints deriving the classes (not class Blueprint) |
 | `classes` | string[] | search: /Script/Module.Class paths (blueprints=true: the PARENT classes) |
 | `folder` | string | list/search: content folder (default /Game) |
 | `limit` | integer | list/search: max results (default 200; total counts all) |
@@ -517,7 +517,7 @@ Poll the running game until `predicate` holds → {met, pie_running, elapsed_s, 
 |---|---|---|
 | `interval_s` | number | seconds between observations (default 0.25) |
 | `pawn` | boolean | observe the pawn too (needed for pawn.* predicates) |
-| `predicate` | string | conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave >= 2 and counts.Enemy >= 1'; or an object path: '@subsystem:Class.Getter().field == 3' (BlueprintPure/const getters only) |
+| `predicate` | string | pie_observe paths with and/or/not, e.g. 'gamestate.wave >= 2 and counts.Enemy >= 1', or '@subsystem:Class.Getter().field == 3' (pure/const getters) |
 | `properties` | string[] | pin exact gamestate property names so the predicate can use them verbatim |
 | `timeout_s` | number | give up after this many seconds (default 20, max 600; over 25 runs as a job) |
 | `wait_s` | number | timeout_s over 25: return after this many seconds (max 25), then call job |
@@ -528,9 +528,9 @@ _tier ephemeral_
 
 Record and compare the editor level.
 - take: store `name` (default auto): every actor's path, class, tags, transform (+ `properties`).
-- diff: `name` vs `against` (default: now) → added, removed, moved, retagged, changed (by object path); unloaded World Partition actors are unknown, never removed.
+- diff: `name` vs `against` (default: now) → added, removed, moved, retagged, changed (by object path); unloaded World Partition actors count as unknown.
 - list.
-- digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.
+- digest: quantized SHA1 of actor or ISM/HISM instance transforms (scope); stores nothing.
 Put back transforms and properties with snapshot_restore.
 
 | op | tier | does | required | needs |
@@ -611,7 +611,7 @@ Film the world: an in-editor recorder saves a frame + state every interval_s.
 - status.
 - stop: ONE contact sheet + a timeline (world time, state, cell).
 - read: a past session or a `path` of frames.
-- clear: a session, or all=true (Saved/MCP/capture only).
+- clear: a session or all=true.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -725,10 +725,11 @@ Read the editor log files (works while the editor is busy or gone).
 _tier readonly · offline_
 
 Score evidence offline.
-- rubric: re-score a playtest `timeline` → PASS|WARN|INSUFFICIENT_EVIDENCE|FAIL with frame evidence.
+- rubric: re-score a playtest `timeline` → a verdict with frame evidence.
 - perf: CsvProfiler CSV → frame-time percentiles + hitches; .memreport → memory buckets.
 - image_diff: `path` vs `baseline` → hash distance, luma delta, pass.
 - scenarios: the saved playtest suite.
+- events: a playtest_path's recorded events (`kinds`).
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -736,16 +737,18 @@ Score evidence offline.
 | `perf` | readonly | frame-time percentiles / memory buckets | path |  |
 | `image_diff` | readonly | perceptual compare with a pass verdict | path, baseline |  |
 | `scenarios` | readonly | the saved playtest suite: name + valid per file |  |  |
+| `events` | readonly | a playtest's recorded events, filtered by kind | path |  |
 
 | param | type | description |
 |---|---|---|
 | `baseline` | string | image_diff: the image to compare against |
 | `dir` | string | scenarios: scenario/v1 folder (default .mcp/scenarios) |
 | `hitch_ms` | number | perf: hitch threshold in ms (default 33.3) |
+| `kinds` | string[] | events: only these kinds |
 | `logs` | object | rubric: {errors, warnings, ensures} for log checks |
 | `max_dhash` | integer | image_diff: max dHash distance (default 8; 0 = exact) |
 | `max_luma_delta` | number | image_diff: max mean-luma delta (default 0.15) |
-| `op` | string | one of: rubric, perf, image_diff, scenarios |
+| `op` | string | one of: rubric, perf, image_diff, scenarios, events |
 | `path` | string | perf: a CsvProfiler .csv or a .memreport; image_diff: an image |
 | `rubric` | object[] | rubric: [{id, kind, path, params?, severity?, allow_perturbed?}] |
 | `timeline` | object[] | rubric: a playtest result's timeline |
@@ -862,13 +865,13 @@ _tier ephemeral · offline_
 Optional tool groups: enable one to get its tools.
 - design: design_audit (feel, decision, style… audits), design_explore
 - ui: widget_edit (author UMG trees)
-- desktop: desktop_capture, desktop_input (OS screen/input)
+- desktop: desktop_capture, desktop_input
 - polyworld: polyworld, polyworld_demolish
 - headless: headless (commandlets, tests)
 - world: scene (declarative scenes; preview a layout's placements), scene_clear, world_query (traces, overlaps, nav)
 - game: game, game_command (the game's own API: state, gameplay events, commands; on with a .umcp.json game_api)
 - data: data_query, data_edit (asset properties, tables, curves, Blueprints, input, settings)
-ops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).
+ops: list | enable / disable `toolset` | describe `tool` (tiers, async, needs; none: the enabled tools).
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|

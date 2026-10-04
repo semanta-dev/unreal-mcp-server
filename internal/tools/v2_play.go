@@ -372,7 +372,7 @@ func pieObserveSpec() *spec.Spec {
 }
 
 type pieWaitIn struct {
-	Predicate  string   `json:"predicate" jsonschema:"conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave >= 2 and counts.Enemy >= 1'; or an object path: '@subsystem:Class.Getter().field == 3' (BlueprintPure/const getters only)"`
+	Predicate  string   `json:"predicate" jsonschema:"pie_observe paths with and/or/not, e.g. 'gamestate.wave >= 2 and counts.Enemy >= 1', or '@subsystem:Class.Getter().field == 3' (pure/const getters)"`
 	TimeoutS   float64  `json:"timeout_s,omitempty" jsonschema:"give up after this many seconds (default 20, max 600; over 25 runs as a job)"`
 	WaitS      float64  `json:"wait_s,omitempty" jsonschema:"timeout_s over 25: return after this many seconds (max 25), then call job"`
 	IntervalS  float64  `json:"interval_s,omitempty" jsonschema:"seconds between observations (default 0.25)"`
@@ -617,7 +617,7 @@ func snapshotSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "snapshot", Title: "Level snapshots", Toolset: spec.Core, Timeout: sync25, Max: sync28, Ops: ops,
-		Description: "Record and compare the editor level.\n- take: store `name` (default auto): every actor's path, class, tags, transform (+ `properties`).\n- diff: `name` vs `against` (default: now) → added, removed, moved, retagged, changed (by object path); unloaded World Partition actors are unknown, never removed.\n- list.\n- digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.\nPut back transforms and properties with snapshot_restore.",
+		Description: "Record and compare the editor level.\n- take: store `name` (default auto): every actor's path, class, tags, transform (+ `properties`).\n- diff: `name` vs `against` (default: now) → added, removed, moved, retagged, changed (by object path); unloaded World Partition actors count as unknown.\n- list.\n- digest: quantized SHA1 of actor or ISM/HISM instance transforms (scope); stores nothing.\nPut back transforms and properties with snapshot_restore.",
 		Schema:      spec.SchemaFor[snapshotIn](map[string][]any{"op": spec.OpEnum(ops...), "scope": {"instances", "actors"}}, "op"),
 		Replaces:    []string{"level_snapshot", "level_diff", "scene_snapshot", "scene_digest"},
 		Handler:     snapshotHandler,
@@ -1084,7 +1084,7 @@ func captureSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "capture", Title: "Record frames", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
-		Description: "Film the world: an in-editor recorder saves a frame + state every interval_s.\n- start → session.\n- status.\n- stop: ONE contact sheet + a timeline (world time, state, cell).\n- read: a past session or a `path` of frames.\n- clear: a session, or all=true (Saved/MCP/capture only).",
+		Description: "Film the world: an in-editor recorder saves a frame + state every interval_s.\n- start → session.\n- status.\n- stop: ONE contact sheet + a timeline (world time, state, cell).\n- read: a past session or a `path` of frames.\n- clear: a session or all=true.",
 		Schema: spec.SchemaFor[captureIn](map[string][]any{"op": spec.OpEnum(ops...), "world": {"editor", "pie"},
 			"source": {"scene_capture", "pie_highres", "game_scene"}, "camera_mode": {"viewport", "fixed", "actor", "player"}}, "op"),
 		Replaces: []string{"capture_start", "capture_status", "capture_stop", "capture_clear", "read_capture"},

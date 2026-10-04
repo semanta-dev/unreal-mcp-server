@@ -187,7 +187,7 @@ func logsHandler(_ context.Context, c *spec.Call) (*spec.Result, error) {
 // --- analyze ---------------------------------------------------------------------
 
 type analyzeIn struct {
-	Op       string             `json:"op" jsonschema:"rubric | perf | image_diff | scenarios"`
+	Op       string             `json:"op" jsonschema:"rubric | perf | image_diff | scenarios | events"`
 	Timeline []timelineFrame    `json:"timeline,omitempty" jsonschema:"rubric: a playtest result's timeline"`
 	Logs     *logCounts         `json:"logs,omitempty" jsonschema:"rubric: {errors, warnings, ensures} for log checks"`
 	Rubric   []eval.RubricCheck `json:"rubric,omitempty" jsonschema:"rubric: [{id, kind, path, params?, severity?, allow_perturbed?}]"`
@@ -197,6 +197,7 @@ type analyzeIn struct {
 	MaxDHash *int               `json:"max_dhash,omitempty" jsonschema:"image_diff: max dHash distance (default 8; 0 = exact)"`
 	MaxLuma  *float64           `json:"max_luma_delta,omitempty" jsonschema:"image_diff: max mean-luma delta (default 0.15)"`
 	Dir      string             `json:"dir,omitempty" jsonschema:"scenarios: scenario/v1 folder (default .mcp/scenarios)"`
+	Kinds    []string           `json:"kinds,omitempty" jsonschema:"events: only these kinds"`
 }
 
 // timelineFrame / logCounts are the JSON shapes of a playtest timeline and its log
@@ -219,10 +220,11 @@ func analyzeSpec() *spec.Spec {
 		{Name: "perf", Summary: "frame-time percentiles / memory buckets", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"path"}},
 		{Name: "image_diff", Summary: "perceptual compare with a pass verdict", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"path", "baseline"}},
 		{Name: "scenarios", Summary: "the saved playtest suite: name + valid per file", Tier: spec.ReadOnly, Idempotent: true},
+		{Name: "events", Summary: "a playtest's recorded events, filtered by kind", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"path"}},
 	}
 	return &spec.Spec{
 		Name: "analyze", Title: "Analyze results offline", Toolset: spec.Core, Offline: true, Timeout: sync20, Max: sync28, Ops: ops,
-		Description: "Score evidence offline.\n- rubric: re-score a playtest `timeline` → PASS|WARN|INSUFFICIENT_EVIDENCE|FAIL with frame evidence.\n- perf: CsvProfiler CSV → frame-time percentiles + hitches; .memreport → memory buckets.\n- image_diff: `path` vs `baseline` → hash distance, luma delta, pass.\n- scenarios: the saved playtest suite.",
+		Description: "Score evidence offline.\n- rubric: re-score a playtest `timeline` → a verdict with frame evidence.\n- perf: CsvProfiler CSV → frame-time percentiles + hitches; .memreport → memory buckets.\n- image_diff: `path` vs `baseline` → hash distance, luma delta, pass.\n- scenarios: the saved playtest suite.\n- events: a playtest_path's recorded events (`kinds`).",
 		Schema:      spec.SchemaFor[analyzeIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces:    []string{"playtest_evaluate", "perf_parse", "image_compare", "scenario_list"},
 		Handler:     analyze,
@@ -235,6 +237,8 @@ func analyze(_ context.Context, c *spec.Call) (*spec.Result, error) {
 		return nil, err
 	}
 	switch c.Op.Name {
+	case "events":
+		return playtestEvents(projectPath(c, in.Path), in.Kinds, 200)
 	case "scenarios":
 		dir := projectPath(c, in.Dir)
 		if dir == "" {

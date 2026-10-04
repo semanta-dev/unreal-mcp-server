@@ -205,7 +205,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Score evidence offline.\n- rubric: re-score a playtest `timeline` → PASS|WARN|INSUFFICIENT_EVIDENCE|FAIL with frame evidence.\n- perf: CsvProfiler CSV → frame-time percentiles + hitches; .memreport → memory buckets.\n- image_diff: `path` vs `baseline` → hash distance, luma delta, pass.\n- scenarios: the saved playtest suite.",
+      "description": "Score evidence offline.\n- rubric: re-score a playtest `timeline` → a verdict with frame evidence.\n- perf: CsvProfiler CSV → frame-time percentiles + hitches; .memreport → memory buckets.\n- image_diff: `path` vs `baseline` → hash distance, luma delta, pass.\n- scenarios: the saved playtest suite.\n- events: a playtest_path's recorded events (`kinds`).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -220,6 +220,13 @@
           "hitch_ms": {
             "description": "perf: hitch threshold in ms (default 33.3)",
             "type": "number"
+          },
+          "kinds": {
+            "description": "events: only these kinds",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "logs": {
             "additionalProperties": false,
@@ -255,7 +262,8 @@
               "rubric",
               "perf",
               "image_diff",
-              "scenarios"
+              "scenarios",
+              "events"
             ],
             "type": "string"
           },
@@ -510,7 +518,7 @@
             "type": "string"
           },
           "blueprints": {
-            "description": "search: Blueprints deriving the classes (a Blueprint's own class is Blueprint)",
+            "description": "search: Blueprints deriving the classes (not class Blueprint)",
             "type": "boolean"
           },
           "classes": {
@@ -627,7 +635,7 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Film the world: an in-editor recorder saves a frame + state every interval_s.\n- start → session.\n- status.\n- stop: ONE contact sheet + a timeline (world time, state, cell).\n- read: a past session or a `path` of frames.\n- clear: a session, or all=true (Saved/MCP/capture only).",
+      "description": "Film the world: an in-editor recorder saves a frame + state every interval_s.\n- start → session.\n- status.\n- stop: ONE contact sheet + a timeline (world time, state, cell).\n- read: a past session or a `path` of frames.\n- clear: a session or all=true.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2020,7 +2028,7 @@
             "type": "boolean"
           },
           "predicate": {
-            "description": "conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave \u003e= 2 and counts.Enemy \u003e= 1'; or an object path: '@subsystem:Class.Getter().field == 3' (BlueprintPure/const getters only)",
+            "description": "pie_observe paths with and/or/not, e.g. 'gamestate.wave \u003e= 2 and counts.Enemy \u003e= 1', or '@subsystem:Class.Getter().field == 3' (pure/const getters)",
             "type": "string"
           },
           "properties": {
@@ -2662,7 +2670,7 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Record and compare the editor level.\n- take: store `name` (default auto): every actor's path, class, tags, transform (+ `properties`).\n- diff: `name` vs `against` (default: now) → added, removed, moved, retagged, changed (by object path); unloaded World Partition actors are unknown, never removed.\n- list.\n- digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.\nPut back transforms and properties with snapshot_restore.",
+      "description": "Record and compare the editor level.\n- take: store `name` (default auto): every actor's path, class, tags, transform (+ `properties`).\n- diff: `name` vs `against` (default: now) → added, removed, moved, retagged, changed (by object path); unloaded World Partition actors count as unknown.\n- list.\n- digest: quantized SHA1 of actor or ISM/HISM instance transforms (scope); stores nothing.\nPut back transforms and properties with snapshot_restore.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2760,7 +2768,7 @@
         "idempotentHint": true,
         "openWorldHint": false
       },
-      "description": "Optional tool groups: enable one to get its tools.\n- design: design_audit (feel, decision, style… audits), design_explore\n- ui: widget_edit (author UMG trees)\n- desktop: desktop_capture, desktop_input (OS screen/input)\n- polyworld: polyworld, polyworld_demolish\n- headless: headless (commandlets, tests)\n- world: scene (declarative scenes; preview a layout's placements), scene_clear, world_query (traces, overlaps, nav)\n- game: game, game_command (the game's own API: state, gameplay events, commands; on with a .umcp.json game_api)\n- data: data_query, data_edit (asset properties, tables, curves, Blueprints, input, settings)\nops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).",
+      "description": "Optional tool groups: enable one to get its tools.\n- design: design_audit (feel, decision, style… audits), design_explore\n- ui: widget_edit (author UMG trees)\n- desktop: desktop_capture, desktop_input\n- polyworld: polyworld, polyworld_demolish\n- headless: headless (commandlets, tests)\n- world: scene (declarative scenes; preview a layout's placements), scene_clear, world_query (traces, overlaps, nav)\n- game: game, game_command (the game's own API: state, gameplay events, commands; on with a .umcp.json game_api)\n- data: data_query, data_edit (asset properties, tables, curves, Blueprints, input, settings)\nops: list | enable / disable `toolset` | describe `tool` (tiers, async, needs; none: the enabled tools).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

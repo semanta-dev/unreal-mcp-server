@@ -236,6 +236,11 @@ func opArgs(sp *spec.Spec, op spec.OpSpec, dir, png string) map[string]any {
 			args["key"] = "W"
 		}
 	case "analyze":
+		if op.Name == "events" {
+			pt := filepath.Join(dir, "playtest.json")
+			_ = os.WriteFile(pt, []byte(`{"events":[{"t":1,"kind":"hit","by_player":true}]}`), 0o644)
+			args["path"] = pt
+		}
 		if op.Name == "perf" {
 			csv := filepath.Join(dir, "perf.csv")
 			_ = os.WriteFile(csv, []byte("FrameTime\n16.6\n33.4\n"), 0o644)

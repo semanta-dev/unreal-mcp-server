@@ -487,3 +487,29 @@ func TestPieAimStopsWhenTheViewStopsResponding(t *testing.T) {
 		t.Fatalf("aim kept sending input (%d) to a view that does not turn", sent)
 	}
 }
+
+// analyze op=events reads a playtest's recorded events (the file or its capture folder),
+// filtered by kind, so judging a run needs no python (final eval aesir_player_damage).
+func TestAnalyzeEventsReadsAPlaytest(t *testing.T) {
+	h := startHarness(t, harnessOpts{noEditor: true, project: t.TempDir()})
+	dir := t.TempDir()
+	doc := `{"event_window":[0,30],"event_sources":{"engine":"recorded"},"events":[
+	 {"t":3,"kind":"damage","by_player":true,"target":"Enemy_1","data":{"damage":31.25}},
+	 {"t":1,"kind":"damage","by_player":true,"target":"Wall_East","data":{"damage":25}},
+	 {"t":2,"kind":"weapon_fire","by_player":true},
+	 {"t":4,"kind":"kill","by_player":true,"target":"Enemy_1"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "playtest.json"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := structured(t, h.call(t, "analyze", map[string]any{"op": "events", "path": dir, "kinds": []any{"damage", "kill"}}))
+	evs, _ := out["events"].([]any)
+	if out["matched"] != 3.0 || len(evs) != 3 || evs[0].(map[string]any)["target"] != "Wall_East" {
+		t.Fatalf("events = %v", out)
+	}
+	if c := out["counts"].(map[string]any); c["weapon_fire"] != 1.0 || c["damage"] != 2.0 {
+		t.Fatalf("counts = %v", c)
+	}
+	if e := errorOf(t, h.call(t, "analyze", map[string]any{"op": "events", "path": filepath.Join(dir, "nope.json")})); e["code"] != "NOT_FOUND" {
+		t.Fatalf("missing file = %v", e)
+	}
+}

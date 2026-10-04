@@ -102,7 +102,7 @@ type assetQueryIn struct {
 	Asset      string   `json:"asset,omitempty" jsonschema:"info/deps/tags/thumbnail: asset path, e.g. /Game/Meshes/SM_Rock"`
 	Folder     string   `json:"folder,omitempty" jsonschema:"list/search: content folder (default /Game)"`
 	Classes    []string `json:"classes,omitempty" jsonschema:"search: /Script/Module.Class paths (blueprints=true: the PARENT classes)"`
-	Blueprints bool     `json:"blueprints,omitempty" jsonschema:"search: Blueprints deriving the classes (a Blueprint's own class is Blueprint)"`
+	Blueprints bool     `json:"blueprints,omitempty" jsonschema:"search: Blueprints deriving the classes (not class Blueprint)"`
 	Recursive  *bool    `json:"recursive,omitempty" jsonschema:"list/search: include subfolders (default true)"`
 	Limit      int      `json:"limit,omitempty" jsonschema:"list/search: max results (default 200; total counts all)"`
 	Size       int      `json:"size,omitempty" jsonschema:"thumbnail: image size in pixels (default 512)"`

@@ -13,7 +13,9 @@ def _data_asset(args, kind=None):
     if obj is None:
         raise _V2Error("NOT_FOUND", "no asset %s" % path)
     if kind is not None and not isinstance(obj, kind):
-        raise _V2Error("BAD_VALUE", "%s is a %s, not a %s" % (path, obj.get_class().get_name(), kind.__name__))
+        hint = ("" if kind is not unreal.DataTable else
+                " (an asset's properties: read with reflect op=object actor=%s, change with data_edit op=set_properties)" % path)
+        raise _V2Error("BAD_VALUE", "%s is a %s, not a %s%s" % (path, obj.get_class().get_name(), kind.__name__, hint))
     return path, obj
 
 
