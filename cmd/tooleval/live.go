@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -1027,25 +1028,51 @@ func liveMain(ctx context.Context, cl *client, o liveOpts, tasks []*gameTask, ru
 		o.checkpoint[name] = tag
 		fmt.Fprintf(os.Stderr, "[live] %s baseline %s\n", name, tag)
 	}
-	var results []liveResult
-	spent := 0.0
+	// One queue per project: each project has its own editor, so the projects run side by
+	// side and a project's runs one at a time. The eval cap is shared.
+	var (
+		mu      sync.Mutex
+		results []liveResult
+		spent   float64
+		wg      sync.WaitGroup
+	)
+	byProject := map[string][]*gameTask{}
+	var order []string
 	for _, t := range tasks {
-		for run := 1; run <= runs; run++ {
-			var r liveResult
-			if evalCap > 0 && spent >= evalCap {
-				r = liveResult{Task: t.ID, Goal: t.Goal, HeldOut: t.HeldOut, Run: run, Model: o.model, Aborted: "eval_cap",
-					Failed: []string{"aborted: eval_cap"}}
-			} else {
-				r = runLive(ctx, cl, o, t, run, logf)
-			}
-			spent += r.CostUSD
-			results = append(results, r)
-			line, _ := json.Marshal(r)
-			fmt.Fprintln(rf, string(line))
-			fmt.Fprintf(os.Stderr, "[live %d] %s run%d pass=%v turns=%d python=%d $%.3f %s %s\n", len(results), t.ID, run, r.Pass,
-				r.Turns, r.PythonCalls, r.CostUSD, r.Aborted, truncate(strings.Join(r.Failed, "; "), 200))
+		if _, ok := byProject[t.Project]; !ok {
+			order = append(order, t.Project)
 		}
+		byProject[t.Project] = append(byProject[t.Project], t)
 	}
+	for _, name := range order {
+		wg.Add(1)
+		go func(queue []*gameTask) {
+			defer wg.Done()
+			for _, t := range queue {
+				for run := 1; run <= runs; run++ {
+					mu.Lock()
+					capped := evalCap > 0 && spent >= evalCap
+					mu.Unlock()
+					var r liveResult
+					if capped {
+						r = liveResult{Task: t.ID, Goal: t.Goal, HeldOut: t.HeldOut, Run: run, Model: o.model, Aborted: "eval_cap",
+							Failed: []string{"aborted: eval_cap"}}
+					} else {
+						r = runLive(ctx, cl, o, t, run, logf)
+					}
+					mu.Lock()
+					spent += r.CostUSD
+					results = append(results, r)
+					line, _ := json.Marshal(r)
+					fmt.Fprintln(rf, string(line))
+					fmt.Fprintf(os.Stderr, "[live %d] %s run%d pass=%v turns=%d python=%d $%.3f %s %s\n", len(results), t.ID, run, r.Pass,
+						r.Turns, r.PythonCalls, r.CostUSD, r.Aborted, truncate(strings.Join(r.Failed, "; "), 200))
+					mu.Unlock()
+				}
+			}
+		}(byProject[name])
+	}
+	wg.Wait()
 	report := liveReport(results, label, 20, 2)
 	must(os.WriteFile(filepath.Join(outDir, fmt.Sprintf("live-%s.md", stamp)), []byte(report), 0o644))
 	fmt.Println(report)
