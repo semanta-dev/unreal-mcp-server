@@ -262,7 +262,8 @@ def _op_data_set_properties(args):
     if args.get("dry_run"):
         known = {k: v for k, v in props.items() if k not in {u["property"] for u in unknown}}
         now = _read_back(obj, known)
-        return {"dry_run": True, "asset": path, "changes": {k: {"from": now.get(k), "to": v} for k, v in known.items()},
+        return {"dry_run": True, "asset": path,
+                "changes": {k: {"from": now.get(k), "to": v} for k, v in known.items() if not _same_json(now.get(k), v)},
                 "property_errors": unknown, "checked": "property names (a value of the wrong type shows only on the real call)"}
     with _transaction("MCP: set properties on " + path.rsplit("/", 1)[-1]):
         obj.modify()
@@ -357,7 +358,8 @@ def _op_data_add_variable(args):
     if taken:
         raise _V2Error("CONFLICT", "%s: %s" % (path, taken))
     if args.get("dry_run"):
-        return {"dry_run": True, "asset": path, "would_add": {"name": name, "type": pin.export_text()}}
+        return {"dry_run": True, "asset": path, "would_add": {"name": name, "type": pin.export_text()},
+                "checked": "name and type (a default value is checked only on the real call)"}
     before = {v.get("name") for v in json.loads(auth.describe_blueprint_json(bp, False)).get("variables") or []}
     if not L.add_member_variable(bp, unreal.Name(name), pin):
         raise _V2Error("EDITOR_ERROR", "%s could not add %s" % (path, name))
@@ -383,6 +385,16 @@ def _op_data_add_variable(args):
 
 
 _VALUE_TYPES = {"digital": "BOOLEAN", "bool": "BOOLEAN", "axis1d": "AXIS1D", "axis2d": "AXIS2D", "axis3d": "AXIS3D"}
+
+
+def _registry_class(path):
+    """The class name of the asset at a package path, from the asset registry (nothing is
+    loaded), or None when there is none."""
+    name = path.rsplit("/", 1)[-1]
+    for ad in unreal.AssetRegistryHelpers.get_asset_registry().get_assets_by_package_name(path) or []:
+        if str(ad.get_editor_property("asset_name")) == name:
+            return str(ad.get_editor_property("asset_class_path").get_editor_property("asset_name"))
+    return None
 
 
 def _input_asset(path, cls):
@@ -426,9 +438,15 @@ def _op_data_input_mapping(args):
     if vt is not None and vt not in _VALUE_TYPES:
         raise _V2Error("BAD_VALUE", "value_type must be one of %s (got %r)" % (", ".join(_VALUE_TYPES), vt))
     if args.get("dry_run"):
-        exists = unreal.EditorAssetLibrary.does_asset_exist
+        creates = []
+        for p, want in ((action_path, "InputAction"), (context_path, "InputMappingContext")):
+            have = _registry_class(p)
+            if have is None:
+                creates.append(p)
+            elif have != want:  # what the real call refuses
+                raise _V2Error("BAD_VALUE", "%s is a %s, not a %s" % (p, have, want))
         return {"dry_run": True, "action": action_path, "context": context_path, "keys": [str(k) for k in keys],
-                "creates": [p for p in (action_path, context_path) if not exists(p)]}
+                "creates": creates}
     action, made_action = _input_asset(action_path, unreal.InputAction)
     context, made_context = _input_asset(context_path, unreal.InputMappingContext)
     # MapKey / UnmapAllKeysFromAction do not mark the package: mark it, so it saves.

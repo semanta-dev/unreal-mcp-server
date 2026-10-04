@@ -5,7 +5,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Call a UFUNCTION on an actor in the running game (PIE) and return its result. With `until`, poll the function until a predicate over {result} holds → {met, result, elapsed_s, calls}; met=false on timeout is a normal outcome, not an error. The function runs again on every poll.",
+      "description": "Call a UFUNCTION on an actor in the running game (PIE) and return its result. With `until`, poll the function until a predicate over {result} holds → {met, result, elapsed_s, calls}; met=false on timeout is an answer; the function runs again on every poll.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -205,7 +205,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Score evidence offline.\n- rubric: re-score a playtest `timeline` → a verdict with frame evidence.\n- perf: CsvProfiler CSV → frame-time percentiles + hitches; .memreport → memory buckets.\n- image_diff: `path` vs `baseline` → hash distance, luma delta, pass.\n- scenarios: the saved playtest suite.",
+      "description": "Score evidence offline.\n- rubric: re-score a playtest `timeline` → PASS|WARN|INSUFFICIENT_EVIDENCE|FAIL with frame evidence.\n- perf: CsvProfiler CSV → frame-time percentiles + hitches; .memreport → memory buckets.\n- image_diff: `path` vs `baseline` → hash distance, luma delta, pass.\n- scenarios: the saved playtest suite.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1624,7 +1624,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Restore the project's files to a git op=checkpoint (umcp/cp/N only, else PRECONDITION): changed files are restored, files added since are deleted, untracked files are kept. History is kept (the revert is working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing via a backup in Saved/MCP/revert-backup. rebuild_required means C++ changed: run build.",
+      "description": "Restore the project's files to a git op=checkpoint (umcp/cp/N only, else PRECONDITION): changed files are restored, files added since are deleted, untracked files are kept. History is kept (the revert is working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing (a backup in Saved/MCP). rebuild_required means C++ changed: run build.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1751,10 +1751,10 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Open and save levels.\n- op=open: saves all dirty packages FIRST (save=false: never), then loads `level`.\n- op=save_all: saves every dirty package.\n- op=set_world_gamemode: sets the open level's GameMode override to `class` and saves.",
+      "description": "Open and save levels.\n- open: saves dirty packages first (save=false: refused if the level has unsaved changes), then loads `level`.\n- revert: reloads the level from disk, dropping its unsaved changes.\n- save_all.\n- set_world_gamemode: the open level's GameMode override = `class`; saves.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1763,19 +1763,20 @@
             "type": "string"
           },
           "level": {
-            "description": "open: level asset path, e.g. /Game/Maps/L_Arena",
+            "description": "level path, e.g. /Game/Maps/L_Arena (revert: default the open one)",
             "type": "string"
           },
           "op": {
             "enum": [
               "open",
               "save_all",
+              "revert",
               "set_world_gamemode"
             ],
             "type": "string"
           },
           "save": {
-            "description": "open: false = save nothing (refused while anything is unsaved)",
+            "description": "open: false = never save",
             "type": "boolean"
           }
         },
@@ -1853,7 +1854,7 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop; everything changed in the pie world is discarded.\n- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s (durations are game time: paused, they wait).\n- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate — your OS cursor is never moved or captured; the game's cursor stays there until action=release.\n- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the UnrealMCP plugin.",
+      "description": "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop (pie-world changes are discarded).\n- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s (hold/axis durations are game time: paused, they wait).\n- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate — your OS cursor is never moved; the game's cursor stays until action=release.\n- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the UnrealMCP plugin.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2639,7 +2640,7 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Record and compare the editor level (Saved/MCP/snapshots).\n- take: store `name` (default auto): every actor's path, class, tags, transform (+ `properties`).\n- diff: `name` vs `against` (default: now) → added, removed, moved, retagged (by object path); World Partition actors in unloaded cells are unknown, never removed.\n- list.\n- digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.\nUndo moves with snapshot_restore.",
+      "description": "Record and compare the editor level (Saved/MCP/snapshots).\n- take: store `name` (default auto): every actor's path, class, tags, transform (+ `properties`).\n- diff: `name` vs `against` (default: now) → added, removed, moved, retagged, changed (by object path); unloaded World Partition actors are unknown, never removed.\n- list.\n- digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.\nPut back transforms and properties with snapshot_restore.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2737,7 +2738,7 @@
         "idempotentHint": true,
         "openWorldHint": false
       },
-      "description": "Optional tool groups: enable one to get its tools.\n- design: design_audit (feel, decision, style… audits), design_explore\n- ui: widget_edit (author UMG trees)\n- desktop: desktop_capture, desktop_input (OS screen/input)\n- polyworld: polyworld, polyworld_demolish\n- headless: headless (commandlets, tests)\n- world: scene, scene_clear (declarative scenes), world_query (traces, overlaps, nav)\n- game: game, game_command (the game's own API; on when .umcp.json declares game_api)\n- data: data_query, data_edit (tables, curves, Blueprints, input, settings)\nops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).",
+      "description": "Optional tool groups: enable one to get its tools.\n- design: design_audit (feel, decision, style… audits), design_explore\n- ui: widget_edit (author UMG trees)\n- desktop: desktop_capture, desktop_input (OS screen/input)\n- polyworld: polyworld, polyworld_demolish\n- headless: headless (commandlets, tests)\n- world: scene, scene_clear (declarative scenes), world_query (traces, overlaps, nav)\n- game: game, game_command (the game's own API; on with a .umcp.json game_api)\n- data: data_query, data_edit (asset properties, tables, curves, Blueprints, input, settings)\nops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2957,7 +2958,7 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Inspect UMG widgets.\n- tree: a WidgetBlueprint's tree + digest.\n- describe: the palette, or one class's props and slot type.\n- render: a UserWidget class as a PNG (MCPAuthoring module).\nIn PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text; a HUD's bindings' state: path_unreadable = a typo, source_null = no source yet, e.g. before possession).",
+      "description": "Inspect UMG widgets.\n- tree: a WidgetBlueprint's tree + digest.\n- describe: the palette, or one class's props and slot type.\n- render: a UserWidget class as a PNG (MCPAuthoring module).\nIn PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport px, visibility, text; HUD bindings' state: path_unreadable = a typo, source_null = no source yet).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3033,7 +3034,7 @@
             "type": "string"
           },
           "object_types": {
-            "description": "sphere_overlap: world_static | world_dynamic | pawn | physics_body | vehicle | destructible (default: all)",
+            "description": "sphere_overlap: world_static | world_dynamic | pawn | physics_body | vehicle | destructible (default: these six) | object_type_query_N (a project channel)",
             "items": {
               "type": "string"
             },

@@ -73,3 +73,18 @@ func TestDryRunAndSaveFalseArgs(t *testing.T) {
 		}
 	}
 }
+
+// R6 review: diff against the level is lenient — deleting the only actor that had a
+// recorded property is "removed", not a refusal.
+func TestSnapshotDiffAfterTheOnlyHolderIsGone(t *testing.T) {
+	h := startHarness(t, harnessOpts{project: t.TempDir()})
+	h.world.AddActor("Turret", "Turret", [3]float64{}, map[string]any{"Health": 80.0})
+	h.world.AddActor("Rock", "StaticMeshActor", [3]float64{}, nil)
+	structured(t, h.call(t, "snapshot", map[string]any{"op": "take", "name": "s1", "properties": []any{"Health", "Health"}}))
+	structured(t, h.call(t, "actor_edit", map[string]any{"op": "delete", "world": "editor", "actor": "Turret"}))
+	out := structured(t, h.call(t, "snapshot", map[string]any{"op": "diff", "name": "s1"}))
+	d, _ := out["diff"].(map[string]any)
+	if rm, _ := d["removed"].([]any); len(rm) != 1 || !strings.Contains(fmt.Sprint(rm[0]), "Turret") {
+		t.Fatalf("diff = %v", out)
+	}
+}

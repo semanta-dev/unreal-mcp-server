@@ -220,7 +220,7 @@ func analyzeSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "analyze", Title: "Analyze results offline", Toolset: spec.Core, Offline: true, Timeout: sync20, Max: sync28, Ops: ops,
-		Description: "Score evidence offline.\n- rubric: re-score a playtest `timeline` → a verdict with frame evidence.\n- perf: CsvProfiler CSV → frame-time percentiles + hitches; .memreport → memory buckets.\n- image_diff: `path` vs `baseline` → hash distance, luma delta, pass.\n- scenarios: the saved playtest suite.",
+		Description: "Score evidence offline.\n- rubric: re-score a playtest `timeline` → PASS|WARN|INSUFFICIENT_EVIDENCE|FAIL with frame evidence.\n- perf: CsvProfiler CSV → frame-time percentiles + hitches; .memreport → memory buckets.\n- image_diff: `path` vs `baseline` → hash distance, luma delta, pass.\n- scenarios: the saved playtest suite.",
 		Schema:      spec.SchemaFor[analyzeIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces:    []string{"playtest_evaluate", "perf_parse", "image_compare", "scenario_list"},
 		Handler:     analyze,

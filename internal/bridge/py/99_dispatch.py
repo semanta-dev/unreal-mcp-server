@@ -27,6 +27,7 @@ _OPS = {
     "reflect": _op_reflect,
     "editor_status": _op_editor_status,
     "open_level": _op_open_level,
+    "level_revert": _op_level_revert,
     "save_all": _op_save_all,
     "list_assets": _op_list_assets,
     "import_assets": _op_import_assets,

@@ -327,23 +327,25 @@ func consoleSpec() *spec.Spec {
 
 type levelIn struct {
 	Op    string `json:"op" jsonschema:"open | save_all | set_world_gamemode"`
-	Level string `json:"level,omitempty" jsonschema:"open: level asset path, e.g. /Game/Maps/L_Arena"`
+	Level string `json:"level,omitempty" jsonschema:"level path, e.g. /Game/Maps/L_Arena (revert: default the open one)"`
 	Class string `json:"class,omitempty" jsonschema:"set_world_gamemode: the GameMode class"`
-	Save  *bool  `json:"save,omitempty" jsonschema:"open: false = save nothing (refused while anything is unsaved)"`
+	Save  *bool  `json:"save,omitempty" jsonschema:"open: false = never save"`
 }
 
 func levelSpec() *spec.Spec {
 	ops := []spec.OpSpec{
-		{Name: "open", Summary: "save dirty packages, then load the level", Tier: spec.Mutating, Timeout: sync25, Required: []string{"level"}, Reaches: []string{"open_level"}},
+		{Name: "open", Summary: "save dirty packages (save=false: refused instead), then load the level", Tier: spec.Mutating, Timeout: sync25, Required: []string{"level"}, Reaches: []string{"open_level"}},
 		{Name: "save_all", Summary: "save every dirty package", Tier: spec.Mutating, Timeout: sync25, Rejects: []string{"save"}, Reaches: []string{"save_all"}},
+		{Name: "revert", Summary: "reload the level from disk, DROPPING its unsaved changes", Tier: spec.Destructive, Timeout: sync25, Rejects: []string{"class", "save"}, Reaches: []string{"level_revert"}},
 		{Name: "set_world_gamemode", Summary: "set this level's WorldSettings GameMode override (saves)", Tier: spec.Mutating, Timeout: sync15, Required: []string{"class"}, Rejects: []string{"save"}, Reaches: []string{"set_world_gamemode"}},
 	}
 	return &spec.Spec{
 		Name: "level", Title: "Level", Toolset: spec.Core, Max: sync28, Ops: ops,
 		Description: "Open and save levels.\n" +
-			"- op=open: saves all dirty packages FIRST (save=false: never), then loads `level`.\n" +
-			"- op=save_all: saves every dirty package.\n" +
-			"- op=set_world_gamemode: sets the open level's GameMode override to `class` and saves.",
+			"- open: saves dirty packages first (save=false: refused if the level has unsaved changes), then loads `level`.\n" +
+			"- revert: reloads the level from disk, dropping its unsaved changes.\n" +
+			"- save_all.\n" +
+			"- set_world_gamemode: the open level's GameMode override = `class`; saves.",
 		Schema:   spec.SchemaFor[levelIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces: []string{"open_level", "save_all", "set_world_gamemode"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
@@ -362,6 +364,16 @@ func levelSpec() *spec.Spec {
 					return nil, withLog(envelope.New(envelope.OperationFailed, "could not load level %s", in.Level), out)
 				}
 				return &spec.Result{Data: out, Summary: "opened " + in.Level}, err
+			case "revert":
+				args := map[string]any{}
+				if in.Level != "" {
+					args["level_path"] = in.Level
+				}
+				out, err := v2Op(ctx, c, "level_revert", args)
+				if err != nil {
+					return nil, err
+				}
+				return &spec.Result{Data: out, Summary: fmt.Sprintf("reverted %v", out["reverted"])}, nil
 			case "save_all":
 				out, err := v2Op(ctx, c, "save_all", nil)
 				if err == nil && out["saved"] == false {
@@ -509,7 +521,7 @@ func actorCallSpec() *spec.Spec {
 		Ops: []spec.OpSpec{{Tier: spec.Exec, Required: []string{"actor", "function"}, Reaches: []string{"actor_call"}, Needs: []string{"pie"}}},
 		Description: "Call a UFUNCTION on an actor in the running game (PIE) and return its result. With `until`, " +
 			"poll the function until a predicate over {result} holds → {met, result, elapsed_s, calls}; met=false " +
-			"on timeout is a normal outcome, not an error. The function runs again on every poll.",
+			"on timeout is an answer; the function runs again on every poll.",
 		Schema:   spec.SchemaFor[actorCallIn](map[string][]any{"world": {"pie", "editor"}, "parse": {"json"}}, "actor", "function"),
 		Replaces: []string{"pie_exec", "pie_verify"},
 		Handler:  actorCall,

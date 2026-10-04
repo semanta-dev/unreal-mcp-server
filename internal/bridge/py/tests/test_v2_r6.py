@@ -35,11 +35,11 @@ def test_sphere_overlap_sees_every_object_type(v2, ue):
 
     ue.SystemLibrary.sphere_overlap_actors = overlap
     env = call(v2, "world_query", {"kind": "sphere_overlap", "center": [0, 0, 0], "world": "pie"})
-    r = env["result"] if "result" in env else env
+    r = env["result"]
     assert sorted(r["actors"]) == ["Hero", "Wall"] and asked[-1] == ["OT%d" % i for i in range(1, 7)], env
     assert {h["class"] for h in r["hits"]} >= {"Pawn"}
     env = call(v2, "world_query", {"kind": "sphere_overlap", "center": [0, 0, 0], "world": "pie", "object_types": ["pawn"]})
-    r = env["result"] if "result" in env else env
+    r = env["result"]
     assert r["actors"] == ["Hero"] and asked[-1] == ["OT3"], env
     env = call(v2, "world_query", {"kind": "sphere_overlap", "center": [0, 0, 0], "world": "pie", "object_types": ["pawns"]})
     assert env.get("code") == "BAD_VALUE" and "pawns" in env["error"], env
@@ -57,39 +57,112 @@ class EGait(EnumBase):
 EGait.RUN, EGait.WALK = EGait("RUN"), EGait("WALK")
 
 
-def test_snapshot_properties_round_trip(v2, ue):
-    # R6.1: a snapshot keeps chosen properties with their types; restore sets them back.
-    ue.EnumBase, ue.EGait = EnumBase, EGait
+class NameT(str):
+    """unreal.Name: a str subclass in name only."""
+
+
+class TextT(str):
+    pass
+
+
+class Struct:
+    FIELDS = ()
+
+    def __init__(self, **kw):
+        for f in self.FIELDS:
+            setattr(self, f, kw.get(f, 0.0))
+
+    def __eq__(self, o):
+        return type(o) is type(self) and all(getattr(o, f) == getattr(self, f) for f in self.FIELDS)
+
+
+class Color(Struct):
+    FIELDS = ("b", "g", "r", "a")  # stored B, G, R, A like FColor: built by name, never by position
+
+
+class LinearColor(Struct):
+    FIELDS = ("r", "g", "b", "a")
+
+
+@pytest.fixture
+def types(ue):
+    ue.EnumBase, ue.EGait, ue.Name, ue.Text, ue.Color, ue.LinearColor = EnumBase, EGait, NameT, TextT, Color, LinearColor
+    ue.Vector2D = type("Vector2D", (), {})
+    ue.pie_actors = None  # editor edits: no PIE
+    return ue
+
+
+def test_every_kept_type_round_trips(v2, types):
+    ue = types
+    target = ue.add_actor("/Script/Engine.Actor", "Target")
+    a = ue.add_actor("/Script/Engine.Actor", "Turret")
+    ue.classes[target.get_path_name()] = target  # load_object finds the level actor by path
+    vals = {"Health": 80.5, "Ammo": 7, "Seed": 2 ** 60 + 1, "bArmed": True, "Gait": EGait.RUN, "Tag": NameT("Boss"),
+            "Title": TextT("Gate"), "Note": "plain", "AimOffset": ue.Vector(1, 2, 3), "Facing": ue.Rotator(5, 10, 20),
+            "Tint": Color(r=255, g=128, b=0, a=255), "Glow": LinearColor(r=0.5, g=0.25, b=1.0, a=1.0), "Follow": target,
+            "Owner2": None}
+    a.props.update(vals)
+    res = call(v2, "snapshot_actors", {"properties": list(vals)})["result"]
+    assert res["property_errors"] == [] and res["properties_missing"] == [], res
+    props = {r["label"]: r for r in res["actors"]}["Turret"]["props"]
+    assert props["Seed"] == {"t": "int", "v": str(2 ** 60 + 1)} and props["Tag"]["t"] == "name" and props["Title"]["t"] == "text"
+    assert props["Tint"] == {"t": "Color", "v": [255, 128, 0, 255]} and props["Follow"] == {"t": "object", "v": target.get_path_name()}
+    for k in vals:  # the level changes everywhere
+        a.props[k] = None
+    out = call(v2, "snapshot_restore", {"name": "s", "actors": res["actors"], "save": False})["result"]
+    assert out["properties_restored"] == len(vals), out
+    for k, v in vals.items():
+        got = a.props[k]
+        if k == "Facing":
+            assert (got.pitch, got.yaw, got.roll) == (10, 20, 5)
+        elif k == "AimOffset":
+            assert (got.x, got.y, got.z) == (1, 2, 3)
+        else:
+            assert got == v and type(got) is type(v), (k, got, v)
+
+
+def test_take_refuses_what_would_not_come_back(v2, types):
+    ue = types
+    a = ue.add_actor("/Script/Engine.Actor", "Box")
+    a.props.update({"Weird": object(), "Bad": float("nan"), "Ghost": EGait("NOPE")})
+    ue.EGait.NOPE = None
+    res = call(v2, "snapshot_actors", {"properties": ["Weird", "Bad", "Ghost"]})["result"]
+    errs = {e["property"]: e["error"] for e in res["property_errors"]}
+    assert set(errs) == {"Weird", "Bad", "Ghost"} and "props" not in res["actors"][0], res
+    assert "finite" in errs["Bad"] and "Ghost" in errs
+    # A read that fails for another reason than "no such property" is an error, not a skip.
+    real = a.get_editor_property
+    a.get_editor_property = lambda k: (_ for _ in ()).throw(Exception("access denied")) if k == "Secret" else real(k)
+    res = call(v2, "snapshot_actors", {"properties": ["Secret"]})["result"]
+    assert res["property_errors"][0]["error"].startswith("unreadable") and res["properties_missing"] == [], res
+
+
+def test_restore_is_all_or_nothing(v2, types):
+    ue = types
     a = ue.add_actor("/Script/Engine.Actor", "Turret")
     b = ue.add_actor("/Script/Engine.Actor", "Wall")
-    a.props.update({"Health": 80.0, "bArmed": True, "Gait": EGait.RUN, "AimOffset": ue.Vector(1, 2, 3)})
+    a.props.update({"Health": 80.0, "bArmed": True})
     b.props.update({"Health": 500.0})
-    res = call(v2, "snapshot_actors", {"properties": ["Health", "bArmed", "Gait", "AimOffset", "Nope"]})["result"]
-    rows = {r["label"]: r for r in res["actors"]}
-    assert rows["Turret"]["props"]["Health"] == {"t": "float", "v": 80.0}
-    assert rows["Turret"]["props"]["Gait"] == {"t": "enum", "enum": "EGait", "v": "RUN"}
-    assert rows["Turret"]["props"]["AimOffset"] == {"t": "Vector", "v": [1.0, 2.0, 3.0]}
-    assert set(rows["Wall"]["props"]) == {"Health"} and res["properties_missing"] == ["Nope"], res
-    # The level changes; restore puts every recorded value back in the one transaction.
-    a.props.update({"Health": 5.0, "bArmed": False, "Gait": EGait.WALK, "AimOffset": ue.Vector(0, 0, 0)})
+    snap = call(v2, "snapshot_actors", {"properties": ["Health", "bArmed"]})["result"]["actors"]
+    a.props.update({"Health": 5.0, "bArmed": False})
     b.props["Health"] = 1.0
-    out = call(v2, "snapshot_restore", {"name": "s", "actors": res["actors"], "save": False})["result"]
-    assert out["properties_restored"] == 5 and "property_errors" not in out, out
-    assert a.props["Health"] == 80.0 and a.props["bArmed"] is True and a.props["Gait"] is EGait.RUN and b.props["Health"] == 500.0
-    assert (a.props["AimOffset"].x, a.props["AimOffset"].z) == (1.0, 3.0)
-    # A value that cannot be set back is reported, the others still restored.
-    a.readonly.add("bArmed")
-    a.props["bArmed"] = False
-    out = call(v2, "snapshot_restore", {"name": "s", "actors": res["actors"], "save": False})["result"]
-    assert out["property_errors"][0]["property"] == "bArmed" and out["properties_restored"] == 4, out
+    a.loc = ue.Vector(9, 9, 9)
+    # A value the engine refuses to set (read-only): everything this restore did is put back.
+    b.readonly.add("Health")
+    env = call(v2, "snapshot_restore", {"name": "s", "actors": snap})
+    assert env["code"] == "EDITOR_ERROR" and "nothing was restored" in env["error"], env
+    assert a.props == {"Health": 5.0, "bArmed": False} and (a.loc.x, a.loc.y) == (9, 9) and b.props["Health"] == 1.0
+    # A stored value that cannot be rebuilt now (its object is gone): refused before any change.
+    b.readonly.clear()
+    snap[0]["props"]["Health"] = {"t": "object", "v": "/Game/Gone.Gone"}
+    env = call(v2, "snapshot_restore", {"name": "s", "actors": snap})
+    assert env["code"] == "PRECONDITION" and env["details"]["property_errors"][0]["property"] == "Health", env
+    assert a.props["Health"] == 5.0 and a.modified == 1  # only the failed transaction above touched it
 
 
-def test_snapshot_refuses_a_type_it_cannot_restore(v2, ue):
-    a = ue.add_actor("/Script/Engine.Actor", "Box")
-    a.props["Weird"] = object()
-    res = call(v2, "snapshot_actors", {"properties": ["Weird"]})["result"]
-    assert res["property_errors"][0]["property"] == "Weird" and "cannot be restored" in res["property_errors"][0]["error"]
-    assert "props" not in res["actors"][0]
+def test_restore_refused_during_pie(v2, ue):
+    ue.pie_actors = []
+    assert call(v2, "snapshot_restore", {"name": "s", "actors": []})["code"] == "PRECONDITION"
 
 
 def test_open_level_save_false_never_saves_or_asks(v2, ue):
@@ -116,3 +189,42 @@ def test_a_dry_run_is_not_an_edit(v2, ue):
     assert m._MCP_EDITS == []
     m._note_op("asset_create", {})
     assert m._MCP_EDITS == [("untracked", "asset_create")]
+
+
+def test_level_revert_drops_unsaved_changes_of_a_saved_level(v2, ue):
+    ue.pie_actors = None
+    loaded = []
+    ue.EditorLoadingAndSavingUtils = _NS(get_dirty_map_packages=lambda: [_NS(get_name=lambda: "/Game/Maps/L_Arena")],
+                                         get_dirty_content_packages=lambda: [_NS(get_name=lambda: "/Game/Data/DA_X")])
+    ue.LevelEditorSubsystem, ue.UnrealEditorSubsystem = "LES", "UES"
+    real = ue.get_editor_subsystem
+    world = _NS(get_path_name=lambda: "/Game/Maps/L_Arena.L_Arena")
+    ues = _NS(get_editor_world=lambda: world, get_game_world=lambda: "PIE" if ue.pie_actors is not None else None)
+    ue.get_editor_subsystem = lambda c: (_NS(load_level=lambda p: loaded.append(p) or True) if c == "LES"
+                                         else ues if c == "UES" else real(c))
+    ue.EditorAssetLibrary.does_asset_exist = lambda p: p == "/Game/Maps/L_Arena"
+    env = call(v2, "level_revert", {})
+    assert env["ok"] and loaded == ["/Game/Maps/L_Arena"] and env["result"]["discarded"] == ["/Game/Maps/L_Arena"], env
+    assert env["result"]["content_unsaved"] == ["/Game/Data/DA_X"]
+    # A level never saved has nothing on disk to go back to.
+    world = _NS(get_path_name=lambda: "/Temp/Untitled_1.Untitled_1")
+    assert call(v2, "level_revert", {})["code"] == "PRECONDITION" and loaded == ["/Game/Maps/L_Arena"]
+    ue.pie_actors = []
+    assert call(v2, "level_revert", {"level_path": "/Game/Maps/L_Arena"})["code"] == "PRECONDITION"
+
+
+def test_sphere_overlap_takes_a_project_channel(v2, ue):
+    ue.ObjectTypeQuery = _NS(**{"OBJECT_TYPE_QUERY%d" % i: "OT%d" % i for i in range(1, 33)})
+    asked = []
+    ue.SystemLibrary.sphere_overlap_actors = lambda w, c, r, types, cls, ig: asked.append(list(types)) or []
+    env = call(v2, "world_query", {"kind": "sphere_overlap", "center": [0, 0, 0], "world": "pie", "object_types": ["pawn", "object_type_query_9"]})
+    assert env["ok"] and asked[-1] == ["OT3", "OT9"], env
+    assert call(v2, "world_query", {"kind": "sphere_overlap", "center": [0, 0, 0], "world": "pie",
+                                    "object_types": ["object_type_query_40"]})["code"] == "BAD_VALUE"
+
+
+def test_only_implemented_dry_runs_skip_the_journal(v2, ue):
+    m = v2["_mcp2"]
+    del m._MCP_EDITS[:]
+    m._note_op("widget_compose", {"dry_run": True})  # does not implement dry_run: a real edit
+    assert m._MCP_EDITS == [("untracked", "widget_compose")]

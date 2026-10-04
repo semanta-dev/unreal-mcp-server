@@ -41,6 +41,7 @@ type File struct {
 	ClassFilter    string    `json:"class_filter,omitempty"` // only actors whose class/label contain this
 	Unloaded       []string  `json:"unloaded,omitempty"`     // WP: known but not loaded when taken (any filter)
 	Properties     []string  `json:"properties,omitempty"`   // the properties recorded (Actor.Props)
+	PIERunning     bool      `json:"pie_running,omitempty"`  // taken while PIE ran (it is still the editor level)
 	Actors         []Actor   `json:"actors"`
 }
 
@@ -157,10 +158,10 @@ type Change struct {
 
 // DiffResult is the change from snapshot A to B.
 type DiffResult struct {
-	Added    []Ref   `json:"added"`
-	Removed  []Ref   `json:"removed"`
-	Moved    []Move  `json:"moved"`
-	Retagged []Retag `json:"retagged"`
+	Added    []Ref    `json:"added"`
+	Removed  []Ref    `json:"removed"`
+	Moved    []Move   `json:"moved"`
+	Retagged []Retag  `json:"retagged"`
 	Changed  []Change `json:"changed"` // recorded properties (File.Properties)
 	// Unknown are actors present in one snapshot whose counterpart was in an unloaded
 	// World Partition cell of the other: they may or may not still exist.

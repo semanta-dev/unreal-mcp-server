@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -83,11 +84,11 @@ func pieSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "pie", Title: "Play In Editor", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
-		Description: "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop; everything changed in the pie world is discarded.\n" +
+		Description: "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop (pie-world changes are discarded).\n" +
 			"- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s " +
-			"(durations are game time: paused, they wait).\n" +
-			"- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate — your OS cursor is never moved or captured; " +
-			"the game's cursor stays there until action=release.\n" +
+			"(hold/axis durations are game time: paused, they wait).\n" +
+			"- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate — your OS cursor is never moved; " +
+			"the game's cursor stays until action=release.\n" +
 			"- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the UnrealMCP plugin.",
 		Schema: spec.SchemaFor[pieIn](map[string][]any{"op": spec.OpEnum(ops...),
 			"action": {"tap", "press", "release", "hold", "axis", "release_all", "move", "click", "drag"}}, "op"),
@@ -520,7 +521,7 @@ type worldQueryIn struct {
 	End    []float64 `json:"end,omitempty" jsonschema:"line_trace/nav_path: [x, y, z]"`
 	Center []float64 `json:"center,omitempty" jsonschema:"sphere_overlap: [x, y, z]"`
 	Radius float64   `json:"radius,omitempty" jsonschema:"sphere_overlap: radius (default 100)"`
-	Types  []string  `json:"object_types,omitempty" jsonschema:"sphere_overlap: world_static | world_dynamic | pawn | physics_body | vehicle | destructible (default: all)"`
+	Types  []string  `json:"object_types,omitempty" jsonschema:"sphere_overlap: world_static | world_dynamic | pawn | physics_body | vehicle | destructible (default: these six) | object_type_query_N (a project channel)"`
 	Point  []float64 `json:"point,omitempty" jsonschema:"project_point: [x, y, z]"`
 	Tag    string    `json:"tag,omitempty" jsonschema:"instances_*: only ISM/HISM components with this component tag"`
 	Mesh   string    `json:"mesh,omitempty" jsonschema:"instances_*: only components whose mesh path contains this"`
@@ -604,7 +605,7 @@ func snapshotSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "snapshot", Title: "Level snapshots", Toolset: spec.Core, Timeout: sync25, Max: sync28, Ops: ops,
-		Description: "Record and compare the editor level (Saved/MCP/snapshots).\n- take: store `name` (default auto): every actor's path, class, tags, transform (+ `properties`).\n- diff: `name` vs `against` (default: now) → added, removed, moved, retagged (by object path); World Partition actors in unloaded cells are unknown, never removed.\n- list.\n- digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.\nUndo moves with snapshot_restore.",
+		Description: "Record and compare the editor level (Saved/MCP/snapshots).\n- take: store `name` (default auto): every actor's path, class, tags, transform (+ `properties`).\n- diff: `name` vs `against` (default: now) → added, removed, moved, retagged, changed (by object path); unloaded World Partition actors are unknown, never removed.\n- list.\n- digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.\nPut back transforms and properties with snapshot_restore.",
 		Schema:      spec.SchemaFor[snapshotIn](map[string][]any{"op": spec.OpEnum(ops...), "scope": {"instances", "actors"}}, "op"),
 		Replaces:    []string{"level_snapshot", "level_diff", "scene_snapshot", "scene_digest"},
 		Handler:     snapshotHandler,
@@ -612,9 +613,10 @@ func snapshotSpec() *spec.Spec {
 }
 
 // currentSnapshot asks the editor for its actors (and the given properties) as a
-// snapshot.File. A property no actor in scope has, or one whose type cannot be
-// restored, is an error: a snapshot never silently records less than asked.
-func currentSnapshot(ctx context.Context, c *spec.Call, name, classFilter string, properties []string) (*snapshot.File, error) {
+// snapshot.File. strict (a take): a property no actor in scope has, or a value that
+// cannot be restored, is an error — a snapshot never records less than asked. A diff is
+// lenient: the level may have lost a property's holders since.
+func currentSnapshot(ctx context.Context, c *spec.Call, name, classFilter string, properties []string, strict bool) (*snapshot.File, error) {
 	b, err := v2Bridge(c)
 	if err != nil {
 		return nil, err
@@ -636,6 +638,9 @@ func currentSnapshot(ctx context.Context, c *spec.Call, name, classFilter string
 		Errors  []map[string]any `json:"property_errors"`
 	}
 	_ = json.Unmarshal(raw, &extra)
+	if !strict {
+		return f, nil
+	}
 	if len(extra.Missing) > 0 {
 		return nil, envelope.New(envelope.InvalidArgument, "no actor in scope has %s (reflected names, e.g. Health or bHidden)", strings.Join(extra.Missing, ", ")).
 			WithDetail("missing", extra.Missing)
@@ -645,6 +650,13 @@ func currentSnapshot(ctx context.Context, c *spec.Call, name, classFilter string
 			WithDetail("property_errors", extra.Errors)
 	}
 	return f, nil
+}
+
+// normProps sorts and de-duplicates a take's properties (two snapshots of the same set compare).
+func normProps(ps []string) []string {
+	out := slices.Clone(ps)
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 func snapshotName(s string) (string, error) {
@@ -689,7 +701,7 @@ func snapshotHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		if err != nil {
 			return nil, err
 		}
-		f, err := currentSnapshot(ctx, c, name, in.ClassFilter, in.Properties)
+		f, err := currentSnapshot(ctx, c, name, in.ClassFilter, normProps(in.Properties), true)
 		if err != nil {
 			return nil, err
 		}
@@ -697,7 +709,11 @@ func snapshotHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &spec.Result{Data: map[string]any{"name": name, "file": filepath.ToSlash(p), "actors": len(f.Actors), "world_partition": f.WorldPartition},
+		data := map[string]any{"name": name, "file": filepath.ToSlash(p), "actors": len(f.Actors), "world_partition": f.WorldPartition}
+		if f.PIERunning {
+			data["note"] = "PIE is running: this is the editor level, not the game being played"
+		}
+		return &spec.Result{Data: data,
 			Summary: fmt.Sprintf("snapshot %s: %d actors", name, len(f.Actors))}, nil
 	}
 	// diff
@@ -726,7 +742,7 @@ func snapshotHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			return nil, envelope.New(envelope.InvalidArgument, "%s recorded properties %v and %s %v; they cannot be compared",
 				name, a.Properties, against, b.Properties)
 		}
-	} else if b, err = currentSnapshot(ctx, c, "current", a.ClassFilter, a.Properties); err != nil { // compare like with like
+	} else if b, err = currentSnapshot(ctx, c, "current", a.ClassFilter, a.Properties, false); err != nil { // compare like with like
 		return nil, err
 	}
 	d := snapshot.Diff(a, b)
@@ -738,7 +754,7 @@ func snapshotDigest(ctx context.Context, c *spec.Call, in snapshotIn) (*spec.Res
 	scope := orStr(in.Scope, "instances")
 	var items []snapshot.Transform
 	if scope == "actors" {
-		f, err := currentSnapshot(ctx, c, "digest", in.ClassFilter, nil)
+		f, err := currentSnapshot(ctx, c, "digest", in.ClassFilter, nil, false)
 		if err != nil {
 			return nil, err
 		}

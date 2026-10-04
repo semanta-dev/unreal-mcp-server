@@ -547,7 +547,7 @@ func gitRevertSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "git_revert", Title: "Revert to a checkpoint", Toolset: spec.Core, Timeout: sync20, Max: sync28,
 		Ops:         []spec.OpSpec{{Tier: spec.Destructive, Async: true, Required: []string{"to"}, Reaches: []string{"packages_state", "pie_stop", "editor_ping", "quit_editor"}, Needs: []string{"project"}}},
-		Description: "Restore the project's files to a git op=checkpoint (umcp/cp/N only, else PRECONDITION): changed files are restored, files added since are deleted, untracked files are kept. History is kept (the revert is working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing via a backup in Saved/MCP/revert-backup. rebuild_required means C++ changed: run build.",
+		Description: "Restore the project's files to a git op=checkpoint (umcp/cp/N only, else PRECONDITION): changed files are restored, files added since are deleted, untracked files are kept. History is kept (the revert is working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing (a backup in Saved/MCP). rebuild_required means C++ changed: run build.",
 		Schema:      spec.SchemaFor[gitRevertIn](nil, "to"),
 		Replaces:    []string{"git_revert_to"},
 		Handler:     gitRevert,

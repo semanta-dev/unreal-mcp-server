@@ -137,7 +137,8 @@ class Actor(Object):
         if k == "root_component":
             return self.root
         if k not in self.props:
-            raise Exception("no property %s" % k)
+            # UE 5.7's message for a name the class does not have.
+            raise Exception("Failed to find property '%s' for attribute '%s' on '%s'" % (k, k, self._cls.get_name()))
         return self.props[k]
 
     def set_editor_property(self, k, v):
@@ -171,17 +172,22 @@ class _Tx:
     drop_next = False  # model UE dropping a transaction that changed nothing
 
     def __init__(self, label):
-        self.label = label
+        self.label, self.cancelled = label, False
 
     def __enter__(self):
         _Tx.log.append(("begin", self.label))
         return self
 
+    def cancel(self):
+        # ScopedEditorTransaction.cancel: the transaction is not kept as an undo step.
+        self.cancelled = True
+        _Tx.log.append(("cancel", self.label))
+
     def __exit__(self, *exc):
         _Tx.log.append(("end", self.label))
         if _Tx.drop_next:
             _Tx.drop_next = False
-        else:
+        elif not self.cancelled:
             _Tx.kept.append(self.label)
         return False
 

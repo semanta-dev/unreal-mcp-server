@@ -294,8 +294,19 @@ def test_asset_create_dry_run_validates_and_creates_nothing(v2, ue):
     made = []
     m._ASSET_KINDS["blueprint"] = lambda args, dest: (lambda: made.append(dest) or {"created": dest})
     ue.assets["/Game/BP/BP_A"] = object()
+    ue.EditorAssetLibrary.find_package_referencers_for_asset = lambda p, load: ["/Game/Maps/L_Arena"]
     res = ok(v2, "asset_create", {"kind": "blueprint", "dest": "/Game/BP/BP_A", "class": "Actor", "replace": True, "dry_run": True})
-    assert res == {"dry_run": True, "asset": "/Game/BP/BP_A", "kind": "blueprint", "would": "replace"} and made == [] and ue.deleted == []
+    assert res["would"] == "replace" and res["referencers"] == ["/Game/Maps/L_Arena"] and "unchecked" in res["delete"], res
+    assert made == [] and ue.deleted == []
     res = ok(v2, "asset_create", {"kind": "blueprint", "dest": "/Game/BP/BP_New", "class": "Actor", "dry_run": True})
     assert res["would"] == "create" and made == []
     assert err(v2, "asset_create", {"kind": "blueprint", "dest": "/Game/BP/BP_A", "class": "Actor", "dry_run": True})["code"] == "CONFLICT"
+
+
+
+def test_asset_create_checks_the_kinds_class(v2, ue):
+    # A data asset of an Actor class, a widget Blueprint of a non-widget parent: refused up front.
+    e = err(v2, "asset_create", {"kind": "data_asset", "dest": "/Game/D/DA_X", "class": "Actor", "dry_run": True})
+    assert e["code"] == "BAD_VALUE" and "DataAsset" in e["error"], e
+    e = err(v2, "asset_create", {"kind": "widget_blueprint", "dest": "/Game/UI/WBP_X", "class": "Actor", "dry_run": True})
+    assert e["code"] == "BAD_VALUE" and "UserWidget" in e["error"], e

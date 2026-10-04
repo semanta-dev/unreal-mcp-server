@@ -490,6 +490,9 @@ _MCP_REDO = []
 _UNTRACKED_EDIT_OPS = frozenset(("asset_create", "asset_edit", "asset_reimport", "import_assets", "datatable_import",
                                  "widget_compose", "widget_compile", "set_world_gamemode", "live_coding_compile",
                                  "data_add_variable", "data_input_mapping", "data_set_settings", "widget_bind"))
+# The ops whose dry_run is implemented (an op that ignored the flag would edit unjournaled).
+_DRY_RUN_OPS = frozenset(("asset_create", "data_set_properties", "data_table_upsert", "data_table_delete",
+                          "data_add_variable", "data_input_mapping"))
 _UNTRACKED_WORLD_OPS = frozenset(("company_build", "company_road", "company_demolish", "company_select", "console",
                                   "apply_level_recipe"))
 
@@ -502,10 +505,10 @@ def _note_edit(kind, what):
 
 def _note_op(op, args):
     """Record a successful op in the edit journal (called by the dispatcher)."""
-    if op == "open_level":
+    if op in ("open_level", "level_revert"):
         del _MCP_EDITS[:]  # a new map starts a new undo buffer
         del _MCP_REDO[:]
-    elif args.get("dry_run"):
+    elif args.get("dry_run") and op in _DRY_RUN_OPS:
         pass  # checked, changed nothing
     elif op in _UNTRACKED_EDIT_OPS or (op in _UNTRACKED_WORLD_OPS and not _pie_running()):
         _note_edit("untracked", op)

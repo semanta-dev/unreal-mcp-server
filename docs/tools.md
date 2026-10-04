@@ -8,7 +8,7 @@
 
 **Needs**: every tool needs a live editor unless marked offline; ops may also need `pie` (a running play session), `plugin` (the UnrealMCP C++ plugin), `navmesh`, `project` (a configured project directory) or `engine`.
 
-**Rollback ladder**: `snapshot_restore` (transforms) → `scene_clear` (toolset `world`; a scene's actors) → `git_revert` (files, to a `git op=checkpoint`).
+**Rollback ladder**: `snapshot_restore` (transforms + recorded properties) / `level op=revert` (unsaved level changes) → `scene_clear` (toolset `world`; a scene's actors) → `git_revert` (files, to a `git op=checkpoint`).
 
 | Toolset | Tools |
 |---|---|
@@ -86,25 +86,27 @@ Run an Unreal console command. world=editor (default): editor context (viewport/
 
 ### `level` — Level
 
-_tier mutating_
+_tier destructive_
 
 Open and save levels.
-- op=open: saves all dirty packages FIRST (save=false: never), then loads `level`.
-- op=save_all: saves every dirty package.
-- op=set_world_gamemode: sets the open level's GameMode override to `class` and saves.
+- open: saves dirty packages first (save=false: refused if the level has unsaved changes), then loads `level`.
+- revert: reloads the level from disk, dropping its unsaved changes.
+- save_all.
+- set_world_gamemode: the open level's GameMode override = `class`; saves.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
-| `open` | mutating | save dirty packages, then load the level | level | editor |
+| `open` | mutating | save dirty packages (save=false: refused instead), then load the level | level | editor |
 | `save_all` | mutating | save every dirty package |  | editor |
+| `revert` | destructive | reload the level from disk, DROPPING its unsaved changes |  | editor |
 | `set_world_gamemode` | mutating | set this level's WorldSettings GameMode override (saves) | class | editor |
 
 | param | type | description |
 |---|---|---|
 | `class` | string | set_world_gamemode: the GameMode class |
-| `level` | string | open: level asset path, e.g. /Game/Maps/L_Arena |
-| `op` | string | one of: open, save_all, set_world_gamemode |
-| `save` | boolean | open: false = save nothing (refused while anything is unsaved) |
+| `level` | string | level path, e.g. /Game/Maps/L_Arena (revert: default the open one) |
+| `op` | string | one of: open, save_all, revert, set_world_gamemode |
+| `save` | boolean | open: false = never save |
 
 ### `actor_query` — Find actors
 
@@ -164,7 +166,7 @@ spawn, delete, transform, set_properties: both worlds (pie spawn: plugin API 5);
 
 _tier exec_
 
-Call a UFUNCTION on an actor in the running game (PIE) and return its result. With `until`, poll the function until a predicate over {result} holds → {met, result, elapsed_s, calls}; met=false on timeout is a normal outcome, not an error. The function runs again on every poll.
+Call a UFUNCTION on an actor in the running game (PIE) and return its result. With `until`, poll the function until a predicate over {result} holds → {met, result, elapsed_s, calls}; met=false on timeout is an answer; the function runs again on every poll.
 
 | tier | required | needs |
 |---|---|---|
@@ -418,7 +420,7 @@ Inspect UMG widgets.
 - tree: a WidgetBlueprint's tree + digest.
 - describe: the palette, or one class's props and slot type.
 - render: a UserWidget class as a PNG (MCPAuthoring module).
-In PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text; a HUD's bindings' state: path_unreadable = a typo, source_null = no source yet, e.g. before possession).
+In PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport px, visibility, text; HUD bindings' state: path_unreadable = a typo, source_null = no source yet).
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -444,9 +446,9 @@ _tier ephemeral_
 
 Play In Editor.
 - start (simulate=true: no player); waits until running.
-- stop; everything changed in the pie world is discarded.
-- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s (durations are game time: paused, they wait).
-- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate — your OS cursor is never moved or captured; the game's cursor stays there until action=release.
+- stop (pie-world changes are discarded).
+- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s (hold/axis durations are game time: paused, they wait).
+- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate — your OS cursor is never moved; the game's cursor stays until action=release.
 - ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the UnrealMCP plugin.
 
 | op | tier | does | required | needs |
@@ -517,10 +519,10 @@ _tier ephemeral_
 
 Record and compare the editor level (Saved/MCP/snapshots).
 - take: store `name` (default auto): every actor's path, class, tags, transform (+ `properties`).
-- diff: `name` vs `against` (default: now) → added, removed, moved, retagged (by object path); World Partition actors in unloaded cells are unknown, never removed.
+- diff: `name` vs `against` (default: now) → added, removed, moved, retagged, changed (by object path); unloaded World Partition actors are unknown, never removed.
 - list.
 - digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.
-Undo moves with snapshot_restore.
+Put back transforms and properties with snapshot_restore.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -714,7 +716,7 @@ Read the editor log files (works while the editor is busy or gone).
 _tier readonly · offline_
 
 Score evidence offline.
-- rubric: re-score a playtest `timeline` → a verdict with frame evidence.
+- rubric: re-score a playtest `timeline` → PASS|WARN|INSUFFICIENT_EVIDENCE|FAIL with frame evidence.
 - perf: CsvProfiler CSV → frame-time percentiles + hitches; .memreport → memory buckets.
 - image_diff: `path` vs `baseline` → hash distance, luma delta, pass.
 - scenarios: the saved playtest suite.
@@ -831,7 +833,7 @@ Compile the project's C++ (async job). strategy=auto picks from the git diff: he
 
 _tier destructive_
 
-Restore the project's files to a git op=checkpoint (umcp/cp/N only, else PRECONDITION): changed files are restored, files added since are deleted, untracked files are kept. History is kept (the revert is working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing via a backup in Saved/MCP/revert-backup. rebuild_required means C++ changed: run build.
+Restore the project's files to a git op=checkpoint (umcp/cp/N only, else PRECONDITION): changed files are restored, files added since are deleted, untracked files are kept. History is kept (the revert is working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing (a backup in Saved/MCP). rebuild_required means C++ changed: run build.
 
 | tier | required | needs |
 |---|---|---|
@@ -855,8 +857,8 @@ Optional tool groups: enable one to get its tools.
 - polyworld: polyworld, polyworld_demolish
 - headless: headless (commandlets, tests)
 - world: scene, scene_clear (declarative scenes), world_query (traces, overlaps, nav)
-- game: game, game_command (the game's own API; on when .umcp.json declares game_api)
-- data: data_query, data_edit (tables, curves, Blueprints, input, settings)
+- game: game, game_command (the game's own API; on with a .umcp.json game_api)
+- data: data_query, data_edit (asset properties, tables, curves, Blueprints, input, settings)
 ops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).
 
 | op | tier | does | required | needs |
@@ -1135,7 +1137,7 @@ Spatial questions (world=editor default, pie, auto; results echo it).
 | `end` | number[] | line_trace/nav_path: [x, y, z] |
 | `limit` | integer | instances_list: max instances (default 8192; truncated:true when cut) |
 | `mesh` | string | instances_*: only components whose mesh path contains this |
-| `object_types` | string[] | sphere_overlap: world_static \| world_dynamic \| pawn \| physics_body \| vehicle \| destructible (default: all) |
+| `object_types` | string[] | sphere_overlap: world_static \| world_dynamic \| pawn \| physics_body \| vehicle \| destructible (default: these six) \| object_type_query_N (a project channel) |
 | `op` | string | one of: line_trace, sphere_overlap, nav_path, project_point, instances_count, instances_list |
 | `point` | number[] | project_point: [x, y, z] |
 | `radius` | number | sphere_overlap: radius (default 100) |

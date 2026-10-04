@@ -27,6 +27,14 @@ func (w *World) Move(label string, loc [3]float64) {
 
 func (w *World) installPlay(e *Emulator) {
 	e.Handle("pie_preflight", func(map[string]any) (any, *OpError) { return map[string]any{}, nil })
+	e.Handle("level_revert", func(map[string]any) (any, *OpError) {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		if w.pie != nil {
+			return nil, &OpError{Code: "PRECONDITION", Message: "stop PIE first (reverting the level would end it)"}
+		}
+		return map[string]any{"reverted": w.level, "discarded": []any{}, "content_unsaved": []any{}}, nil
+	})
 	e.Handle("pie_start", func(map[string]any) (any, *OpError) {
 		w.StartPIE()
 		return map[string]any{"pie": "starting"}, nil

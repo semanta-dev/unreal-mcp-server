@@ -30,8 +30,18 @@ def _prep_blueprint(args, dest):
     return lambda: _op_blueprint_create({"parent_class_path": parent, "dest": dest})
 
 
+def _child_of(ref, base, what):
+    """The resolved class, refused unless it derives from unreal.<base> (a dry run says what
+    the real call would refuse)."""
+    cls = _resolve_class_v2(ref)
+    parent = getattr(unreal, base, None)
+    if parent is None or not unreal.MathLibrary.class_is_child_of(cls, parent):
+        raise _V2Error("BAD_VALUE", "%s is not a %s (%s)" % (cls.get_name(), base, what))
+    return cls.get_path_name()
+
+
 def _prep_data_asset(args, dest):
-    cls = _class_path(args.get("class"))
+    cls = _child_of(args.get("class"), "DataAsset", "kind=data_asset takes a DataAsset class")
     return lambda: _op_dataasset_create({"class": cls, "dest": dest})
 
 
@@ -40,6 +50,8 @@ def _prep_data_table(args, dest):
     struct = unreal.load_object(None, rs) if rs.startswith("/Script/") else unreal.load_asset(rs) if rs else None
     if not struct:
         raise _V2Error("NOT_FOUND", "kind=data_table needs a loadable row_struct (got %r)" % (rs,))
+    if not isinstance(struct, unreal.ScriptStruct):
+        raise _V2Error("BAD_VALUE", "row_struct %s is a %s, not a struct" % (rs, type(struct).__name__))
     return lambda: _op_datatable_create({"row_struct": rs, "dest": dest})
 
 
@@ -47,6 +59,8 @@ def _prep_material_instance(args, dest):
     parent = args.get("parent")
     if not parent or not unreal.EditorAssetLibrary.does_asset_exist(parent):
         raise _V2Error("NOT_FOUND", "kind=material_instance requires an existing parent material (got %r)" % (parent,))
+    if not isinstance(unreal.load_asset(parent), unreal.MaterialInterface):
+        raise _V2Error("BAD_VALUE", "parent %s is not a material" % parent)
     params = args.get("params") or {}
     for name, tex in (params.get("texture") or {}).items():
         if not unreal.EditorAssetLibrary.does_asset_exist(tex):
@@ -63,7 +77,7 @@ def _prep_material_instance(args, dest):
 def _prep_widget_blueprint(args, dest):
     a = {"dest": dest, "root_panel": args.get("root_panel") or "CanvasPanel"}
     if args.get("class"):
-        a["parent_class"] = _class_path(args["class"])
+        a["parent_class"] = _child_of(args["class"], "UserWidget", "a widget Blueprint's parent is a UserWidget class")
     return lambda: _op_widget_create(a)
 
 
@@ -91,7 +105,14 @@ def _op_asset_create(args):
         raise _V2Error("CONFLICT", "%s already exists (op=replace overwrites it)" % dest, asset=dest)
     make = prep(args, dest)  # raises before anything is deleted
     if args.get("dry_run"):
-        return {"dry_run": True, "asset": dest, "kind": kind, "would": "replace" if exists else "create"}
+        out = {"dry_run": True, "asset": dest, "kind": kind, "would": "replace" if exists else "create",
+               "checked": "dest, the kind's class / struct / parent, textures (a Blueprint parent that cannot be "
+                          "subclassed shows only on the real call)"}
+        if exists:
+            refs = [str(r) for r in unreal.EditorAssetLibrary.find_package_referencers_for_asset(dest, False) or []]
+            out["referencers"] = refs  # their references to it break on replace
+            out["delete"] = "unchecked: a checked-out or locked asset fails only on the real call"
+        return out
     replaced = False
     if exists:
         if not eal.delete_asset(dest):

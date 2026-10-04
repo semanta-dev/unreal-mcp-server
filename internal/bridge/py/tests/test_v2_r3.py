@@ -386,10 +386,22 @@ def test_add_variable_and_input_mapping_dry_runs(v2, ue):
     assert call(v2, "data_add_variable", {"asset": "/Game/R3/BP", "name": "health", "type": "int", "dry_run": True})["code"] == "CONFLICT"
     ue.Key = Key
     ue.InputLibrary = _NS(key_is_valid=lambda k: k.name in ("LeftShift", "E"))
-    ue.EditorAssetLibrary.does_asset_exist = lambda p: p == "/Game/Input/IMC_Aesir"
+    registry = {"/Game/Input/IMC_Aesir": "InputMappingContext"}
+
+    def by_package(pkg):
+        if pkg not in registry:
+            return []
+        return [_NS(get_editor_property=lambda k, pkg=pkg: pkg.rsplit("/", 1)[-1] if k == "asset_name"
+                    else _NS(get_editor_property=lambda _k, pkg=pkg: registry[pkg]))]
+
+    ue.AssetRegistryHelpers = _NS(get_asset_registry=lambda: _NS(get_assets_by_package_name=by_package))
     env = call(v2, "data_input_mapping", {"action": "/Game/Input/IA_Dash", "context": "/Game/Input/IMC_Aesir",
                                           "keys": ["LeftShift"], "dry_run": True})
     assert env["ok"] and env["result"]["creates"] == ["/Game/Input/IA_Dash"] and ue.saved == [], env
+    # A context given as the action: refused like the real call (not "ok" in the dry run).
+    env = call(v2, "data_input_mapping", {"action": "/Game/Input/IMC_Aesir", "context": "/Game/Input/IMC_Aesir",
+                                          "keys": ["LeftShift"], "dry_run": True})
+    assert env["code"] == "BAD_VALUE" and "not a InputAction" in env["error"], env
     env = call(v2, "data_input_mapping", {"action": "/Game/Input/IA_Dash", "context": "/Game/Input/IMC_Aesir",
                                           "keys": ["LeftShfit"], "dry_run": True})
     assert env["code"] == "BAD_VALUE"

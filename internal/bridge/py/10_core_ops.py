@@ -72,20 +72,45 @@ def _op_import_assets(args):
 
 # --- text-style ops (carry a "message" matching the Python server) ---------
 
+def _dirty_packages():
+    u = unreal.EditorLoadingAndSavingUtils
+    return (sorted({p.get_name() for p in u.get_dirty_map_packages()}),
+            sorted({p.get_name() for p in u.get_dirty_content_packages()}))
+
+
 def _op_open_level(args):
+    # LevelEditorSubsystem.load_level runs as an unattended script: it never asks — it
+    # drops the unsaved changes of the map it leaves (and would end PIE).
     if args.get("save") is False:
-        # Never save; and never let the load ask (its "save changes?" dialog is modal).
-        u = unreal.EditorLoadingAndSavingUtils
-        dirty = sorted({p.get_name() for p in list(u.get_dirty_map_packages()) + list(u.get_dirty_content_packages())})
-        if dirty:
-            raise _V2Error("PRECONDITION", "%d unsaved package(s) — save=false never saves them and opening would ask: "
-                           "save (level op=save_all), or discard them (editor_lifecycle op=restart discard_dirty=true)"
-                           % len(dirty), unsaved=dirty)
+        maps, content = _dirty_packages()
+        if maps:
+            raise _V2Error("PRECONDITION", "the open level has unsaved changes and save=false never saves: loading would "
+                           "drop them — save (level op=save_all) or drop them on purpose (level op=revert)", unsaved=maps)
     else:
         unreal.EditorLoadingAndSavingUtils.save_dirty_packages(True, True)
     ok = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).load_level(args["level_path"])
     msg = ("Loaded " if ok else "FAILED to load ") + str(args["level_path"])
-    return {"loaded": bool(ok), "level_path": args["level_path"], "message": msg}
+    out = {"loaded": bool(ok), "level_path": args["level_path"], "message": msg}
+    if args.get("save") is False:
+        out["content_unsaved"] = _dirty_packages()[1]  # assets stay changed in memory, unsaved
+    return out
+
+
+def _op_level_revert(args):
+    """Reload the open level from disk, dropping its unsaved changes (R6 rollback). Unsaved
+    assets are not touched (they stay changed in memory) and are listed."""
+    if _pie_running():
+        raise _V2Error("PRECONDITION", "stop PIE first (reverting the level would end it)")
+    world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
+    level = args.get("level_path") or (world.get_path_name() if world else "")
+    pkg = level.split(".", 1)[0]
+    if not pkg.startswith("/Game/") or not unreal.EditorAssetLibrary.does_asset_exist(pkg):
+        raise _V2Error("PRECONDITION", "%s was never saved: there is nothing on disk to revert to" % (pkg or "the level"))
+    maps, content = _dirty_packages()
+    ok = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).load_level(pkg)
+    if not ok:
+        raise _V2Error("EDITOR_ERROR", "could not reload %s" % pkg)
+    return {"reverted": pkg, "discarded": maps, "content_unsaved": content}
 
 
 def _op_save_all(args):

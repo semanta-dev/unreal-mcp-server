@@ -164,21 +164,25 @@ def _snap_value(v):
     if isinstance(v, bool):
         return {"t": "bool", "v": v}
     if isinstance(v, int):
-        return {"t": "int", "v": v}
+        # Past 2^53 a JSON number (Go's float64) loses digits: kept as a string.
+        return {"t": "int", "v": v if abs(v) <= 2 ** 53 else str(v)}
     if isinstance(v, float):
-        return {"t": "float", "v": v}
+        return {"t": "float", "v": v} if math.isfinite(v) else None
     enum_base = getattr(unreal, "EnumBase", None)
     if enum_base is not None and isinstance(v, enum_base):
         return {"t": "enum", "enum": type(v).__name__, "v": v.name}
     for typ, kind in ((getattr(unreal, "Text", None), "text"), (getattr(unreal, "Name", None), "name")):
         if isinstance(typ, type) and typ is not str and isinstance(v, typ):
-            return {"t": kind, "v": str(v)}
+            return {"t": kind, "v": str(v)}  # a Text keeps its display string, not its localization key
     if isinstance(v, str):
         return {"t": "str", "v": v}
     for name, fields in _SNAP_STRUCTS:
         typ = getattr(unreal, name, None)
         if isinstance(typ, type) and isinstance(v, typ):
-            return {"t": name, "v": [getattr(v, f) for f in fields]}
+            vals = [getattr(v, f) for f in fields]
+            if any(isinstance(x, float) and not math.isfinite(x) for x in vals):
+                return None
+            return {"t": name, "v": vals}
     if isinstance(v, unreal.Object):
         return {"t": "object", "v": v.get_path_name()}
     return None
@@ -186,14 +190,19 @@ def _snap_value(v):
 
 def _snap_restore_value(e):
     t, v = e.get("t"), e.get("v")
-    if t in ("none", "bool", "int", "float", "str"):
+    if t == "int":
+        return int(v)
+    if t in ("none", "bool", "float", "str"):
         return v
     if t == "name":
         return unreal.Name(v)
     if t == "text":
         return unreal.Text(v)
     if t == "enum":
-        return getattr(getattr(unreal, e["enum"]), v)
+        enum = getattr(unreal, e.get("enum") or "", None)
+        if enum is None or not hasattr(enum, v):
+            raise ValueError("the enum %s.%s is not reachable from Python" % (e.get("enum"), v))
+        return getattr(enum, v)
     for name, fields in _SNAP_STRUCTS:
         if t == name:
             if name == "Rotator":
@@ -207,19 +216,36 @@ def _snap_restore_value(e):
     raise ValueError("unknown stored type %r" % t)
 
 
+_SNAP_KINDS = "bools, numbers, strings, names, texts, enums, vectors, rotators, colors and object references"
+
+
 def _snap_props(a, names, path, missing, errors):
-    """The actor's values of the properties it has (by reflected name)."""
+    """The actor's values of the properties it has (by reflected name), each checked to
+    rebuild into the same value now — not found out at restore time."""
     out = {}
     for n in names:
         try:
             v = a.get_editor_property(n)
-        except Exception:
-            continue  # this actor has no such property
+        except Exception as ex:
+            if "Failed to find property" in str(ex):
+                continue  # this actor has no such property
+            missing.discard(n)
+            errors.append({"path": path, "property": n, "error": "unreadable: %s" % ex})
+            continue
         missing.discard(n)
         e = _snap_value(v)
         if e is None:
-            errors.append({"path": path, "property": n, "error": "a %s cannot be restored (snapshots keep bools, numbers, "
-                           "strings, names, texts, enums, vectors, rotators, colors and object references)" % type(v).__name__})
+            errors.append({"path": path, "property": n, "error": "a %s cannot be restored (snapshots keep %s; a float must "
+                           "be finite)" % (type(v).__name__, _SNAP_KINDS)})
+            continue
+        try:
+            same = _snap_value(_snap_restore_value(e)) == e
+        except Exception as ex:
+            same, why = False, str(ex)
+        else:
+            why = "it does not rebuild into the same value"
+        if not same:
+            errors.append({"path": path, "property": n, "error": "%s cannot be restored: %s" % (type(v).__name__, why)})
             continue
         out[n] = e
     return out
@@ -248,7 +274,7 @@ def _op_snapshot_actors(args):
                 row["props"] = props
         out.append(row)
     res = {"world": name, "count": len(out), "actors": out, "world_partition": False,
-           "class_filter": args.get("class_filter") or ""}
+           "class_filter": args.get("class_filter") or "", "pie_running": _pie_running()}
     if names:
         res["properties_missing"] = sorted(missing)  # no actor in scope has them
         res["property_errors"] = prop_errors
@@ -263,15 +289,19 @@ def _op_snapshot_actors(args):
 
 
 def _op_snapshot_restore(args):
-    """Restore the transforms of actors that still exist, matched by object path,
-    as one undo step. Never recreates or deletes actors: reports both."""
+    """Restore the transforms (and the snapshot's properties) of actors that still exist,
+    matched by object path, as one undo step — all of it or nothing. Never recreates or
+    deletes actors: reports both."""
+    if _pie_running():
+        raise _V2Error("PRECONDITION", "snapshot_restore edits the editor level, not the running game (and its undo step "
+                       "waits for PIE to end): stop PIE first")
     world, name = _v2_world({"world": "editor"}, "editor")
     by_path = {_norm_path(a.get_path_name()): a for a in _world_actors(world, name)}
     snap = args.get("actors") or []
     snap_paths = {t.get("path") for t in snap}
     known = _wp_actor_paths(world)  # World Partition: actors that exist, loaded or not
     unloaded = (known - set(by_path)) if known is not None else set()
-    restored, removed, unknown, props_restored, prop_errors = 0, [], [], 0, []
+    removed, unknown = [], []
 
     def depth(t):
         a, d = by_path.get(t.get("path")), 0
@@ -283,14 +313,29 @@ def _op_snapshot_restore(args):
             d += a is not None
         return d
 
-    # World transforms: a parent must be in place before its attached children.
-    with _transaction("MCP: snapshot restore " + str(args.get("name", ""))):
-        for t in sorted(snap, key=depth):
-            a = by_path.get(t.get("path"))
-            if a is None:
-                (unknown if t.get("path") in unloaded else removed).append(t.get("path"))
-                continue
+    # Every stored value is rebuilt before anything changes.
+    plan, bad = [], []
+    for t in sorted(snap, key=depth):  # world transforms: a parent before its attached children
+        a = by_path.get(t.get("path"))
+        if a is None:
+            (unknown if t.get("path") in unloaded else removed).append(t.get("path"))
+            continue
+        vals = {}
+        for k, e in (t.get("props") or {}).items():
+            try:
+                vals[k] = _snap_restore_value(e)
+            except Exception as ex:
+                bad.append({"path": t.get("path"), "property": k, "error": str(ex)})
+        plan.append((t, a, vals))
+    if bad:
+        raise _V2Error("PRECONDITION", "%d stored value(s) cannot be rebuilt now (nothing was restored); the first: %s %s: %s"
+                       % (len(bad), bad[0]["path"], bad[0]["property"], bad[0]["error"]), property_errors=bad)
+    restored, props_restored, done, failure = 0, 0, [], None
+    with _transaction("MCP: snapshot restore " + str(args.get("name", ""))) as tx:
+        for t, a, vals in plan:
             a.modify()
+            before = (a.get_actor_location(), a.get_actor_rotation(), a.get_actor_scale3d(), {})
+            done.append((a, before))
             loc, rot, scale = t.get("loc"), t.get("rot"), t.get("scale")
             if loc:
                 a.set_actor_location(unreal.Vector(loc[0], loc[1], loc[2]), False, False)
@@ -298,13 +343,33 @@ def _op_snapshot_restore(args):
                 a.set_actor_rotation(_pyr_to_rotator(rot), False)
             if scale:
                 a.set_actor_scale3d(unreal.Vector(scale[0], scale[1], scale[2]))
-            for k, e in (t.get("props") or {}).items():
+            for k, v in vals.items():
                 try:
-                    a.set_editor_property(k, _snap_restore_value(e))
+                    before[3][k] = a.get_editor_property(k)
+                    a.set_editor_property(k, v)
                     props_restored += 1
-                except Exception as ex:
-                    prop_errors.append({"path": t.get("path"), "property": k, "error": str(ex)})
+                except Exception as ex:  # e.g. a read-only property
+                    failure = {"path": t.get("path"), "property": k, "error": str(ex)}
+                    break
+            if failure:
+                break
             restored += 1
+        if failure:
+            # All or nothing: put back what this restore changed, and leave no undo step.
+            for a, (loc, rot, sc, props) in reversed(done):
+                for k, v in props.items():
+                    try:
+                        a.set_editor_property(k, v)
+                    except Exception:
+                        pass
+                a.set_actor_location(loc, False, False)
+                a.set_actor_rotation(rot, False)
+                a.set_actor_scale3d(sc)
+            if tx is not None:
+                tx.cancel()
+    if failure:
+        raise _V2Error("EDITOR_ERROR", "%s %s could not be set (%s): nothing was restored or saved"
+                       % (failure["path"], failure["property"], failure["error"]), property_errors=[failure])
     # A class-filtered snapshot only speaks for the actors its filter selects.
     flt = (args.get("class_filter") or "").lower()
     added = sorted(p for p, a in by_path.items() if p not in snap_paths and _snapshot_filter_match(a, flt))
@@ -312,10 +377,8 @@ def _op_snapshot_restore(args):
     if args.get("save", True):
         saved = bool(unreal.EditorLoadingAndSavingUtils.save_dirty_packages(True, False))
     out = {"restored": restored, "not_restored": {"added": added, "removed": removed}, "saved": saved}
-    if props_restored or prop_errors:
+    if props_restored:
         out["properties_restored"] = props_restored
-    if prop_errors:
-        out["property_errors"] = prop_errors
     if unknown:
         out["not_restored"]["unknown"] = unknown  # in World Partition cells that are not loaded
     return out

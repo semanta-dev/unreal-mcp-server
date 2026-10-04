@@ -37,12 +37,19 @@ def _op_world_query(args):
     if kind == "sphere_overlap":
         c = args["center"]
         names = args.get("object_types") or list(_OBJECT_TYPES)
-        bad = [n for n in names if n not in _OBJECT_TYPES]
-        if bad:
-            raise _V2Error("BAD_VALUE", "object_types: unknown %s (the engine's object channels: %s)" % (bad, ", ".join(_OBJECT_TYPES)))
+        nums = []
+        for n in names:
+            m = re.match(r"^object_type_query_([0-9]+)$", str(n))
+            if n in _OBJECT_TYPES:
+                nums.append(_OBJECT_TYPES[n])
+            elif m and 1 <= int(m.group(1)) <= 32:
+                nums.append(int(m.group(1)))  # a project's own object channel (7+, in its collision settings)
+            else:
+                raise _V2Error("BAD_VALUE", "object_types: unknown %r (the engine's: %s; a project channel: "
+                               "object_type_query_N)" % (n, ", ".join(_OBJECT_TYPES)))
         # Every type asked for — before, only WorldStatic: pawns, physics bodies and every
         # movable actor were invisible to the overlap.
-        types = [getattr(unreal.ObjectTypeQuery, "OBJECT_TYPE_QUERY%d" % _OBJECT_TYPES[n]) for n in names]
+        types = [getattr(unreal.ObjectTypeQuery, "OBJECT_TYPE_QUERY%d" % n) for n in nums]
         actors = unreal.SystemLibrary.sphere_overlap_actors(
             world, unreal.Vector(c[0], c[1], c[2]), float(args.get("radius", 100.0)), types, None, []) or []
         return {"kind": kind, "count": len(actors), "object_types": names,

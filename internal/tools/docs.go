@@ -48,7 +48,7 @@ func ToolsMarkdown(specs []*spec.Spec) string {
 		"authored content; approval-gated when the gate policy requires) · `exec` (runs caller-supplied code/input; gated).\n\n" +
 		"**Needs**: every tool needs a live editor unless marked offline; ops may also need `pie` (a running play session), " +
 		"`plugin` (the UnrealMCP C++ plugin), `navmesh`, `project` (a configured project directory) or `engine`.\n\n" +
-		"**Rollback ladder**: `snapshot_restore` (transforms) → `scene_clear` (toolset `world`; a scene's actors) → `git_revert` (files, to a " +
+		"**Rollback ladder**: `snapshot_restore` (transforms + recorded properties) / `level op=revert` (unsaved level changes) → `scene_clear` (toolset `world`; a scene's actors) → `git_revert` (files, to a " +
 		"`git op=checkpoint`).\n\n")
 	bySet := map[spec.Toolset][]*spec.Spec{}
 	for _, s := range specs {
