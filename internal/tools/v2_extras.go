@@ -50,9 +50,9 @@ func toolsetsSpec(d Deps) *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "toolsets", Title: "Toolsets and capabilities", Toolset: spec.Core, Offline: true, Timeout: sync8, Max: sync8, Ops: ops,
-		Description: "Optional tool groups: enable one to get its tools.\n- design: design_audit (luminance, style, feel, novelty… audits), design_explore\n- ui: widget_edit (author UMG trees)\n- desktop: desktop_capture, desktop_input (OS screen/input)\n- polyworld: polyworld, polyworld_demolish\n- headless: headless (commandlets, tests)\nops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).",
+		Description: "Optional tool groups: enable one to get its tools.\n- design: design_audit (luminance, style, feel, novelty… audits), design_explore\n- ui: widget_edit (author UMG trees)\n- desktop: desktop_capture, desktop_input (OS screen/input)\n- polyworld: polyworld, polyworld_demolish\n- headless: headless (commandlets, tests)\n- world: scene, scene_clear (declarative scenes), world_query (traces, overlaps, nav)\nops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).",
 		Schema: spec.SchemaFor[toolsetsIn](map[string][]any{"op": spec.OpEnum(ops...),
-			"toolset": {"core", "daemon", "headless", "design", "ui", "desktop", "polyworld"}}, "op"),
+			"toolset": {"core", "daemon", "headless", "design", "ui", "desktop", "polyworld", "world"}}, "op"),
 		Replaces: []string{"affordances", "cockpit_url"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			ts, ok := spec.ToolsetsFrom(ctx)
@@ -102,7 +102,7 @@ func toolsetsSpec(d Deps) *spec.Spec {
 			sort.Slice(tools, func(i, j int) bool { return tools[i]["tool"].(string) < tools[j]["tool"].(string) })
 			out := map[string]any{"tools": tools, "rollback_ladder": []string{
 				"snapshot_restore: put moved actors back (transforms)",
-				"scene_clear: remove a scene's actors, then scene apply again",
+				"scene_clear (toolset world): remove a scene's actors, then scene apply again",
 				"git_revert: restore files to a git checkpoint (assets, levels, C++)"}}
 			cockpit := map[string]any{"available": false}
 			if d.CockpitURL != nil {

@@ -40,7 +40,7 @@ Everything is derived from that table:
   op beside read-only ones, and a declared tier ≥ the worst tier of every companion op it reaches
   (`spec.PyOps`, which classifies every companion op, with argument escalations).
 - `toolsets describe`, `docs/tools.md`, `docs/migration-v2.md` (`go generate ./internal/tools`).
-- Tests: `TestMigrationAccounting` (all 155 v1 names), `TestToolListBudgets` (45 tools / 36 core; core tools/list
+- Tests: `TestMigrationAccounting` (all 155 v1 names), `TestToolListBudgets` (45 tools / 33 core; core tools/list
   ≤ 45 KB), `TestEveryOpIsWired` (every op end to end against the emulator; dispatched ops ⊆ `Reaches`).
 
 **Async ops** return a job (`internal/jobs`) unless the caller passes `wait_s` (≤ 25 s), during which progress is

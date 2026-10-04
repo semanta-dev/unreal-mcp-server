@@ -14,7 +14,7 @@ v2 replaces v1's 155 tools with 45. Tool names are not compatible: update prompt
 - **Results** are always objects (`structuredContent`), never bare arrays; images arrive as image content.
 - **Errors** are one envelope with a closed code set; `outcome:"unknown"` marks a mutating call that may have run (do not blindly retry).
 - **Long work is async**: `build`, `playtest op=run`, `editor_lifecycle`, `git_revert`, `headless` return a job; pass `wait_s` (≤ 25) or poll `job`.
-- **Safety**: overwrites and deletions are separate destructive ops (`asset_create op=replace`, `scene_clear op=prune`, `widget_edit op=prune`); `python op=recipe` no longer wipes the level by default; output files are server-owned.
+- **Safety**: overwrites and deletions are separate destructive ops (`asset_create op=replace`, `scene_clear op=prune` in toolset `world`, `widget_edit op=prune`); `python op=recipe` no longer wipes the level by default; output files are server-owned.
 
 ## Tool by tool
 
@@ -56,7 +56,7 @@ Tools outside the core toolset are marked: enable them first with `toolsets op=e
 | `datatable_import` | `asset_import` op=datatable (datatable → asset) |
 | `decision_audit` | `design_audit` kind=decision — toolset `design` |
 | `delete_actor` | `actor_edit` op=delete world=editor (actor_label → actor) |
-| `design_check` | `scene` op=check |
+| `design_check` | `scene` op=check — toolset `world` |
 | `design_explore` | `design_explore` op=explore — toolset `design` |
 | `editor_events` | `logs` op=events (since_offset → marker) |
 | `editor_ping` | `editor` op=ping |
@@ -64,7 +64,7 @@ Tools outside the core toolset are marked: enable them first with `toolsets op=e
 | `editor_state` | `editor` op=status |
 | `editor_status` | `editor` op=status |
 | `enum_values` | `reflect` op=enum (enum_path → enum) |
-| `env_preset_apply` | `scene` op=env_preset |
+| `env_preset_apply` | `scene` op=env_preset — toolset `world` |
 | `execute_console_command` | `console` (world editor|pie) |
 | `execute_python` | `python` op=run |
 | `feel_audit` | `design_audit` kind=feel — toolset `design` |
@@ -86,12 +86,12 @@ Tools outside the core toolset are marked: enable them first with `toolsets op=e
 | `in_motion_audit` | `design_audit` kind=in_motion — toolset `design` |
 | `input_action` | `project_config` op=input_action |
 | `input_axis` | `project_config` op=input_axis |
-| `instances_count` | `world_query` op=instances_count |
-| `instances_list` | `world_query` op=instances_list |
+| `instances_count` | `world_query` op=instances_count — toolset `world` |
+| `instances_list` | `world_query` op=instances_list — toolset `world` |
 | `job_cancel` | `job` op=cancel |
 | `job_status` | `job` op=status (or op=wait) |
 | `key_press` | `desktop_input` op=keys (keys/sequence → keys list) — toolset `desktop` |
-| `layout_preview` | `scene` op=preview |
+| `layout_preview` | `scene` op=preview — toolset `world` |
 | `level_diff` | `snapshot` op=diff |
 | `level_snapshot` | `snapshot` op=take |
 | `list_actors` | `actor_query` op=list |
@@ -133,11 +133,11 @@ Tools outside the core toolset are marked: enable them first with `toolsets op=e
 | `save_all` | `level` op=save_all |
 | `scenario_list` | `analyze` op=scenarios |
 | `scenario_run` | `playtest` op=run (async) |
-| `scene_apply` | `scene` op=apply (spec_path → path, spec_json → json; prune → scene_clear op=prune) |
-| `scene_clear` | `scene_clear` op=all |
+| `scene_apply` | `scene` op=apply (spec_path → path, spec_json → json; prune → scene_clear op=prune) — toolset `world` |
+| `scene_clear` | `scene_clear` op=all — toolset `world` |
 | `scene_contact_sheet` | `screenshot` op=orbit (target → actors) |
 | `scene_digest` | `snapshot` op=digest |
-| `scene_plan` | `scene` op=apply dry_run=true |
+| `scene_plan` | `scene` op=apply dry_run=true — toolset `world` |
 | `scene_restore` | `snapshot_restore` (by object path) |
 | `scene_snapshot` | `snapshot` op=take |
 | `screen_capture` | `desktop_capture` op=screen — toolset `desktop` |
@@ -176,4 +176,4 @@ Tools outside the core toolset are marked: enable them first with `toolsets op=e
 | `widget_view` | — removed (its editor op never existed) |
 | `widget_viewmodel_create` | — removed (its editor op never existed) |
 | `window_capture` | `desktop_capture` op=window (focus → desktop_input op=focus first) — toolset `desktop` |
-| `world_query` | `world_query` op=line_trace|sphere_overlap|nav_path|project_point (kind → op) |
+| `world_query` | `world_query` op=line_trace|sphere_overlap|nav_path|project_point (kind → op) — toolset `world` |

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased (v2.1.0)
+
+Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN.md)).
+
+### Behaviour changes
+- `scene`, `scene_clear` and `world_query` moved from core to the new optional toolset **`world`** (core is now 33
+  tools, ~40.7 KB, leaving room for the plan's additions). Enable it with `toolsets op=enable toolset=world`, a
+  project's `.umcp.json` `"toolsets": ["world"]`, or `-toolsets world`; calling a moved tool without it returns
+  `PRECONDITION` with that hint.
+
 ## v2.0.2 — 2026-10-03
 
 - First signed release: every archive and `SHA256SUMS` is signed with Sigstore cosign (keyless, GitHub OIDC) and has

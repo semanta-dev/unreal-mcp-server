@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge/bridgetest"
+	"github.com/jdziat/unreal-mcp-server/internal/tools/spec"
 )
 
 // T1 scenarios for the P5c tools: PIE lifecycle, waits, snapshots + restore, capture
@@ -146,7 +147,7 @@ const pruneSpec = `{"schema":"unreal.scene/v1","scene_id":"arena",
  "actors":[{"label":"hero","kind":"class","class_path":"/Script/Engine.Actor","location":[0,0,0]}]}`
 
 func TestSceneClearPrune(t *testing.T) {
-	h := startHarness(t, harnessOpts{})
+	h := startHarness(t, harnessOpts{toolsets: []spec.Toolset{spec.World}})
 	var keep []any
 	h.emu.Handle("scene_actors", func(map[string]any) (any, *bridgetest.OpError) {
 		return map[string]any{"actors": []any{map[string]any{"label": "arena.hero"}, map[string]any{"label": "arena.old"}}}, nil
@@ -171,7 +172,7 @@ func TestSceneClearPrune(t *testing.T) {
 }
 
 func TestSceneApplyRejectsPruneAndBadSpecs(t *testing.T) {
-	h := startHarness(t, harnessOpts{})
+	h := startHarness(t, harnessOpts{toolsets: []spec.Toolset{spec.World}})
 	if e := errorOf(t, h.call(t, "scene", map[string]any{"op": "apply", "json": pruneSpec, "prune": true})); e["code"] != "INVALID_ARGUMENT" {
 		t.Fatalf("apply prune = %v", e["code"])
 	}

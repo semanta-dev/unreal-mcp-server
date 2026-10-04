@@ -376,7 +376,7 @@ func worldQuerySpec() *spec.Spec {
 		q("instances_list", "ISM/HISM instance transforms", "instances_list"),
 	}
 	return &spec.Spec{
-		Name: "world_query", Title: "Spatial queries", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
+		Name: "world_query", Title: "Spatial queries", Toolset: spec.World, Timeout: sync20, Max: sync28, Ops: ops,
 		Description: "Spatial questions (world=editor default, pie, auto; results echo it).\n- line_trace / sphere_overlap: collision.\n- nav_path / project_point: navigation (built navmesh).\n- instances_count / instances_list: ISM/HISM instances, which actor_query cannot see.",
 		Schema:      spec.SchemaFor[worldQueryIn](map[string][]any{"op": spec.OpEnum(ops...), "world": {"editor", "pie", "auto"}}, "op"),
 		Replaces:    []string{"world_query", "instances_count", "instances_list"},
@@ -989,7 +989,7 @@ func sceneSpec() *spec.Spec {
 		{Name: "env_preset", Summary: "apply a lighting/sky/exposure preset", Tier: spec.Mutating, Idempotent: true, Required: []string{"preset"}, Reaches: []string{"scene_apply"}},
 	}
 	return &spec.Spec{
-		Name: "scene", Title: "Declarative scenes", Toolset: spec.Core, Timeout: sync25, Max: sync28, Ops: ops,
+		Name: "scene", Title: "Declarative scenes", Toolset: spec.World, Timeout: sync25, Max: sync28, Ops: ops,
 		Description: "Build levels from an unreal.scene/v1 spec (`path` or `json`).\n- apply: create/update the spec's actors (one undo step) and save; dry_run reports the diff. Additive: matched by the scene tag, never by label alone; stale actors go via scene_clear op=prune.\n- check: lint the level (lit, meshes present, PlayerStart, nav).\n- preview: offline layout placements.\n- env_preset: lighting/sky/exposure preset (sun always points down).",
 		Schema: spec.SchemaFor[sceneIn](map[string][]any{"op": spec.OpEnum(ops...),
 			"preset": {"daytime_clear", "overcast", "dusk", "night", "studio"}}, "op"),
@@ -1152,7 +1152,7 @@ func sceneClearSpec() *spec.Spec {
 		{Name: "prune", Summary: "delete the scene's actors that are not in the spec", Tier: spec.Destructive, Rejects: []string{"scene_id"}, Reaches: []string{"scene_prune", "scene_actors"}},
 	}
 	return &spec.Spec{
-		Name: "scene_clear", Title: "Remove scene actors", Toolset: spec.Core, Timeout: sync25, Max: sync28, Ops: ops,
+		Name: "scene_clear", Title: "Remove scene actors", Toolset: spec.World, Timeout: sync25, Max: sync28, Ops: ops,
 		Description: "Delete actors a scene created (tagged mcp_scene:<id> only; hand-placed actors never), one undo step, then save.\n- all: every actor of `scene_id`.\n- prune: the scene's actors not in the spec (`path`/`json`) — after scene apply; not atomic with it.\ndry_run lists them.",
 		Schema:      spec.SchemaFor[sceneClearIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces:    []string{"scene_clear"},

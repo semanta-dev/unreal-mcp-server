@@ -2,23 +2,24 @@
 
 # Tools
 
-45 tools (36 core). Optional toolsets are enabled per session with `toolsets op=enable` or a project's `.umcp.json` `toolsets`. Every tool takes JSON arguments validated against its schema; errors come back as `{"error": {code, message, hint, retryable, outcome, details}}` with a closed code set.
+45 tools (33 core). Optional toolsets are enabled per session with `toolsets op=enable` or a project's `.umcp.json` `toolsets`. Every tool takes JSON arguments validated against its schema; errors come back as `{"error": {code, message, hint, retryable, outcome, details}}` with a closed code set.
 
 **Tiers** (per op; a tool's annotations follow its worst op): `readonly` · `ephemeral` (UI/session state, server-owned scratch files) · `mutating` (project/world content; nothing authored is lost) · `destructive` (can lose authored content; approval-gated when the gate policy requires) · `exec` (runs caller-supplied code/input; gated).
 
 **Needs**: every tool needs a live editor unless marked offline; ops may also need `pie` (a running play session), `plugin` (the UnrealMCP C++ plugin), `navmesh`, `project` (a configured project directory) or `engine`.
 
-**Rollback ladder**: `snapshot_restore` (transforms) → `scene_clear` (a scene's actors) → `git_revert` (files, to a `git op=checkpoint`).
+**Rollback ladder**: `snapshot_restore` (transforms) → `scene_clear` (toolset `world`; a scene's actors) → `git_revert` (files, to a `git op=checkpoint`).
 
 | Toolset | Tools |
 |---|---|
-| core (always on) | `editor`, `python`, `console`, `level`, `actor_query`, `actor_edit`, `actor_call`, `viewport`, `asset_query`, `asset_create`, `asset_edit`, `asset_import`, `reflect`, `project_config`, `project_map`, `widget_query`, `pie`, `pie_observe`, `pie_wait`, `world_query`, `snapshot`, `snapshot_restore`, `screenshot`, `capture`, `scene`, `scene_clear`, `audio`, `job`, `logs`, `analyze`, `git`, `playtest`, `editor_lifecycle`, `build`, `git_revert`, `toolsets` |
+| core (always on) | `editor`, `python`, `console`, `level`, `actor_query`, `actor_edit`, `actor_call`, `viewport`, `asset_query`, `asset_create`, `asset_edit`, `asset_import`, `reflect`, `project_config`, `project_map`, `widget_query`, `pie`, `pie_observe`, `pie_wait`, `snapshot`, `snapshot_restore`, `screenshot`, `capture`, `audio`, `job`, `logs`, `analyze`, `git`, `playtest`, `editor_lifecycle`, `build`, `git_revert`, `toolsets` |
 | daemon (on in daemon mode (multi-project server)) | `project` |
 | headless (separate UnrealEditor-Cmd processes) | `headless` |
 | design (offline design analysis) | `design_audit`, `design_explore` |
 | ui (UMG authoring) | `widget_edit` |
 | desktop (OS-level screen capture and input (Windows)) | `desktop_capture`, `desktop_input` |
 | polyworld (the PolyWorld Company-MVP game) | `polyworld`, `polyworld_demolish` |
+| world (declarative scenes and spatial queries) | `world_query`, `scene`, `scene_clear` |
 
 ## Toolset `core`
 
@@ -474,37 +475,6 @@ Poll pie_observe until `predicate` holds → {met, pie_running, elapsed_s, polls
 | `properties` | string[] | pin exact gamestate property names so the predicate can use them verbatim |
 | `timeout_s` | number | give up after this many seconds (default 20, max 28) |
 
-### `world_query` — Spatial queries
-
-_tier readonly_
-
-Spatial questions (world=editor default, pie, auto; results echo it).
-- line_trace / sphere_overlap: collision.
-- nav_path / project_point: navigation (built navmesh).
-- instances_count / instances_list: ISM/HISM instances, which actor_query cannot see.
-
-| op | tier | does | required | needs |
-|---|---|---|---|---|
-| `line_trace` | readonly | is the line from start to end blocked, and by what | start, end | editor |
-| `sphere_overlap` | readonly | actors overlapping a sphere | center | editor |
-| `nav_path` | readonly | can the AI walk from start to end | start, end | editor, navmesh |
-| `project_point` | readonly | is the point on the navmesh | point | editor, navmesh |
-| `instances_count` | readonly | ISM/HISM instance counts by mesh |  | editor |
-| `instances_list` | readonly | ISM/HISM instance transforms |  | editor |
-
-| param | type | description |
-|---|---|---|
-| `center` | number[] | sphere_overlap: [x, y, z] |
-| `end` | number[] | line_trace/nav_path: [x, y, z] |
-| `limit` | integer | instances_list: max instances (default 8192; truncated:true when cut) |
-| `mesh` | string | instances_*: only components whose mesh path contains this |
-| `op` | string | one of: line_trace, sphere_overlap, nav_path, project_point, instances_count, instances_list |
-| `point` | number[] | project_point: [x, y, z] |
-| `radius` | number | sphere_overlap: radius (default 100) |
-| `start` | number[] | line_trace/nav_path: [x, y, z] |
-| `tag` | string | instances_*: only ISM/HISM components with this component tag |
-| `world` | string | editor (default) \| pie \| auto — one of: editor, pie, auto |
-
 ### `snapshot` — Level snapshots
 
 _tier ephemeral_
@@ -629,59 +599,6 @@ Film the world: an in-editor recorder saves a frame + state every interval_s.
 | `source` | string | start: scene_capture (default; editor) \| pie_highres (possessed PIE) \| game_scene (PIE, plugin) — one of: scene_capture, pie_highres, game_scene |
 | `track_actors` | string[] | start: actor labels to record per-frame state for |
 | `world` | string | start: editor (default) \| pie — one of: editor, pie |
-
-### `scene` — Declarative scenes
-
-_tier mutating_
-
-Build levels from an unreal.scene/v1 spec (`path` or `json`).
-- apply: create/update the spec's actors (one undo step) and save; dry_run reports the diff. Additive: matched by the scene tag, never by label alone; stale actors go via scene_clear op=prune.
-- check: lint the level (lit, meshes present, PlayerStart, nav).
-- preview: offline layout placements.
-- env_preset: lighting/sky/exposure preset (sun always points down).
-
-| op | tier | does | required | needs |
-|---|---|---|---|---|
-| `apply` | mutating | realize a scene spec (additive; one undo step) |  | editor |
-| `check` | readonly | lint the level's design invariants |  | editor |
-| `preview` | readonly | where a layout would place instances (offline) | layout | editor |
-| `env_preset` | mutating | apply a lighting/sky/exposure preset | preset | editor |
-
-| param | type | description |
-|---|---|---|
-| `checks` | object | check: {require_environment_lit, require_no_missing_meshes, require_player_start, require_nav_bounds, spawns_within_bounds: bool} |
-| `dry_run` | boolean | apply: report add/update/missing assets without changing the level |
-| `json` | string | apply/check: the spec as inline JSON (instead of path) |
-| `layout` | object | preview: {type: grid\|ring\|line\|scatter, count, spacing, rows, cols, radius, start, end, center, extent, seed} |
-| `op` | string | one of: apply, check, preview, env_preset |
-| `overrides` | object | env_preset: e.g. {sun_rotation_pyr: [-45, 30, 0], sun_intensity_lux: 75000, exposure_ev100: 11} |
-| `path` | string | apply/check: an unreal.scene/v1 spec file |
-| `preset` | string | env_preset: daytime_clear \| overcast \| dusk \| night \| studio — one of: daytime_clear, overcast, dusk, night, studio |
-| `save` | boolean | apply/env_preset: save afterwards (default true) |
-| `scene_id` | string | env_preset: scene id for the environment actors (default env) |
-
-### `scene_clear` — Remove scene actors
-
-_tier destructive_
-
-Delete actors a scene created (tagged mcp_scene:<id> only; hand-placed actors never), one undo step, then save.
-- all: every actor of `scene_id`.
-- prune: the scene's actors not in the spec (`path`/`json`) — after scene apply; not atomic with it.
-dry_run lists them.
-
-| op | tier | does | required | needs |
-|---|---|---|---|---|
-| `all` | destructive | delete every actor of a scene | scene_id | editor |
-| `prune` | destructive | delete the scene's actors that are not in the spec |  | editor |
-
-| param | type | description |
-|---|---|---|
-| `dry_run` | boolean | list what would be deleted without deleting |
-| `json` | string | prune: the spec as inline JSON |
-| `op` | string | one of: all, prune |
-| `path` | string | prune: the scene spec file (its scene_id and labels are kept) |
-| `save` | boolean | save afterwards (default true) |
-| `scene_id` | string | all: the scene whose actors to delete |
 
 ### `audio` — Game audio
 
@@ -895,6 +812,7 @@ Optional tool groups: enable one to get its tools.
 - desktop: desktop_capture, desktop_input (OS screen/input)
 - polyworld: polyworld, polyworld_demolish
 - headless: headless (commandlets, tests)
+- world: scene, scene_clear (declarative scenes), world_query (traces, overlaps, nav)
 ops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).
 
 | op | tier | does | required | needs |
@@ -908,7 +826,7 @@ ops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, ne
 |---|---|---|
 | `op` | string | one of: list, enable, disable, describe |
 | `tool` | string | describe: one tool (default: every tool of the enabled toolsets, briefly) |
-| `toolset` | string | enable/disable: the toolset — one of: core, daemon, headless, design, ui, desktop, polyworld |
+| `toolset` | string | enable/disable: the toolset — one of: core, daemon, headless, design, ui, desktop, polyworld, world |
 
 ## Toolset `daemon`
 
@@ -1143,3 +1061,89 @@ Bulldoze the building nearest `location` in the running game (PIE only): destroy
 | param | type | description |
 |---|---|---|
 | `location` | number[] | world [x, y, z]: the building nearest to it is demolished |
+
+## Toolset `world`
+
+### `world_query` — Spatial queries
+
+_tier readonly_
+
+Spatial questions (world=editor default, pie, auto; results echo it).
+- line_trace / sphere_overlap: collision.
+- nav_path / project_point: navigation (built navmesh).
+- instances_count / instances_list: ISM/HISM instances, which actor_query cannot see.
+
+| op | tier | does | required | needs |
+|---|---|---|---|---|
+| `line_trace` | readonly | is the line from start to end blocked, and by what | start, end | editor |
+| `sphere_overlap` | readonly | actors overlapping a sphere | center | editor |
+| `nav_path` | readonly | can the AI walk from start to end | start, end | editor, navmesh |
+| `project_point` | readonly | is the point on the navmesh | point | editor, navmesh |
+| `instances_count` | readonly | ISM/HISM instance counts by mesh |  | editor |
+| `instances_list` | readonly | ISM/HISM instance transforms |  | editor |
+
+| param | type | description |
+|---|---|---|
+| `center` | number[] | sphere_overlap: [x, y, z] |
+| `end` | number[] | line_trace/nav_path: [x, y, z] |
+| `limit` | integer | instances_list: max instances (default 8192; truncated:true when cut) |
+| `mesh` | string | instances_*: only components whose mesh path contains this |
+| `op` | string | one of: line_trace, sphere_overlap, nav_path, project_point, instances_count, instances_list |
+| `point` | number[] | project_point: [x, y, z] |
+| `radius` | number | sphere_overlap: radius (default 100) |
+| `start` | number[] | line_trace/nav_path: [x, y, z] |
+| `tag` | string | instances_*: only ISM/HISM components with this component tag |
+| `world` | string | editor (default) \| pie \| auto — one of: editor, pie, auto |
+
+### `scene` — Declarative scenes
+
+_tier mutating_
+
+Build levels from an unreal.scene/v1 spec (`path` or `json`).
+- apply: create/update the spec's actors (one undo step) and save; dry_run reports the diff. Additive: matched by the scene tag, never by label alone; stale actors go via scene_clear op=prune.
+- check: lint the level (lit, meshes present, PlayerStart, nav).
+- preview: offline layout placements.
+- env_preset: lighting/sky/exposure preset (sun always points down).
+
+| op | tier | does | required | needs |
+|---|---|---|---|---|
+| `apply` | mutating | realize a scene spec (additive; one undo step) |  | editor |
+| `check` | readonly | lint the level's design invariants |  | editor |
+| `preview` | readonly | where a layout would place instances (offline) | layout | editor |
+| `env_preset` | mutating | apply a lighting/sky/exposure preset | preset | editor |
+
+| param | type | description |
+|---|---|---|
+| `checks` | object | check: {require_environment_lit, require_no_missing_meshes, require_player_start, require_nav_bounds, spawns_within_bounds: bool} |
+| `dry_run` | boolean | apply: report add/update/missing assets without changing the level |
+| `json` | string | apply/check: the spec as inline JSON (instead of path) |
+| `layout` | object | preview: {type: grid\|ring\|line\|scatter, count, spacing, rows, cols, radius, start, end, center, extent, seed} |
+| `op` | string | one of: apply, check, preview, env_preset |
+| `overrides` | object | env_preset: e.g. {sun_rotation_pyr: [-45, 30, 0], sun_intensity_lux: 75000, exposure_ev100: 11} |
+| `path` | string | apply/check: an unreal.scene/v1 spec file |
+| `preset` | string | env_preset: daytime_clear \| overcast \| dusk \| night \| studio — one of: daytime_clear, overcast, dusk, night, studio |
+| `save` | boolean | apply/env_preset: save afterwards (default true) |
+| `scene_id` | string | env_preset: scene id for the environment actors (default env) |
+
+### `scene_clear` — Remove scene actors
+
+_tier destructive_
+
+Delete actors a scene created (tagged mcp_scene:<id> only; hand-placed actors never), one undo step, then save.
+- all: every actor of `scene_id`.
+- prune: the scene's actors not in the spec (`path`/`json`) — after scene apply; not atomic with it.
+dry_run lists them.
+
+| op | tier | does | required | needs |
+|---|---|---|---|---|
+| `all` | destructive | delete every actor of a scene | scene_id | editor |
+| `prune` | destructive | delete the scene's actors that are not in the spec |  | editor |
+
+| param | type | description |
+|---|---|---|
+| `dry_run` | boolean | list what would be deleted without deleting |
+| `json` | string | prune: the spec as inline JSON |
+| `op` | string | one of: all, prune |
+| `path` | string | prune: the scene spec file (its scene_id and labels are kept) |
+| `save` | boolean | save afterwards (default true) |
+| `scene_id` | string | all: the scene whose actors to delete |

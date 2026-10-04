@@ -10,8 +10,8 @@ MCP client ── stdio ─────────▶ unreal-mcp ── UDP/TCP
                                  static binary)  [native channel] ──▶  UnrealMCP plugin (optional, MCPCore)
 ```
 
-- **Tools**: [`docs/tools.md`](docs/tools.md) (generated) — 36 core tools plus optional toolsets (`daemon`,
-  `headless`, `design`, `ui`, `desktop`, `polyworld`).
+- **Tools**: [`docs/tools.md`](docs/tools.md) (generated) — 33 core tools plus optional toolsets (`daemon`,
+  `headless`, `design`, `ui`, `desktop`, `polyworld`, `world`).
 - **Coming from v1?** [`docs/migration-v2.md`](docs/migration-v2.md) maps all 155 v1 tool names to their v2 calls.
 - **How it works**: [`docs/architecture.md`](docs/architecture.md). **Running it**: [`docs/operations.md`](docs/operations.md).
 

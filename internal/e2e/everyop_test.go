@@ -73,7 +73,7 @@ func everyOp(t *testing.T, native bool) {
 	gitRun(t, dir, "commit", "-q", "-m", "seed")
 	gitRun(t, dir, "tag", "-a", "umcp/cp/1", "-m", "seed")
 
-	h := startHarness(t, harnessOpts{project: dir, native: native, toolsets: []spec.Toolset{spec.Design, spec.UI, spec.PolyWorld, spec.Headless}})
+	h := startHarness(t, harnessOpts{project: dir, native: native, toolsets: []spec.Toolset{spec.Design, spec.UI, spec.PolyWorld, spec.Headless, spec.World}})
 	installPermissiveOps(h, dir, png)
 	h.call(t, "actor_edit", map[string]any{"op": "spawn", "world": "editor", "class": "/Script/Engine.Actor", "label": "Cube"})
 
