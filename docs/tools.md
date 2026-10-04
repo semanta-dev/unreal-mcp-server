@@ -412,24 +412,29 @@ Orient in a project.
 
 _tier ephemeral_
 
-Inspect UMG widgets without PIE.
+Inspect UMG widgets.
 - tree: a WidgetBlueprint's tree + digest.
 - describe: the palette, or one class's props and slot type.
 - render: a UserWidget class as a PNG (MCPAuthoring module).
+In PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text).
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
 | `tree` | readonly | canonical widget tree + structural digest | asset | editor |
 | `describe` | readonly | the authorable palette, or one class's props and slot |  | editor |
 | `render` | ephemeral | render a widget class offscreen to a PNG | class | editor, plugin |
+| `mount` | ephemeral | show a widget on the running game's screen | class | editor, pie, plugin>=4 |
+| `unmount` | ephemeral | remove widgets mounted with mount |  | editor, pie, plugin>=4 |
+| `live_tree` | readonly | the game's live widgets: geometry, visibility, text |  | editor, pie, plugin>=4 |
 
 | param | type | description |
 |---|---|---|
 | `asset` | string | tree: the WidgetBlueprint asset path |
-| `class` | string | describe: a widget class (omit for the palette); render: the UserWidget class |
+| `class` | string | describe: a widget class (omit for the palette); render/mount: the UserWidget class or WidgetBlueprint; unmount/live_tree: only this class |
 | `height` | integer | render: pixels (default 720) |
-| `op` | string | one of: tree, describe, render |
+| `op` | string | one of: tree, describe, render, mount, unmount, live_tree |
 | `width` | integer | render: pixels (default 1280) |
+| `z_order` | integer | mount: layer (default 10) |
 
 ### `pie` — Play In Editor
 
@@ -556,14 +561,14 @@ _tier ephemeral_
 
 Look at the world (PNG).
 - viewport: the editor world via a scene capture (works backgrounded).
-- pie: the running game's screen (needs a visible viewport).
+- pie: the running game's screen (needs a visible viewport); HighResShot leaves out UMG/Slate UI — ui=true includes it.
 - orbit: `actors` (or the level) from num_angles angles in one sheet.
 Results list any map the capture actors dirtied.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
 | `viewport` | ephemeral | render the editor world from the viewport (or a given) camera |  | editor |
-| `pie` | ephemeral | the running game's screen (HighResShot) |  | editor, pie |
+| `pie` | ephemeral | the running game's screen (HighResShot; ui=true: with the UI) |  | editor, pie, plugin>=3 for ui |
 | `orbit` | ephemeral | N angles around a target as one contact sheet |  | editor |
 
 | param | type | description |
@@ -580,6 +585,7 @@ Results list any map the capture actors dirtied.
 | `num_angles` | integer | orbit: angles around the target (default 8) |
 | `op` | string | one of: viewport, pie, orbit |
 | `rotation` | number[] | viewport: camera [pitch, yaw, roll] |
+| `ui` | boolean | pie: the screen as the player sees it, UMG/Slate UI included (plugin; needs a visible game viewport) |
 | `width` | integer | viewport/pie: pixels (default 1280 / 1920) |
 
 ### `capture` — Record frames
@@ -966,6 +972,7 @@ Author a WidgetBlueprint's tree declaratively (create the asset with asset_creat
 - op=compose: apply `tree` — add/update/reorder nodes, slots, props — then compile; never deletes. Re-composing the same tree is a no-op (same digest).
 - op=prune: like compose, but DELETES every node absent from `tree` and the names in `remove`.
 - op=compile: compile + save; returns the digest (and ends a deferred patch).
+- op=bind (parent class MCPHUDWidget): `bindings` [{widget, field, source: pawn|pc|player_state|game_state|subsystem|world_actor|ability_system, path, label?, max_path?, conversion?: none|ratio|int_to_text|float_to_text|float_to_percent|format_text|bool_to_visibility, format?}] — each tick the field follows the value; keyed by widget+field ({remove: true} drops one).
 Check the result with widget_query op=tree / op=render.
 
 | op | tier | does | required | needs |
@@ -973,13 +980,15 @@ Check the result with widget_query op=tree / op=render.
 | `compose` | mutating | add/update nodes from a declarative tree (additive), then compile | asset, tree | editor |
 | `prune` | destructive | converge on the tree, DELETING nodes absent from it (+ remove) | asset, tree | editor |
 | `compile` | mutating | compile and save; ends a deferred compose | asset | editor |
+| `bind` | mutating | HUD value bindings (MCPHUDWidget): a child's field follows a game value | asset, bindings | editor, plugin>=4 |
 
 | param | type | description |
 |---|---|---|
 | `asset` | string | the WidgetBlueprint asset path |
+| `bindings` | object[] | bind: the value bindings (see the description) |
 | `defer` | boolean | compose mode=patch: apply without compiling until op=compile |
 | `mode` | string | compose: full (default; converge the whole tree on the spec, never deleting) \| patch (only the given nodes) — one of: full, patch |
-| `op` | string | one of: compose, prune, compile |
+| `op` | string | one of: compose, prune, compile, bind |
 | `remove` | string[] | prune: also remove these named nodes |
 | `tree` | object | compose/prune: declarative node {name, class, slot?, props?, brush?, font?, is_variable?, children?[]}; every node named; class is a friendly name (TextBlock, ProgressBar, Image, Button, CanvasPanel, VerticalBox, Overlay, ...) or a /Script or /Game path |
 

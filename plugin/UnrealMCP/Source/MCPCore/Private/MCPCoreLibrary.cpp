@@ -23,7 +23,8 @@
 // 5: MCPControl InjectAxis (per tick), MoveCursor/ClickAt/DragCursor/ClickWidget (Slate, no
 //    OS capture), SpawnInGame (remediation R2).
 // 6: MCPAuthoring GetCurveKeysJson/SetCurveKeysJson, DescribeBlueprintJson (remediation R3).
-static constexpr int32 GMCPPluginApiVersion = 6;
+// 7: UMCPHUDWidget FloatToText/FloatToPercent/BoolToVisibility conversions, FormatText with a MaxPath (remediation R4).
+static constexpr int32 GMCPPluginApiVersion = 7;
 
 int32 UMCPCoreLibrary::GetPluginApiVersion()
 {

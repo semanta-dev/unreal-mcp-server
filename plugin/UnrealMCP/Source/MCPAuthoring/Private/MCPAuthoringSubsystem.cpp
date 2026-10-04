@@ -798,6 +798,18 @@ FString UMCPAuthoringSubsystem::SetConfigDefaultsJson(UClass* SettingsClass, con
 				Matches.AddUnique(*It);
 			}
 		}
+		if (Matches.Num() > 1)
+		{
+			// The exact name wins over a bool's b-less alias (Enabled vs bEnabled).
+			for (FProperty* M : Matches)
+			{
+				if (M->GetName() == Pair.Key)
+				{
+					Matches = {M};
+					break;
+				}
+			}
+		}
 		if (Matches.Num() != 1)
 		{
 			FString Names;

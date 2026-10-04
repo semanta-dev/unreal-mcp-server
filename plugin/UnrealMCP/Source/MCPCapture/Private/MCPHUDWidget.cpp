@@ -289,7 +289,11 @@ void UMCPHUDWidget::NativeTick(const FGeometry& MyGeometry, float DeltaTime)
 		{
 			continue;
 		}
-		const bool bRatio = (B.Conversion == EMCPFieldConversion::Ratio) || !B.MaxPath.IsEmpty();
+		// A ratio by name, or an unconverted value with a denominator. (Not any binding with a
+		// MaxPath: FormatText reads one for {max} and writes text — as a "ratio" it wrote a
+		// float into a text field, i.e. nothing.)
+		const bool bRatio = (B.Conversion == EMCPFieldConversion::Ratio)
+			|| (B.Conversion == EMCPFieldConversion::None && !B.MaxPath.IsEmpty());
 		if (bRatio)
 		{
 			double MaxVal = 0.0;
@@ -314,6 +318,27 @@ void UMCPHUDWidget::NativeTick(const FGeometry& MyGeometry, float DeltaTime)
 		else if (B.Conversion == EMCPFieldConversion::IntToText)
 		{
 			ApplyText(Target, B.TargetField, FText::AsNumber((int32)Val));
+		}
+		// Plugin API 7: the remaining conversions (before, they fell through to a float
+		// write that a text or visibility target ignored).
+		else if (B.Conversion == EMCPFieldConversion::FloatToText)
+		{
+			FNumberFormattingOptions Fmt;
+			Fmt.MinimumFractionalDigits = 0;
+			Fmt.MaximumFractionalDigits = 2;
+			ApplyText(Target, B.TargetField, FText::AsNumber(Val, &Fmt));
+		}
+		else if (B.Conversion == EMCPFieldConversion::FloatToPercent)
+		{
+			ApplyText(Target, B.TargetField, FText::AsPercent(Val)); // 0.42 -> "42%"
+		}
+		else if (B.Conversion == EMCPFieldConversion::BoolToVisibility)
+		{
+			const ESlateVisibility Want = Val != 0.0 ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
+			if (Target->GetVisibility() != Want)
+			{
+				Target->SetVisibility(Want);
+			}
 		}
 		else
 		{

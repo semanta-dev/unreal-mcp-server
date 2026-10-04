@@ -2527,7 +2527,7 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Look at the world (PNG).\n- viewport: the editor world via a scene capture (works backgrounded).\n- pie: the running game's screen (needs a visible viewport).\n- orbit: `actors` (or the level) from num_angles angles in one sheet.\nResults list any map the capture actors dirtied.",
+      "description": "Look at the world (PNG).\n- viewport: the editor world via a scene capture (works backgrounded).\n- pie: the running game's screen (needs a visible viewport); HighResShot leaves out UMG/Slate UI — ui=true includes it.\n- orbit: `actors` (or the level) from num_angles angles in one sheet.\nResults list any map the capture actors dirtied.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2591,6 +2591,10 @@
               "type": "number"
             },
             "type": "array"
+          },
+          "ui": {
+            "description": "pie: the screen as the player sees it, UMG/Slate UI included (plugin; needs a visible game viewport)",
+            "type": "boolean"
           },
           "width": {
             "description": "viewport/pie: pixels (default 1280 / 1920)",
@@ -2858,13 +2862,21 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Author a WidgetBlueprint's tree declaratively (create the asset with asset_create kind=widget_blueprint).\n- op=compose: apply `tree` — add/update/reorder nodes, slots, props — then compile; never deletes. Re-composing the same tree is a no-op (same digest).\n- op=prune: like compose, but DELETES every node absent from `tree` and the names in `remove`.\n- op=compile: compile + save; returns the digest (and ends a deferred patch).\nCheck the result with widget_query op=tree / op=render.",
+      "description": "Author a WidgetBlueprint's tree declaratively (create the asset with asset_create kind=widget_blueprint).\n- op=compose: apply `tree` — add/update/reorder nodes, slots, props — then compile; never deletes. Re-composing the same tree is a no-op (same digest).\n- op=prune: like compose, but DELETES every node absent from `tree` and the names in `remove`.\n- op=compile: compile + save; returns the digest (and ends a deferred patch).\n- op=bind (parent class MCPHUDWidget): `bindings` [{widget, field, source: pawn|pc|player_state|game_state|subsystem|world_actor|ability_system, path, label?, max_path?, conversion?: none|ratio|int_to_text|float_to_text|float_to_percent|format_text|bool_to_visibility, format?}] — each tick the field follows the value; keyed by widget+field ({remove: true} drops one).\nCheck the result with widget_query op=tree / op=render.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "asset": {
             "description": "the WidgetBlueprint asset path",
             "type": "string"
+          },
+          "bindings": {
+            "description": "bind: the value bindings (see the description)",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
           },
           "defer": {
             "description": "compose mode=patch: apply without compiling until op=compile",
@@ -2882,7 +2894,8 @@
             "enum": [
               "compose",
               "prune",
-              "compile"
+              "compile",
+              "bind"
             ],
             "type": "string"
           },
@@ -2911,10 +2924,9 @@
     {
       "annotations": {
         "destructiveHint": false,
-        "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Inspect UMG widgets without PIE.\n- tree: a WidgetBlueprint's tree + digest.\n- describe: the palette, or one class's props and slot type.\n- render: a UserWidget class as a PNG (MCPAuthoring module).",
+      "description": "Inspect UMG widgets.\n- tree: a WidgetBlueprint's tree + digest.\n- describe: the palette, or one class's props and slot type.\n- render: a UserWidget class as a PNG (MCPAuthoring module).\nIn PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2923,7 +2935,7 @@
             "type": "string"
           },
           "class": {
-            "description": "describe: a widget class (omit for the palette); render: the UserWidget class",
+            "description": "describe: a widget class (omit for the palette); render/mount: the UserWidget class or WidgetBlueprint; unmount/live_tree: only this class",
             "type": "string"
           },
           "height": {
@@ -2934,12 +2946,19 @@
             "enum": [
               "tree",
               "describe",
-              "render"
+              "render",
+              "mount",
+              "unmount",
+              "live_tree"
             ],
             "type": "string"
           },
           "width": {
             "description": "render: pixels (default 1280)",
+            "type": "integer"
+          },
+          "z_order": {
+            "description": "mount: layer (default 10)",
             "type": "integer"
           }
         },

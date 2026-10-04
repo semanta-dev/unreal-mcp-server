@@ -497,24 +497,29 @@ func projectMapSpec() *spec.Spec {
 // --- widget_query / widget_edit --------------------------------------------------
 
 type widgetQueryIn struct {
-	Op     string `json:"op" jsonschema:"tree | describe | render"`
+	Op     string `json:"op" jsonschema:"tree | describe | render | mount | unmount | live_tree"`
 	Asset  string `json:"asset,omitempty" jsonschema:"tree: the WidgetBlueprint asset path"`
-	Class  string `json:"class,omitempty" jsonschema:"describe: a widget class (omit for the palette); render: the UserWidget class"`
+	Class  string `json:"class,omitempty" jsonschema:"describe: a widget class (omit for the palette); render/mount: the UserWidget class or WidgetBlueprint; unmount/live_tree: only this class"`
 	Width  int    `json:"width,omitempty" jsonschema:"render: pixels (default 1280)"`
 	Height int    `json:"height,omitempty" jsonschema:"render: pixels (default 720)"`
+	ZOrder int    `json:"z_order,omitempty" jsonschema:"mount: layer (default 10)"`
 }
 
 func widgetQuerySpec() *spec.Spec {
 	ops := []spec.OpSpec{
 		{Name: "tree", Summary: "canonical widget tree + structural digest", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"asset"}, Reaches: []string{"widget_tree"}},
 		{Name: "describe", Summary: "the authorable palette, or one class's props and slot", Tier: spec.ReadOnly, Idempotent: true, Reaches: []string{"widget_describe"}},
-		{Name: "render", Summary: "render a widget class offscreen to a PNG", Tier: spec.Ephemeral, Idempotent: true, Required: []string{"class"}, Reaches: []string{"widget_render"}, Needs: []string{"plugin"}},
+		{Name: "render", Summary: "render a widget class offscreen to a PNG", Tier: spec.Ephemeral, Idempotent: true, Required: []string{"class"}, Rejects: []string{"z_order"}, Reaches: []string{"widget_render"}, Needs: []string{"plugin"}},
+		{Name: "mount", Summary: "show a widget on the running game's screen", Tier: spec.Ephemeral, Required: []string{"class"}, Rejects: []string{"asset", "width", "height"}, Reaches: []string{"widget_mount"}, Needs: []string{"pie", "plugin>=4"}},
+		{Name: "unmount", Summary: "remove widgets mounted with mount", Tier: spec.Ephemeral, Idempotent: true, Rejects: []string{"asset", "width", "height", "z_order"}, Reaches: []string{"widget_unmount"}, Needs: []string{"pie", "plugin>=4"}},
+		{Name: "live_tree", Summary: "the game's live widgets: geometry, visibility, text", Tier: spec.ReadOnly, Idempotent: true, Rejects: []string{"asset", "width", "height", "z_order"}, Reaches: []string{"widget_live_tree"}, Needs: []string{"pie", "plugin>=4"}},
 	}
 	return &spec.Spec{
 		Name: "widget_query", Title: "Inspect UMG widgets", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
-		Description: "Inspect UMG widgets without PIE.\n- tree: a WidgetBlueprint's tree + digest.\n- describe: the palette, or one class's props and slot type.\n- render: a UserWidget class as a PNG (MCPAuthoring module).",
-		Schema:      spec.SchemaFor[widgetQueryIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
-		Replaces:    []string{"widget_tree", "widget_describe", "widget_render"},
+		Description: "Inspect UMG widgets.\n- tree: a WidgetBlueprint's tree + digest.\n- describe: the palette, or one class's props and slot type.\n- render: a UserWidget class as a PNG (MCPAuthoring module).\n" +
+			"In PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text).",
+		Schema:   spec.SchemaFor[widgetQueryIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
+		Replaces: []string{"widget_tree", "widget_describe", "widget_render"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			switch c.Op.Name {
 			case "tree":
@@ -523,6 +528,13 @@ func widgetQuerySpec() *spec.Spec {
 			case "describe":
 				out, err := v2Op(ctx, c, "widget_describe", rename(map[string]any{}, c.Args, "class", "widget_class"))
 				return &spec.Result{Data: out, Summary: "widget palette"}, err
+			case "mount", "unmount", "live_tree":
+				out, err := v2Op(ctx, c, "widget_"+c.Op.Name, pick(c.Args, "class", "z_order"))
+				summary := c.Op.Name + " " + fmt.Sprint(c.Args["class"])
+				if ws, ok := out["widgets"].([]any); ok {
+					summary = fmt.Sprintf("%d live widgets", len(ws))
+				}
+				return &spec.Result{Data: out, Summary: summary}, err
 			}
 			out, err := v2Op(ctx, c, "widget_render", rename(map[string]any{}, c.Args, "class", "widget_class", "width", "width", "height", "height"))
 			if err != nil {
@@ -537,12 +549,18 @@ func widgetQuerySpec() *spec.Spec {
 }
 
 type widgetEditIn struct {
-	Op     string         `json:"op" jsonschema:"compose | prune | compile"`
-	Asset  string         `json:"asset" jsonschema:"the WidgetBlueprint asset path"`
-	Tree   map[string]any `json:"tree,omitempty" jsonschema:"compose/prune: declarative node {name, class, slot?, props?, brush?, font?, is_variable?, children?[]}; every node named; class is a friendly name (TextBlock, ProgressBar, Image, Button, CanvasPanel, VerticalBox, Overlay, ...) or a /Script or /Game path"`
-	Mode   string         `json:"mode,omitempty" jsonschema:"compose: full (default; converge the whole tree on the spec, never deleting) | patch (only the given nodes)"`
-	Defer  bool           `json:"defer,omitempty" jsonschema:"compose mode=patch: apply without compiling until op=compile"`
-	Remove []string       `json:"remove,omitempty" jsonschema:"prune: also remove these named nodes"`
+	Bindings []map[string]any `json:"bindings,omitempty" jsonschema:"bind: the value bindings (see the description)"`
+	Op       string           `json:"op" jsonschema:"compose | prune | compile | bind"`
+	Asset    string           `json:"asset" jsonschema:"the WidgetBlueprint asset path"`
+	Tree     map[string]any   `json:"tree,omitempty" jsonschema:"compose/prune: declarative node {name, class, slot?, props?, brush?, font?, is_variable?, children?[]}; every node named; class is a friendly name (TextBlock, ProgressBar, Image, Button, CanvasPanel, VerticalBox, Overlay, ...) or a /Script or /Game path"`
+	Mode     string           `json:"mode,omitempty" jsonschema:"compose: full (default; converge the whole tree on the spec, never deleting) | patch (only the given nodes)"`
+	Defer    bool             `json:"defer,omitempty" jsonschema:"compose mode=patch: apply without compiling until op=compile"`
+	Remove   []string         `json:"remove,omitempty" jsonschema:"prune: also remove these named nodes"`
+}
+
+func asSlice(v any) []any {
+	s, _ := v.([]any)
+	return s
 }
 
 func widgetEditSpec() *spec.Spec {
@@ -552,7 +570,9 @@ func widgetEditSpec() *spec.Spec {
 		{Name: "prune", Summary: "converge on the tree, DELETING nodes absent from it (+ remove)", Tier: spec.Destructive,
 			Required: []string{"asset", "tree"}, Rejects: []string{"mode", "defer"}, Reaches: []string{"widget_compose"}},
 		{Name: "compile", Summary: "compile and save; ends a deferred compose", Tier: spec.Mutating, Idempotent: true,
-			Required: []string{"asset"}, Rejects: []string{"tree", "remove", "mode", "defer"}, Reaches: []string{"widget_compile"}},
+			Required: []string{"asset"}, Rejects: []string{"tree", "remove", "mode", "defer", "bindings"}, Reaches: []string{"widget_compile"}},
+		{Name: "bind", Summary: "HUD value bindings (MCPHUDWidget): a child's field follows a game value", Tier: spec.Mutating, Idempotent: true,
+			Required: []string{"asset", "bindings"}, Rejects: []string{"tree", "remove", "mode", "defer"}, Reaches: []string{"widget_bind"}, Needs: []string{"plugin>=4"}},
 	}
 	return &spec.Spec{
 		Name: "widget_edit", Title: "Author UMG widgets", Toolset: spec.UI, Timeout: sync25, Max: sync28, Ops: ops,
@@ -561,10 +581,21 @@ func widgetEditSpec() *spec.Spec {
 			"Re-composing the same tree is a no-op (same digest).\n" +
 			"- op=prune: like compose, but DELETES every node absent from `tree` and the names in `remove`.\n" +
 			"- op=compile: compile + save; returns the digest (and ends a deferred patch).\n" +
+			"- op=bind (parent class MCPHUDWidget): `bindings` [{widget, field, source: pawn|pc|player_state|game_state|subsystem|world_actor|ability_system, " +
+			"path, label?, max_path?, conversion?: none|ratio|int_to_text|float_to_text|float_to_percent|format_text|bool_to_visibility, format?}] — " +
+			"each tick the field follows the value; keyed by widget+field ({remove: true} drops one).\n" +
 			"Check the result with widget_query op=tree / op=render.",
 		Schema:   spec.SchemaFor[widgetEditIn](map[string][]any{"op": spec.OpEnum(ops...), "mode": {"full", "patch"}}, "op", "asset"),
 		Replaces: []string{"widget_compose", "widget_compile"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
+			if c.Op.Name == "bind" {
+				out, err := v2Op(ctx, c, "widget_bind", rename(map[string]any{}, c.Args, "asset", "blueprint", "bindings", "bindings"))
+				if err != nil {
+					return nil, err
+				}
+				out["undoable"] = false // a class-default write + compile, no editor transaction
+				return &spec.Result{Data: out, Summary: fmt.Sprintf("%v bindings on %v", len(asSlice(out["bindings"])), c.Args["asset"])}, nil
+			}
 			if c.Op.Name == "compile" {
 				out, err := v2Op(ctx, c, "widget_compile", map[string]any{"blueprint": c.Args["asset"]})
 				if err != nil {

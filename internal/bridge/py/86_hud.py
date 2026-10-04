@@ -521,3 +521,148 @@ def _op_pie_set_property(args):
     return {"error": "target not found: " + str(label), "code": "TARGET_NOT_FOUND"}
 
 
+
+
+# --- R4: HUD bindings, mounting and the live tree ---------------------------------------
+# UMCPHUDWidget pulls values every tick from a source (pawn, game state, a subsystem...)
+# into a child widget's field (FieldSourceBindings; the struct is invisible to Python, so
+# it goes through the plugin's class-default JSON).
+
+_BIND_SOURCES = {"owning_pawn": "OwningPawn", "pawn": "OwningPawn", "owning_pc": "OwningPC", "pc": "OwningPC",
+                 "player_state": "PlayerState", "world_actor": "WorldActor", "ability_system": "AbilitySystem",
+                 "game_state": "GameState", "gamestate": "GameState", "subsystem": "Subsystem"}
+# conversion -> (field kind it writes, plugin API it needs)
+_BIND_CONVERSIONS = {"none": ("float", 4), "ratio": ("float", 4), "int_to_text": ("text", 4), "format_text": ("text", 4),
+                     "float_to_text": ("text", 7), "float_to_percent": ("text", 7), "bool_to_visibility": ("visibility", 7)}
+_BIND_ENUM = {"none": "None", "ratio": "Ratio", "int_to_text": "IntToText", "format_text": "FormatText",
+              "float_to_text": "FloatToText", "float_to_percent": "FloatToPercent", "bool_to_visibility": "BoolToVisibility"}
+
+
+def _bind_key(b):
+    return (str(b.get("TargetWidget")), str(b.get("TargetField")))
+
+
+def _check_binding(i, b, index):
+    """One agent-facing binding -> the plugin struct's JSON, every part checked (the HUD
+    applies a binding silently or not at all: a wrong field never shows an error)."""
+    if not isinstance(b, dict):
+        raise _V2Error("BAD_VALUE", "bindings[%d] must be an object" % i)
+    unknown = set(b) - {"widget", "field", "source", "path", "max_path", "label", "conversion", "format", "remove"}
+    if unknown:
+        raise _V2Error("BAD_VALUE", "bindings[%d]: unknown keys %s" % (i, sorted(unknown)))
+    widget, field = str(b.get("widget") or ""), str(b.get("field") or "")
+    conv = str(b.get("conversion") or "none").lower()
+    if conv == "bool_to_visibility":
+        field = field or "Visibility"
+    if not widget or not field:
+        raise _V2Error("BAD_VALUE", "bindings[%d] needs widget and field" % i)
+    if b.get("remove"):
+        return {"TargetWidget": widget, "TargetField": field}, True
+    w = index.get(widget)
+    if w is None:
+        raise _V2Error("NOT_FOUND", "bindings[%d]: no widget %r in this Blueprint" % (i, widget), widgets=sorted(index))
+    if conv not in _BIND_CONVERSIONS:
+        raise _V2Error("BAD_VALUE", "bindings[%d]: conversion must be one of %s" % (i, ", ".join(_BIND_CONVERSIONS)))
+    kind, api = _BIND_CONVERSIONS[conv]
+    _need_plugin(api, "the %s conversion" % conv)
+    if kind != "visibility":
+        try:
+            cur = w.get_editor_property(_snake(field))
+        except Exception:
+            raise _V2Error("BAD_VALUE", "bindings[%d]: %s (%s) has no field %r" % (i, widget, w.get_class().get_name(), field)) from None
+        is_text = type(cur).__name__ == "Text"
+        if (kind == "text") != is_text or (kind == "float" and not isinstance(cur, float)):
+            raise _V2Error("BAD_VALUE", "bindings[%d]: %s writes a %s, but %s.%s is a %s" % (
+                i, conv, kind, widget, field, type(cur).__name__))
+    source = _BIND_SOURCES.get(str(b.get("source") or "").lower())
+    if source is None:
+        raise _V2Error("BAD_VALUE", "bindings[%d]: source must be one of %s" % (i, ", ".join(sorted(set(_BIND_SOURCES)))))
+    label = str(b.get("label") or "")
+    if source in ("WorldActor", "Subsystem") and not label:
+        raise _V2Error("BAD_VALUE", "bindings[%d]: source %s needs label (%s)" % (
+            i, source, "the actor's label" if source == "WorldActor" else "the subsystem class path"))
+    if not b.get("path"):
+        raise _V2Error("BAD_VALUE", "bindings[%d] needs path (a property or zero-arg getter on the source)" % i)
+    if conv == "ratio" and not b.get("max_path"):
+        raise _V2Error("BAD_VALUE", "bindings[%d]: ratio needs max_path" % i)
+    if conv == "format_text" and not b.get("format"):
+        raise _V2Error("BAD_VALUE", "bindings[%d]: format_text needs format, e.g. {value} / {max}" % i)
+    return {"TargetWidget": widget, "TargetField": field, "Source": source, "SourceLabel": label,
+            "Path": str(b["path"]), "MaxPath": str(b.get("max_path") or ""), "Conversion": _BIND_ENUM[conv],
+            "Format": str(b.get("format") or "")}, False
+
+
+def _op_widget_bind(args):
+    """Set UMCPHUDWidget value bindings on a WidgetBlueprint: keyed by (widget, field) -
+    a binding replaces the one on the same field, {remove: true} drops it, the others
+    stay. All checked first, written all or nothing, then compiled and saved."""
+    _need_plugin(4, "HUD bindings")
+    bp_path = args.get("blueprint") or ""
+    wbp = unreal.load_asset(bp_path)
+    if not isinstance(wbp, unreal.WidgetBlueprint):
+        raise _V2Error("NOT_FOUND", "not a WidgetBlueprint: %s" % bp_path)
+    bindings = args.get("bindings")
+    if not isinstance(bindings, list) or not bindings:
+        raise _V2Error("BAD_VALUE", "bindings must be a list of {widget, field, source, path, conversion?, ...}")
+    auth = _mcp_authoring()
+    cur = json.loads(auth.get_class_default_json(wbp, "FieldSourceBindings"))
+    if not cur.get("ok"):
+        raise _V2Error("BAD_VALUE", "%s: %s (is its parent class UMCPHUDWidget?)" % (bp_path, cur.get("error")))
+    index = {}
+    root = _wroot(_wtree(wbp))
+    if root is not None:
+        _widget_index(root, index)
+    merged = {_bind_key(b): b for b in cur.get("value") or []}
+    for i, b in enumerate(bindings):
+        entry, remove = _check_binding(i, b, index)
+        if remove:
+            if merged.pop(_bind_key(entry), None) is None:
+                raise _V2Error("NOT_FOUND", "bindings[%d]: no binding on %s.%s to remove" % (i, entry["TargetWidget"], entry["TargetField"]))
+        else:
+            merged[_bind_key(entry)] = entry
+    res = json.loads(auth.set_class_default_json(wbp, "FieldSourceBindings", json.dumps(list(merged.values()))))
+    if not res.get("ok"):
+        raise _V2Error("BAD_VALUE", "%s: %s" % (bp_path, res.get("error")))
+    unreal.BlueprintEditorLibrary.compile_blueprint(wbp)
+    unreal.EditorAssetLibrary.save_asset(bp_path)
+    after = json.loads(auth.get_class_default_json(wbp, "FieldSourceBindings"))
+    return {"blueprint": bp_path, "bindings": after.get("value") or []}
+
+
+def _widget_class(path):
+    """A UserWidget class from a WidgetBlueprint path or its generated class path."""
+    if not path:
+        return None
+    leaf = path.rsplit("/", 1)[-1]
+    full = path if (path.endswith("_C") or "." in leaf) else "%s.%s_C" % (path, leaf)
+    cls = _resolve_class(full)
+    if cls is None:
+        raise _V2Error("CLASS_UNRESOLVED", "no widget class %s" % path)
+    return cls
+
+
+def _op_widget_mount(args):
+    """Add a widget to the running game's viewport for player 0 (plugin API 4)."""
+    _need_plugin(4, "mount")
+    _, ctrl = _pie_control()
+    cls = _widget_class(args.get("class") or "")
+    if cls is None:
+        raise _V2Error("BAD_VALUE", "mount needs class (a WidgetBlueprint path)")
+    w = ctrl.mount_widget(cls, int(args.get("z_order") or 10))
+    if not w:
+        raise _V2Error("PRECONDITION", "could not mount %s (no player controller?)" % args.get("class"))
+    return {"mounted": w.get_name(), "class": cls.get_path_name()}
+
+
+def _op_widget_unmount(args):
+    _need_plugin(4, "unmount")
+    _, ctrl = _pie_control()
+    return {"unmounted": int(ctrl.unmount_widget(_widget_class(args.get("class") or "")))}
+
+
+def _op_widget_live_tree(args):
+    """The UMG widgets live in the running game: each with its tree, geometry (viewport
+    pixels), visibility and text (plugin API 4)."""
+    _need_plugin(4, "live_tree")
+    _, ctrl = _pie_control()
+    return {"widgets": json.loads(ctrl.describe_live_widgets(_widget_class(args.get("class") or "")) or "[]")}

@@ -489,7 +489,7 @@ _MCP_REDO = []
 # the transient game world, not the level). Kept equal to spec.UndoClass by a Go test.
 _UNTRACKED_EDIT_OPS = frozenset(("asset_create", "asset_edit", "asset_reimport", "import_assets", "datatable_import",
                                  "widget_compose", "widget_compile", "set_world_gamemode", "live_coding_compile",
-                                 "data_add_variable", "data_input_mapping", "data_set_settings"))
+                                 "data_add_variable", "data_input_mapping", "data_set_settings", "widget_bind"))
 _UNTRACKED_WORLD_OPS = frozenset(("company_build", "company_road", "company_demolish", "company_select", "console",
                                   "apply_level_recipe"))
 

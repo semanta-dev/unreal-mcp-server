@@ -813,21 +813,73 @@ type screenshotIn struct {
 	Cols       int       `json:"cols,omitempty" jsonschema:"orbit: contact-sheet columns (default 4)"`
 	CellWidth  int       `json:"cell_width,omitempty" jsonschema:"orbit: per-angle width (default 480)"`
 	CellHeight int       `json:"cell_height,omitempty" jsonschema:"orbit: per-angle height (default 270)"`
+	UI         bool      `json:"ui,omitempty" jsonschema:"pie: the screen as the player sees it, UMG/Slate UI included (plugin; needs a visible game viewport)"`
 }
 
 func screenshotSpec() *spec.Spec {
 	ops := []spec.OpSpec{
-		{Name: "viewport", Summary: "render the editor world from the viewport (or a given) camera", Tier: spec.Ephemeral, Idempotent: true, Reaches: []string{"take_screenshot"}},
-		{Name: "pie", Summary: "the running game's screen (HighResShot)", Tier: spec.Ephemeral, Idempotent: true, Reaches: []string{"pie_screenshot"}, Needs: []string{"pie"}},
-		{Name: "orbit", Summary: "N angles around a target as one contact sheet", Tier: spec.Ephemeral, Idempotent: true, Reaches: []string{"scene_bounds", "capture_poses"}},
+		{Name: "viewport", Summary: "render the editor world from the viewport (or a given) camera", Tier: spec.Ephemeral, Idempotent: true, Rejects: []string{"ui"}, Reaches: []string{"take_screenshot"}},
+		{Name: "pie", Summary: "the running game's screen (HighResShot; ui=true: with the UI)", Tier: spec.Ephemeral, Idempotent: true, Reaches: []string{"pie_screenshot", "capture_start", "capture_poll", "capture_stop"}, Needs: []string{"pie", "plugin>=3 for ui"}},
+		{Name: "orbit", Summary: "N angles around a target as one contact sheet", Tier: spec.Ephemeral, Idempotent: true, Rejects: []string{"ui"}, Reaches: []string{"scene_bounds", "capture_poses"}},
 	}
 	return &spec.Spec{
 		Name: "screenshot", Title: "Screenshot", Toolset: spec.Core, Timeout: sync25, Max: sync28, Ops: ops,
-		Description: "Look at the world (PNG).\n- viewport: the editor world via a scene capture (works backgrounded).\n- pie: the running game's screen (needs a visible viewport).\n- orbit: `actors` (or the level) from num_angles angles in one sheet.\nResults list any map the capture actors dirtied.",
+		Description: "Look at the world (PNG).\n- viewport: the editor world via a scene capture (works backgrounded).\n- pie: the running game's screen (needs a visible viewport); HighResShot leaves out UMG/Slate UI — ui=true includes it.\n- orbit: `actors` (or the level) from num_angles angles in one sheet.\nResults list any map the capture actors dirtied.",
 		Schema:      spec.SchemaFor[screenshotIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces:    []string{"take_screenshot", "pie_screenshot", "scene_contact_sheet"},
 		Handler:     screenshot,
 	}
+}
+
+// uiShot takes the running game's screen with its UI: HighResShot renders the scene
+// only (UMG and Slate HUDs are composited by Slate, not the renderer), so this takes one
+// frame of the plugin's game_scene capture with include_ui (FSlateApplication::TakeScreenshot
+// of the game viewport) from the player's camera.
+func uiShot(ctx context.Context, c *spec.Call, in screenshotIn) (*spec.Result, error) {
+	session := fmt.Sprintf("shot_%d", time.Now().UnixNano())
+	if _, err := v2Op(ctx, c, "capture_start", map[string]any{"session": session, "world": "pie", "source": "game_scene",
+		"include_ui": true, "max_frames": 1, "interval_s": 0.05, "cell_width": orDefaultInt(in.Width, 1280),
+		"cell_height": orDefaultInt(in.Height, 720), "camera": map[string]any{"mode": "player"}}); err != nil {
+		return nil, err
+	}
+	deadline := time.Now().Add(pollTimeout(ctx, 10, 10*time.Second))
+	for time.Now().Before(deadline) {
+		st, err := v2Op(ctx, c, "capture_poll", map[string]any{"session": session})
+		if err == nil {
+			if n, _ := st["frames_captured"].(float64); n >= 1 {
+				break
+			}
+		}
+		if sleepCtx(ctx, 100*time.Millisecond) != nil {
+			break
+		}
+	}
+	b, err := v2Bridge(c)
+	if err != nil {
+		return nil, err
+	}
+	stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	raw, err := b.Call(stopCtx, "capture_stop", map[string]any{"session": session})
+	if err != nil {
+		return nil, err
+	}
+	var r captureStopResult
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return nil, err
+	}
+	if len(r.Frames) == 0 {
+		return nil, envelope.New(envelope.OperationFailed, "no frame was captured with the UI").
+			WithHint("the game viewport must be visible (not minimized) and PIE ticking")
+	}
+	p := r.Frames[0].File
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(r.Dir, p)
+	}
+	out := map[string]any{"file": p, "ui": true, "session": session}
+	res := &spec.Result{Data: out, Summary: "the game's screen with its UI"}
+	attachPNG(res, out, p)
+	return res, nil
 }
 
 func screenshot(ctx context.Context, c *spec.Call) (*spec.Result, error) {
@@ -837,6 +889,9 @@ func screenshot(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	}
 	if c.Op.Name == "orbit" {
 		return orbitShot(ctx, c, in)
+	}
+	if c.Op.Name == "pie" && in.UI {
+		return uiShot(ctx, c, in)
 	}
 	fname := fmt.Sprintf("mcp_%d_%d.png", os.Getpid(), time.Now().UnixNano())
 	args := map[string]any{"filename": fname}

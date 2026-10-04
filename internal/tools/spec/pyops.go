@@ -88,6 +88,10 @@ var PyOps = map[string]PyOp{
 	"pie_observe":         {Tier: ReadOnly},
 	"pie_time":            {Tier: ReadOnly},
 	"pie_axis_stats":      {Tier: ReadOnly, Plugin: 5},
+	"widget_bind":         {Tier: Mutating, Plugin: 4, Note: "MCPHUDWidget FieldSourceBindings; each binding checked, written all or nothing"},
+	"widget_mount":        {Tier: Ephemeral, Plugin: 4},
+	"widget_unmount":      {Tier: Ephemeral, Plugin: 4},
+	"widget_live_tree":    {Tier: ReadOnly, Plugin: 4},
 	"data_table_read":     {Tier: ReadOnly},
 	"data_curve_read":     {Tier: ReadOnly, Plugin: 6},
 	"data_blueprint":      {Tier: Ephemeral, Plugin: 6, Note: "compiles the Blueprint in memory (not saved) for its status and messages"},
@@ -193,5 +197,5 @@ var UndoClass = map[string]string{
 	"editor_undo": "none", "open_level": "none", "quit_editor": "none", "save_all": "none",
 	"game_command":        "pie",
 	"data_set_properties": "tx", "data_table_upsert": "tx", "data_table_delete": "tx", "data_curve_keys": "tx",
-	"data_add_variable": "untracked", "data_input_mapping": "untracked", "data_set_settings": "untracked",
+	"data_add_variable": "untracked", "data_input_mapping": "untracked", "data_set_settings": "untracked", "widget_bind": "untracked",
 }
