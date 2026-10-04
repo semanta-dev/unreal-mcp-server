@@ -588,7 +588,7 @@ func playtestSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "playtest", Title: "Automated playtest", Toolset: spec.Core, Timeout: sync15, Max: sync28, Ops: ops,
-		Description: "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict (or INSUFFICIENT_EVIDENCE), rubric, logs, timeline, playtest_path, …} + a contact sheet (wait_s / job). record_events: engine + game event timeline. op=batch seeds=[…]: a run per seed + the spread. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
+		Description: "Validate the game (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec: a UFUNCTION; console; wait_until; input: like pie; game_command), stop, score the rubric → {verdict (or INSUFFICIENT_EVIDENCE), rubric, logs, timeline, playtest_path, …} + a contact sheet (wait_s / job). record_events: engine + game event timeline. op=batch seeds=[…]: a run per seed + the spread. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
 		Schema:      spec.SchemaFor[playtestIn](map[string][]any{"op": spec.OpEnum(ops...), "beat_errors": {"fail", "warn"}}, "op"),
 		Replaces:    []string{"playtest_capture", "scenario_run"},
 		Handler:     playtestHandler,

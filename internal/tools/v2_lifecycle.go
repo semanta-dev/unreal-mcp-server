@@ -290,7 +290,7 @@ func editorLifecycleSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "editor_lifecycle", Title: "Editor process", Toolset: spec.Core, Timeout: sync8, Max: sync28, Ops: ops,
-		Description: "Start, restart or reconnect the editor.\n- ensure_open (job): launch it if none answers.\n- restart (job): safe shutdown — PRECONDITION listing unsaved packages (save=true saves, discard_dirty=true drops them), stop PIE, graceful quit (kill after 30 s, reported), relaunch on the same map. Daemon: lease kept; editor calls get retryable EDITOR_BUSY meanwhile. Cancel never kills.\n- reclaim: retake a command channel another client took.",
+		Description: "Start, restart or reconnect the editor.\n- ensure_open (job): launch it if none answers.\n- restart (job): safe shutdown (unsaved packages: PRECONDITION, or save=true / discard_dirty=true), stop PIE, graceful quit (kill after 30 s, reported), relaunch on the same map; daemon: lease kept, calls get retryable EDITOR_BUSY; cancel never kills.\n- reclaim: retake a command channel another client took.",
 		Schema:      spec.SchemaFor[editorLifecycleIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces:    []string{"project_ensure_open", "editor_restart"},
 		Handler:     editorLifecycle,
@@ -547,7 +547,7 @@ func gitRevertSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "git_revert", Title: "Revert to a checkpoint", Toolset: spec.Core, Timeout: sync20, Max: sync28,
 		Ops:         []spec.OpSpec{{Tier: spec.Destructive, Async: true, Required: []string{"to"}, Reaches: []string{"packages_state", "pie_stop", "editor_ping", "quit_editor"}, Needs: []string{"project"}}},
-		Description: "Restore the project's files to a git op=checkpoint (umcp/cp/N only, else PRECONDITION): changed files are restored, files added since are deleted, untracked files are kept. History is kept (the revert is working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing (a backup in Saved/MCP). rebuild_required means C++ changed: run build.",
+		Description: "Restore the project's files to a git op=checkpoint (umcp/cp/N only, else PRECONDITION): restores changed files, deletes files added since, keeps untracked ones; history is kept (working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing (a backup in Saved/MCP). rebuild_required means C++ changed: run build.",
 		Schema:      spec.SchemaFor[gitRevertIn](nil, "to"),
 		Replaces:    []string{"git_revert_to"},
 		Handler:     gitRevert,

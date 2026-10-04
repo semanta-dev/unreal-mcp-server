@@ -403,7 +403,7 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Edit a Blueprint's class defaults; each op compiles and saves.\n- op=set_defaults: `properties` on the CDO (per-property failures come back in errors[]).\n- op=add_component: add a `class` component (optional `name`).\n- op=assign_subclass: set TSubclassOf `property` to `class` (e.g. GameMode DefaultPawnClass).",
+      "description": "Edit a Blueprint's class defaults (data assets, tables, curves: data_edit, toolset data); each op compiles and saves.\n- op=set_defaults: `properties` on the CDO (per-property failures come back in errors[]).\n- op=add_component: add a `class` component (optional `name`).\n- op=assign_subclass: set TSubclassOf `property` to `class` (e.g. GameMode DefaultPawnClass).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -451,7 +451,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Bring outside data into assets. Every op OVERWRITES existing content.\n- op=files: import `files` into `folder`; an asset with the same name is replaced.\n- op=reimport: reload `asset` from its source file.\n- op=datatable: replace ALL rows of DataTable `asset` from `json` (preferred) or `csv`.",
+      "description": "Bring outside data into assets. Every op OVERWRITES existing content.\n- op=files: import `files` into `folder`; an asset with the same name is replaced.\n- op=reimport: reload `asset` from its source file.\n- op=datatable: replace ALL rows of DataTable `asset` from `json` (preferred) or `csv` (to change rows: data_edit).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1474,7 +1474,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Start, restart or reconnect the editor.\n- ensure_open (job): launch it if none answers.\n- restart (job): safe shutdown — PRECONDITION listing unsaved packages (save=true saves, discard_dirty=true drops them), stop PIE, graceful quit (kill after 30 s, reported), relaunch on the same map. Daemon: lease kept; editor calls get retryable EDITOR_BUSY meanwhile. Cancel never kills.\n- reclaim: retake a command channel another client took.",
+      "description": "Start, restart or reconnect the editor.\n- ensure_open (job): launch it if none answers.\n- restart (job): safe shutdown (unsaved packages: PRECONDITION, or save=true / discard_dirty=true), stop PIE, graceful quit (kill after 30 s, reported), relaunch on the same map; daemon: lease kept, calls get retryable EDITOR_BUSY; cancel never kills.\n- reclaim: retake a command channel another client took.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1624,7 +1624,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Restore the project's files to a git op=checkpoint (umcp/cp/N only, else PRECONDITION): changed files are restored, files added since are deleted, untracked files are kept. History is kept (the revert is working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing (a backup in Saved/MCP). rebuild_required means C++ changed: run build.",
+      "description": "Restore the project's files to a git op=checkpoint (umcp/cp/N only, else PRECONDITION): restores changed files, deletes files added since, keeps untracked ones; history is kept (working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing (a backup in Saved/MCP). rebuild_required means C++ changed: run build.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2043,7 +2043,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict (or INSUFFICIENT_EVIDENCE), rubric, logs, timeline, playtest_path, …} + a contact sheet (wait_s / job). record_events: engine + game event timeline. op=batch seeds=[…]: a run per seed + the spread. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
+      "description": "Validate the game (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec: a UFUNCTION; console; wait_until; input: like pie; game_command), stop, score the rubric → {verdict (or INSUFFICIENT_EVIDENCE), rubric, logs, timeline, playtest_path, …} + a contact sheet (wait_s / job). record_events: engine + game event timeline. op=batch seeds=[…]: a run per seed + the spread. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2310,7 +2310,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Run Python in the editor (arbitrary code). Check for a dedicated tool first (toolsets lists the optional ones).\n- run: `code` → captured output; evaluate=true → one expression's value.\n- recipe: run the level-recipe file `path`; clean_slate=true FIRST destroys every actor except WorldSettings; save defaults true.",
+      "description": "Run Python in the editor (arbitrary code). Check for a dedicated tool first: game data (tables, data assets, curves, input mappings) is toolset data; the running game's API is toolset game.\n- run: `code` → captured output; evaluate=true → one expression's value.\n- recipe: run the level-recipe file `path`; clean_slate=true FIRST destroys every actor except WorldSettings; save defaults true.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2714,7 +2714,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Move every actor that still exists back to its transform in snapshot `name` (by object path, parents first), as one undo step, then save. Transforms and the snapshot's properties only: spawned/deleted actors are listed in not_restored {added, removed, unknown (unloaded WP cells)}; for those use scene_clear or git_revert.",
+      "description": "Move every actor that still exists back to its transform in snapshot `name` (by object path, parents first), as one undo step, then save. Transforms and recorded properties only: spawned/deleted actors are listed in not_restored {added, removed, unknown (unloaded WP cells)}; for those use scene_clear or git_revert.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

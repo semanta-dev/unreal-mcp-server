@@ -51,7 +51,7 @@ Inspect the connected Unreal Editor.
 
 _tier exec_
 
-Run Python in the editor (arbitrary code). Check for a dedicated tool first (toolsets lists the optional ones).
+Run Python in the editor (arbitrary code). Check for a dedicated tool first: game data (tables, data assets, curves, input mappings) is toolset data; the running game's API is toolset game.
 - run: `code` → captured output; evaluate=true → one expression's value.
 - recipe: run the level-recipe file `path`; clean_slate=true FIRST destroys every actor except WorldSettings; save defaults true.
 
@@ -292,7 +292,7 @@ kind: blueprint (class = parent) | data_asset (class) | data_table (row_struct) 
 
 _tier mutating_
 
-Edit a Blueprint's class defaults; each op compiles and saves.
+Edit a Blueprint's class defaults (data assets, tables, curves: data_edit, toolset data); each op compiles and saves.
 - op=set_defaults: `properties` on the CDO (per-property failures come back in errors[]).
 - op=add_component: add a `class` component (optional `name`).
 - op=assign_subclass: set TSubclassOf `property` to `class` (e.g. GameMode DefaultPawnClass).
@@ -319,7 +319,7 @@ _tier destructive_
 Bring outside data into assets. Every op OVERWRITES existing content.
 - op=files: import `files` into `folder`; an asset with the same name is replaced.
 - op=reimport: reload `asset` from its source file.
-- op=datatable: replace ALL rows of DataTable `asset` from `json` (preferred) or `csv`.
+- op=datatable: replace ALL rows of DataTable `asset` from `json` (preferred) or `csv` (to change rows: data_edit).
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -549,7 +549,7 @@ Put back transforms and properties with snapshot_restore.
 
 _tier destructive_
 
-Move every actor that still exists back to its transform in snapshot `name` (by object path, parents first), as one undo step, then save. Transforms and the snapshot's properties only: spawned/deleted actors are listed in not_restored {added, removed, unknown (unloaded WP cells)}; for those use scene_clear or git_revert.
+Move every actor that still exists back to its transform in snapshot `name` (by object path, parents first), as one undo step, then save. Transforms and recorded properties only: spawned/deleted actors are listed in not_restored {added, removed, unknown (unloaded WP cells)}; for those use scene_clear or git_revert.
 
 | tier | required | needs |
 |---|---|---|
@@ -767,7 +767,7 @@ The project's git repo (no editor).
 
 _tier exec_
 
-Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict (or INSUFFICIENT_EVIDENCE), rubric, logs, timeline, playtest_path, …} + a contact sheet (wait_s / job). record_events: engine + game event timeline. op=batch seeds=[…]: a run per seed + the spread. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.
+Validate the game (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec: a UFUNCTION; console; wait_until; input: like pie; game_command), stop, score the rubric → {verdict (or INSUFFICIENT_EVIDENCE), rubric, logs, timeline, playtest_path, …} + a contact sheet (wait_s / job). record_events: engine + game event timeline. op=batch seeds=[…]: a run per seed + the spread. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -796,7 +796,7 @@ _tier destructive_
 
 Start, restart or reconnect the editor.
 - ensure_open (job): launch it if none answers.
-- restart (job): safe shutdown — PRECONDITION listing unsaved packages (save=true saves, discard_dirty=true drops them), stop PIE, graceful quit (kill after 30 s, reported), relaunch on the same map. Daemon: lease kept; editor calls get retryable EDITOR_BUSY meanwhile. Cancel never kills.
+- restart (job): safe shutdown (unsaved packages: PRECONDITION, or save=true / discard_dirty=true), stop PIE, graceful quit (kill after 30 s, reported), relaunch on the same map; daemon: lease kept, calls get retryable EDITOR_BUSY; cancel never kills.
 - reclaim: retake a command channel another client took.
 
 | op | tier | does | required | needs |
@@ -833,7 +833,7 @@ Compile the project's C++ (async job). strategy=auto picks from the git diff: he
 
 _tier destructive_
 
-Restore the project's files to a git op=checkpoint (umcp/cp/N only, else PRECONDITION): changed files are restored, files added since are deleted, untracked files are kept. History is kept (the revert is working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing (a backup in Saved/MCP). rebuild_required means C++ changed: run build.
+Restore the project's files to a git op=checkpoint (umcp/cp/N only, else PRECONDITION): restores changed files, deletes files added since, keeps untracked ones; history is kept (working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing (a backup in Saved/MCP). rebuild_required means C++ changed: run build.
 
 | tier | required | needs |
 |---|---|---|

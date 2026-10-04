@@ -244,7 +244,7 @@ func assetEditSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "asset_edit", Title: "Edit a Blueprint", Toolset: spec.Core, Timeout: sync25, Max: sync28, Ops: ops,
-		Description: "Edit a Blueprint's class defaults; each op compiles and saves.\n" +
+		Description: "Edit a Blueprint's class defaults (data assets, tables, curves: data_edit, toolset data); each op compiles and saves.\n" +
 			"- op=set_defaults: `properties` on the CDO (per-property failures come back in errors[]).\n" +
 			"- op=add_component: add a `class` component (optional `name`).\n" +
 			"- op=assign_subclass: set TSubclassOf `property` to `class` (e.g. GameMode DefaultPawnClass).",
@@ -283,7 +283,7 @@ func assetImportSpec() *spec.Spec {
 		Description: "Bring outside data into assets. Every op OVERWRITES existing content.\n" +
 			"- op=files: import `files` into `folder`; an asset with the same name is replaced.\n" +
 			"- op=reimport: reload `asset` from its source file.\n" +
-			"- op=datatable: replace ALL rows of DataTable `asset` from `json` (preferred) or `csv`.",
+			"- op=datatable: replace ALL rows of DataTable `asset` from `json` (preferred) or `csv` (to change rows: data_edit).",
 		Schema:   spec.SchemaFor[assetImportIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces: []string{"import_assets", "asset_reimport", "datatable_import"},
 		Handler:  assetImport,

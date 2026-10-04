@@ -826,7 +826,7 @@ func snapshotRestoreSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "snapshot_restore", Title: "Restore a snapshot", Toolset: spec.Core, Timeout: sync25, Max: sync28,
 		Ops:         []spec.OpSpec{{Tier: spec.Destructive, Idempotent: true, Reaches: []string{"snapshot_restore"}, Needs: []string{"project"}}},
-		Description: "Move every actor that still exists back to its transform in snapshot `name` (by object path, parents first), as one undo step, then save. Transforms and the snapshot's properties only: spawned/deleted actors are listed in not_restored {added, removed, unknown (unloaded WP cells)}; for those use scene_clear or git_revert.",
+		Description: "Move every actor that still exists back to its transform in snapshot `name` (by object path, parents first), as one undo step, then save. Transforms and recorded properties only: spawned/deleted actors are listed in not_restored {added, removed, unknown (unloaded WP cells)}; for those use scene_clear or git_revert.",
 		Schema:      spec.SchemaFor[snapshotRestoreIn](nil),
 		Replaces:    []string{"scene_restore"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
