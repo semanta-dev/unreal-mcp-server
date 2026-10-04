@@ -8,6 +8,7 @@ package audit
 import (
 	"fmt"
 	"math"
+	"sort"
 )
 
 const (
@@ -20,15 +21,25 @@ type FeelReport struct {
 	Pass     bool
 	PerEvent []EventResult
 	Reasons  []string
+	// Median delay per channel over the events that had that response (ms; absent
+	// when none did): "how long until the hit is seen" is MedianVisualMs, not the
+	// first-response LatencyMs (a shot's sound usually starts with it).
+	MedianVisualMs *float64 `json:",omitempty"`
+	MedianAudioMs  *float64 `json:",omitempty"`
+	MedianCameraMs *float64 `json:",omitempty"`
 }
 
 // EventResult is the feedback-channel result for one gameplay event.
 type EventResult struct {
-	Index      int
-	HasVisual  bool
-	HasAudio   bool
-	HasCamera  bool
-	LatencyMs  float64
+	Index     int
+	HasVisual bool
+	HasAudio  bool
+	HasCamera bool
+	LatencyMs float64 // to the first response on any channel
+	// Each channel's delay (ms) when it responded at or after the event.
+	VisualMs   *float64 `json:",omitempty"`
+	AudioMs    *float64 `json:",omitempty"`
+	CameraMs   *float64 `json:",omitempty"`
 	OverJuiced bool
 }
 
@@ -60,6 +71,7 @@ func FeelAudit(events []Event, withinMs float64, maxFXPerEvent int) FeelReport {
 		if ok {
 			result.LatencyMs = latency
 		}
+		result.VisualMs, result.AudioMs, result.CameraMs = delayMs(event.T, event.VisualT), delayMs(event.T, event.AudioT), delayMs(event.T, event.CameraT)
 
 		if !result.HasVisual || !result.HasAudio || !result.HasCamera || result.OverJuiced {
 			report.Pass = false
@@ -67,8 +79,41 @@ func FeelAudit(events []Event, withinMs float64, maxFXPerEvent int) FeelReport {
 		}
 		report.PerEvent = append(report.PerEvent, result)
 	}
-
+	var vis, aud, cam []float64
+	for _, r := range report.PerEvent {
+		for _, c := range []struct {
+			v   *float64
+			dst *[]float64
+		}{{r.VisualMs, &vis}, {r.AudioMs, &aud}, {r.CameraMs, &cam}} {
+			if c.v != nil {
+				*c.dst = append(*c.dst, *c.v)
+			}
+		}
+	}
+	report.MedianVisualMs, report.MedianAudioMs, report.MedianCameraMs = medianOf(vis), medianOf(aud), medianOf(cam)
 	return report
+}
+
+// delayMs is a response's delay after the event, or nil (no response, or before it).
+func delayMs(eventT, responseT float64) *float64 {
+	if responseT == 0 || responseT < eventT {
+		return nil
+	}
+	d := (responseT - eventT) * 1000
+	return &d
+}
+
+func medianOf(xs []float64) *float64 {
+	if len(xs) == 0 {
+		return nil
+	}
+	s := append([]float64(nil), xs...)
+	sort.Float64s(s)
+	m := s[len(s)/2]
+	if len(s)%2 == 0 {
+		m = (s[len(s)/2-1] + s[len(s)/2]) / 2
+	}
+	return &m
 }
 
 func responseWithin(eventT, responseT, windowSeconds float64) bool {

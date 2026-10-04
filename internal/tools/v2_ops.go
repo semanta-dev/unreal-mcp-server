@@ -888,9 +888,31 @@ func notePlaytestJSON(dir string, result map[string]any, events *eval.EventLog) 
 	if p, err := writePlaytestJSON(dir, result, events); err == nil {
 		result["playtest_path"] = p
 		compactTimeline(result)
+		noteNextSteps(result, p, events)
 	} else {
 		result["playtest_path_error"] = err.Error()
 	}
+}
+
+// noteNextSteps says, in the result, how to read what the run recorded (the final eval's
+// agents parsed playtest.json with python, not knowing analyze reads it) and, when the
+// player hit nothing, that an input step can aim.
+func noteNextSteps(result map[string]any, path string, events *eval.EventLog) {
+	next := []string{"frames: analyze op=rubric path=" + path}
+	if events != nil {
+		next = append([]string{"events (hits, kills, waves...): analyze op=events path=" + path + " kinds=[...]"}, next...)
+		hits := 0
+		for _, e := range events.Events {
+			if e.ByPlayer && (e.Kind == "hit" || e.Kind == "damage" || e.Kind == "point_damage" || e.Kind == "kill") {
+				hits++
+			}
+		}
+		if hits == 0 {
+			result["note"] = "the player hit nothing this run: an input step {\"class\": \"<enemy class>\", \"duration_s\": n} " +
+				"aims at the nearest enemy (like pie op=aim) while a hold-fire step shoots"
+		}
+	}
+	result["next"] = next
 }
 
 // compactTimeline swaps the per-frame timeline (tens of KB: every frame's state) for

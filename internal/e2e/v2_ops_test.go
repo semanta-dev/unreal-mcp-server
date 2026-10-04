@@ -530,6 +530,9 @@ func TestPlaytestResultCompactsTheTimeline(t *testing.T) {
 	if r == nil || r["timeline"] != nil || r["timeline_frames"] != 3.0 || r["final_state"] == nil || r["playtest_path"] == nil {
 		t.Fatalf("playtest result = %v", out)
 	}
+	if next := fmt.Sprint(r["next"]); !strings.Contains(next, "analyze op=rubric path=") {
+		t.Fatalf("next steps = %v", r["next"])
+	}
 	rubric := []any{map[string]any{"id": "w", "kind": "reached", "path": "gamestate.wave", "params": map[string]any{"value": 2}}}
 	if res := structured(t, h.call(t, "analyze", map[string]any{"op": "rubric", "path": r["playtest_path"], "rubric": rubric})); res["verdict"] != "PASS" {
 		t.Fatalf("rubric from playtest_path = %v", res)

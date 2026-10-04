@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"math"
 	"testing"
 )
 
@@ -125,5 +126,29 @@ func TestInMotionAuditRealSnapRateFails(t *testing.T) {
 	}
 	if report.MaxYawRateDegPerSec < 500 {
 		t.Fatalf("expected ~540 deg/s, got %.1f", report.MaxYawRateDegPerSec)
+	}
+}
+
+// Each channel's delay and its median: a shot's sound starts with it (first-response
+// latency 0) while the hit is seen ~95 ms later — the live Aesir playtest the final
+// eval's aesir_feel_audit asked about.
+func TestFeelAuditReportsEachChannelsDelay(t *testing.T) {
+	events := []Event{
+		{T: 1.0, VisualT: 1.095, AudioT: 1.0, CameraT: 1.02},
+		{T: 2.0, VisualT: 2.110, AudioT: 2.0, CameraT: 2.03},
+		{T: 3.0, AudioT: 3.0, CameraT: 3.01}, // no visual
+	}
+	r := FeelAudit(events, 120, 4)
+	if r.PerEvent[0].LatencyMs != 0 || r.PerEvent[0].VisualMs == nil || math.Abs(*r.PerEvent[0].VisualMs-95) > 1e-6 {
+		t.Fatalf("event 0 = %+v", r.PerEvent[0])
+	}
+	if r.PerEvent[2].VisualMs != nil {
+		t.Fatal("no visual response must have no visual delay")
+	}
+	if r.MedianVisualMs == nil || math.Abs(*r.MedianVisualMs-102.5) > 1e-6 || r.MedianAudioMs == nil || *r.MedianAudioMs != 0 {
+		t.Fatalf("medians = %v %v", r.MedianVisualMs, r.MedianAudioMs)
+	}
+	if FeelAudit(nil, 120, 4).MedianVisualMs != nil {
+		t.Fatal("no events: no median")
 	}
 }

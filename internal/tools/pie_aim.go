@@ -63,6 +63,12 @@ func pieAim(ctx context.Context, c *spec.Call, in pieIn) (*spec.Result, error) {
 	if out["aimed"] != true {
 		summary = fmt.Sprintf("not on %v after %d steps: %.1f° yaw, %.1f° pitch off (a moving target: aim again)", out["target"], out["steps"], errs[0], errs[1])
 	}
+	hint := "fire with pie op=input; to measure over a recorded, repeatable run: playtest op=run with the same input " +
+		"steps ({\"class\": ..., \"duration_s\": n} aims)"
+	if n, ok := out["note"].(string); ok {
+		hint = n + "; " + hint
+	}
+	out["note"] = hint
 	return &spec.Result{Data: out, Summary: summary}, nil
 }
 
