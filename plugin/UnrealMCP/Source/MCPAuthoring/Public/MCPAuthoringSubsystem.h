@@ -129,9 +129,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
 	bool RemoveMemberVariable(UBlueprint* Blueprint, FName Name);
 
-	/** Write a config object's (a settings class default's) config properties to its
-	 *  default config file (Config/Default*.ini) — UObject::TryUpdateDefaultConfigFile,
-	 *  which Python cannot reach. */
+	/** Set editable config properties of a settings class's default object from a JSON
+	 *  object {Property: value} (names matched ignoring case and underscores) and write them
+	 *  to its default config file (Config/Default*.ini) - Python sees many settings classes
+	 *  not at all, and cannot write config. Each property is converted on a copy first: set
+	 *  whole or left alone. Returns {ok, values: {Property: text}, errors: [{property, error}]}. */
 	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
-	bool UpdateDefaultConfig(UObject* ConfigObject);
+	FString SetConfigDefaultsJson(UClass* SettingsClass, const FString& PropertiesJson);
 };

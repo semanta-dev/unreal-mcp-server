@@ -261,22 +261,20 @@ def _op_data_set_properties(args):
 
 def _op_data_set_settings(args):
     """Set a settings class's defaults (a UDeveloperSettings / config class, e.g.
-    /Script/Engine.RendererSettings) and write them to its Default*.ini (plugin API 6:
-    Python cannot write config). Not an undo step: the file is written."""
+    /Script/EngineSettings.GeneralProjectSettings) and write them to its Default*.ini -
+    through the plugin (API 6): Python sees many settings classes not at all, and cannot
+    write config. Not an undo step: the file is written."""
     _need_plugin(6, "settings")
     cls = _resolve_class_v2(args.get("class") or "")
     props = args.get("properties") or {}
     if not isinstance(props, dict) or not props:
         raise _V2Error("BAD_VALUE", "properties must be {property: value}")
-    cdo = unreal.get_default_object(cls)
-    unknown = _known_props(cdo, props)
-    if len(unknown) == len(props):
-        raise _V2Error("BAD_VALUE", "%s has none of these properties" % cls.get_name(), property_errors=unknown)
-    errors = _set_props(cdo, {k: v for k, v in props.items() if k not in {u["property"] for u in unknown}}) + unknown
-    if len(errors) < len(props) and not _authoring().update_default_config(cdo):
-        raise _V2Error("EDITOR_ERROR", "%s is not a config class, or its default config file could not be written" % cls.get_name(),
-                       property_errors=errors)
-    return {"class": cls.get_path_name(), "values": _read_back(cdo, props), "property_errors": errors}
+    res = json.loads(_authoring().set_config_defaults_json(cls, json.dumps(props)))
+    errors = res.get("errors") or []
+    if not res.get("ok"):
+        code = "EDITOR_ERROR" if res.get("values") else "BAD_VALUE"
+        raise _V2Error(code, "%s: %s" % (cls.get_name(), res.get("error") or "no property was set"), property_errors=errors)
+    return {"class": cls.get_path_name(), "values": res.get("values") or {}, "property_errors": errors}
 
 
 # Variable types for add_variable: (pin category, sub-category). UE 5.7's

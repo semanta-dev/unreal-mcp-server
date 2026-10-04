@@ -743,7 +743,117 @@ bool UMCPAuthoringSubsystem::RemoveMemberVariable(UBlueprint* Blueprint, FName N
 	return true;
 }
 
-bool UMCPAuthoringSubsystem::UpdateDefaultConfig(UObject* ConfigObject)
+static FString MCPNormName(const FString& Name)
 {
-	return ConfigObject && ConfigObject->GetClass()->HasAnyClassFlags(CLASS_Config) && ConfigObject->TryUpdateDefaultConfigFile();
+	return Name.Replace(TEXT("_"), TEXT("")).ToLower();
+}
+
+FString UMCPAuthoringSubsystem::SetConfigDefaultsJson(UClass* SettingsClass, const FString& PropertiesJson)
+{
+	TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
+	TArray<TSharedPtr<FJsonValue>> Errors;
+	TSharedRef<FJsonObject> Values = MakeShared<FJsonObject>();
+	if (!SettingsClass || !SettingsClass->HasAnyClassFlags(CLASS_Config))
+	{
+		Out->SetBoolField(TEXT("ok"), false);
+		Out->SetStringField(TEXT("error"), TEXT("not a config (settings) class"));
+		return MCPJsonToString(Out);
+	}
+	TSharedPtr<FJsonObject> In;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(PropertiesJson);
+	if (!FJsonSerializer::Deserialize(Reader, In) || !In.IsValid())
+	{
+		Out->SetBoolField(TEXT("ok"), false);
+		Out->SetStringField(TEXT("error"), TEXT("properties must be a JSON object"));
+		return MCPJsonToString(Out);
+	}
+	UObject* Defaults = SettingsClass->GetDefaultObject();
+	int32 Set = 0;
+	for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : In->Values)
+	{
+		auto Error = [&](const FString& Message)
+		{
+			TSharedRef<FJsonObject> E = MakeShared<FJsonObject>();
+			E->SetStringField(TEXT("property"), Pair.Key);
+			E->SetStringField(TEXT("error"), Message);
+			Errors.Add(MakeShared<FJsonValueObject>(E));
+		};
+		FProperty* Prop = nullptr;
+		for (TFieldIterator<FProperty> It(SettingsClass); It; ++It)
+		{
+			if (MCPNormName(It->GetName()) == MCPNormName(Pair.Key))
+			{
+				Prop = *It;
+				break;
+			}
+		}
+		if (!Prop)
+		{
+			Error(FString::Printf(TEXT("%s has no property %s"), *SettingsClass->GetName(), *Pair.Key));
+			continue;
+		}
+		if (!Prop->HasAnyPropertyFlags(CPF_Config) || !Prop->HasAnyPropertyFlags(CPF_Edit) || Prop->HasAnyPropertyFlags(CPF_EditConst))
+		{
+			Error(FString::Printf(TEXT("%s is not an editable config property"), *Prop->GetName()));
+			continue;
+		}
+		// The JSON's type must be the property's: FJsonObjectConverter would turn an object
+		// into an empty string, a number into a name... (live R3).
+		const EJson Kind = Pair.Value.IsValid() ? Pair.Value->Type : EJson::None;
+		const bool bEnum = CastField<FEnumProperty>(Prop) || (CastField<FByteProperty>(Prop) && CastField<FByteProperty>(Prop)->Enum);
+		const TCHAR* Expected = nullptr;
+		if (CastField<FStrProperty>(Prop) || CastField<FNameProperty>(Prop) || CastField<FTextProperty>(Prop))
+		{
+			Expected = Kind == EJson::String ? nullptr : TEXT("a string");
+		}
+		else if (CastField<FBoolProperty>(Prop))
+		{
+			Expected = Kind == EJson::Boolean ? nullptr : TEXT("true or false");
+		}
+		else if (bEnum)
+		{
+			Expected = (Kind == EJson::String || Kind == EJson::Number) ? nullptr : TEXT("an enum name");
+		}
+		else if (CastField<FNumericProperty>(Prop))
+		{
+			Expected = Kind == EJson::Number ? nullptr : TEXT("a number");
+		}
+		if (Expected)
+		{
+			Error(FString::Printf(TEXT("%s expects %s"), *Prop->GetName(), Expected));
+			continue;
+		}
+		void* Value = Prop->ContainerPtrToValuePtr<void>(Defaults);
+		// Convert on a copy: a value that does not fit leaves the property as it was.
+		void* Temp = FMemory::Malloc(Prop->GetSize(), Prop->GetMinAlignment());
+		Prop->InitializeValue(Temp);
+		Prop->CopyCompleteValue(Temp, Value);
+		const bool bOk = FJsonObjectConverter::JsonValueToUProperty(Pair.Value, Prop, Temp, 0, 0);
+		if (bOk)
+		{
+			Defaults->PreEditChange(Prop);
+			Prop->CopyCompleteValue(Value, Temp);
+			FPropertyChangedEvent Changed(Prop, EPropertyChangeType::ValueSet);
+			Defaults->PostEditChangeProperty(Changed);
+			FString Text;
+			Prop->ExportTextItem_Direct(Text, Value, nullptr, nullptr, PPF_None);
+			Values->SetStringField(Prop->GetName(), Text);
+			++Set;
+		}
+		Prop->DestroyValue(Temp);
+		FMemory::Free(Temp);
+		if (!bOk)
+		{
+			Error(FString::Printf(TEXT("the value does not fit %s (%s)"), *Prop->GetName(), *Prop->GetCPPType()));
+		}
+	}
+	const bool bSaved = Set == 0 || Defaults->TryUpdateDefaultConfigFile();
+	Out->SetBoolField(TEXT("ok"), Set > 0 && bSaved);
+	if (Set > 0 && !bSaved)
+	{
+		Out->SetStringField(TEXT("error"), TEXT("the default config file could not be written (read-only?)"));
+	}
+	Out->SetObjectField(TEXT("values"), Values);
+	Out->SetArrayField(TEXT("errors"), Errors);
+	return MCPJsonToString(Out);
 }

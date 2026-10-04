@@ -220,16 +220,24 @@ def test_set_properties(v2, ue):
 
 
 def test_settings_are_written_to_config(v2, ue):
-    settings = Asset({"default_feature_bloom": True})
-    ue.add_class("RendererSettings", "/Script/Engine.RendererSettings")
-    ue.get_default_object = lambda cls: settings
-    written = []
-    ue.auth.update_default_config = lambda o: written.append(o) or True
-    env = call(v2, "data_set_settings", {"class": "/Script/Engine.RendererSettings", "properties": {"default_feature_bloom": False}})
-    assert env["ok"] and env["result"]["values"] == {"default_feature_bloom": False} and written == [settings], env
-    ue.auth.update_default_config = lambda o: False  # not a config class
-    env = call(v2, "data_set_settings", {"class": "/Script/Engine.RendererSettings", "properties": {"default_feature_bloom": True}})
-    assert env["code"] == "EDITOR_ERROR", env
+    ue.add_class("GeneralProjectSettings", "/Script/EngineSettings.GeneralProjectSettings")
+
+    def set_cfg(cls, raw):
+        props = json.loads(raw)
+        errors = [{"property": k, "error": "no property " + k} for k in props if k != "ProjectVersion"]
+        values = {"ProjectVersion": props["ProjectVersion"]} if "ProjectVersion" in props else {}
+        out = {"ok": bool(values), "values": values, "errors": errors}
+        if not values:
+            out["error"] = "no property was set"
+        return json.dumps(out)
+
+    ue.auth.set_config_defaults_json = set_cfg
+    env = call(v2, "data_set_settings", {"class": "/Script/EngineSettings.GeneralProjectSettings",
+                                         "properties": {"ProjectVersion": "9.9.9", "nope": 1}})
+    assert env["ok"] and env["result"]["values"] == {"ProjectVersion": "9.9.9"}, env
+    assert [e["property"] for e in env["result"]["property_errors"]] == ["nope"]
+    env = call(v2, "data_set_settings", {"class": "/Script/EngineSettings.GeneralProjectSettings", "properties": {"nope": 1}})
+    assert env["code"] == "BAD_VALUE", env
 
 
 class Key:

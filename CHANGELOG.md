@@ -88,8 +88,9 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
 - **Game data and logic authoring** (new toolset `data`, plugin API 6 where Python cannot reach): `data_query` reads a
   DataTable's typed rows, a float curve's keys, and a Blueprint (components — Blueprint and native — variables with
   type, class default and flags, functions, events, and the status + messages of a fresh in-memory compile).
-  `data_edit` sets properties on any non-Blueprint asset (per-property errors) or on a settings class (written to its
-  Default*.ini), upserts / deletes DataTable rows by name (never replace-all; row names match in any case; every
+  `data_edit` sets properties on any non-Blueprint asset (per-property errors) or on a settings class (through the
+  plugin — many settings classes are invisible to Python; JSON types checked; written to its Default*.ini, which, as
+  the Project Settings panel does, rewrites that class's whole section), upserts / deletes DataTable rows by name (never replace-all; row names match in any case; every
   field checked against the table's columns — C++ and Blueprint row structs alike; UE's import ignores unknown fields;
   a failed fill restores the table and leaves no undo step), replaces a curve's keys (all or nothing; a read's keys
   can be written back as they are), adds a Blueprint variable (exact pin types — UE 5.7 silently makes an unknown basic
