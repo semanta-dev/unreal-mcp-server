@@ -657,6 +657,11 @@ func baseline(ctx context.Context, s *liveSession) (string, error) {
 // reset reverts the project to its baseline (closing and reopening the editor when
 // files changed) and waits until the editor answers.
 func reset(ctx context.Context, s *liveSession, tag string) error {
+	// A play session outlives the server and the revert (which leaves an unchanged
+	// project's editor open): stop it, or the run starts in the last run's game world.
+	if _, err := s.call(ctx, "pie", map[string]any{"op": "stop"}); err != nil && !strings.Contains(err.Error(), "EDITOR_UNREACHABLE") {
+		return fmt.Errorf("stop PIE: %w", err)
+	}
 	out, err := s.call(ctx, "git_revert", map[string]any{"to": tag, "discard_dirty": true, "wait_s": 25})
 	if err != nil {
 		return err
