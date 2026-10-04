@@ -10,12 +10,12 @@
         "additionalProperties": false,
         "properties": {
           "actor": {
-            "description": "a label, an object path, @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:\u003cClass\u003e (a game subsystem)",
+            "description": "a label, an object path, @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:Class (a game subsystem)",
             "type": "string"
           },
           "args": {
             "additionalProperties": true,
-            "description": "parameter name -\u003e value",
+            "description": "parameter name → value",
             "type": "object"
           },
           "function": {
@@ -98,7 +98,7 @@
           },
           "properties": {
             "additionalProperties": true,
-            "description": "spawn/set_properties: property -\u003e value (asset paths load as objects)",
+            "description": "spawn/set_properties: property → value (asset paths load as objects)",
             "type": "object"
           },
           "rotation": {
@@ -147,7 +147,7 @@
         "additionalProperties": false,
         "properties": {
           "actor": {
-            "description": "get: a label, an object path, or (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud; @subsystem:\u003cClass\u003e",
+            "description": "get: a label, an object path, or (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud; @subsystem:Class",
             "type": "string"
           },
           "class": {
@@ -179,7 +179,7 @@
           },
           "where": {
             "additionalProperties": true,
-            "description": "find: property -\u003e value equality filter on reflected properties",
+            "description": "find: property → value equality filter on reflected properties",
             "type": "object"
           },
           "world": {
@@ -205,7 +205,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Score evidence offline.\n- rubric: re-score a playtest `timeline` → PASS|WARN|FAIL with frame evidence.\n- perf: CsvProfiler CSV → frame-time percentiles + hitches; .memreport → memory buckets.\n- image_diff: `path` vs `baseline` → hash distance, luma delta, pass.\n- scenarios: the saved playtest suite.",
+      "description": "Score evidence offline.\n- rubric: re-score a playtest `timeline` → a verdict with frame evidence.\n- perf: CsvProfiler CSV → frame-time percentiles + hitches; .memreport → memory buckets.\n- image_diff: `path` vs `baseline` → hash distance, luma delta, pass.\n- scenarios: the saved playtest suite.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -214,7 +214,7 @@
             "type": "string"
           },
           "dir": {
-            "description": "scenarios: directory of scenario/v1 files (default \u003cproject\u003e/.mcp/scenarios)",
+            "description": "scenarios: directory of scenario/v1 files (default the project's .mcp/scenarios)",
             "type": "string"
           },
           "hitch_ms": {
@@ -348,6 +348,10 @@
             "description": "new asset path, e.g. /Game/BP/BP_LaserTurret",
             "type": "string"
           },
+          "dry_run": {
+            "description": "check all inputs, create nothing",
+            "type": "boolean"
+          },
           "kind": {
             "description": "blueprint | data_asset | data_table | material_instance | widget_blueprint",
             "enum": [
@@ -425,7 +429,7 @@
           },
           "properties": {
             "additionalProperties": true,
-            "description": "set_defaults: CDO property -\u003e value, e.g. {Range: 4000} (asset paths load as objects)",
+            "description": "set_defaults: CDO property → value, e.g. {Range: 4000} (asset paths load as objects)",
             "type": "object"
           },
           "property": {
@@ -835,6 +839,10 @@
           },
           "default": {
             "description": "add_variable: the default value"
+          },
+          "dry_run": {
+            "description": "check and report the change, change nothing (not settings / curve_keys: the plugin checks those while writing)",
+            "type": "boolean"
           },
           "expose_on_spawn": {
             "description": "add_variable: a spawn parameter",
@@ -1428,7 +1436,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Inspect the connected Unreal Editor.\n- op=status: engine version, project, current level, is_in_pie, viewport camera, selection, actor count.\n- op=ping: cheap liveness probe.\n- op=health: ping, then check expect_version, expect_plugin and for crashes since `since` → {healthy, plugin_api, problems[]}.",
+      "description": "Inspect the connected Unreal Editor.\n- op=status: engine, project, level, is_in_pie, camera, selection, actor count.\n- op=ping: cheap liveness probe.\n- op=health: ping, then check expect_version, expect_plugin and for crashes since `since` → {healthy, plugin_api, problems[]}.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1574,7 +1582,7 @@
         "destructiveHint": false,
         "openWorldHint": false
       },
-      "description": "The project's git repo (no editor).\n- status / diff / log (+ checkpoints).\n- checkpoint: stage (default all but Saved/Intermediate/DerivedDataCache), commit `message` (hooks run) and tag umcp/cp/\u003cn\u003e; nothing to commit tags HEAD. git_revert only goes back to these.",
+      "description": "The project's git repo (no editor).\n- status / diff / log (+ checkpoints).\n- checkpoint: stage (default all but Saved/Intermediate/DerivedDataCache), commit `message` (hooks run) and tag umcp/cp/N; nothing to commit tags HEAD. git_revert only goes back to these.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1616,7 +1624,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Restore the project's files to a git op=checkpoint (umcp/cp/\u003cn\u003e only, else PRECONDITION): changed files are restored, files added since are deleted, untracked files are kept. History is not rewritten (the revert shows as working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing via a backup in Saved/MCP/revert-backup. rebuild_required means C++ changed: run build.",
+      "description": "Restore the project's files to a git op=checkpoint (umcp/cp/N only, else PRECONDITION): changed files are restored, files added since are deleted, untracked files are kept. History is kept (the revert is working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing via a backup in Saved/MCP/revert-backup. rebuild_required means C++ changed: run build.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1629,7 +1637,7 @@
             "type": "boolean"
           },
           "to": {
-            "description": "a checkpoint: umcp/cp/\u003cn\u003e or just \u003cn\u003e (from git op=checkpoint / op=log)",
+            "description": "a checkpoint: umcp/cp/N or just N (from git op=checkpoint / op=log)",
             "type": "string"
           },
           "wait_s": {
@@ -1711,7 +1719,7 @@
         "idempotentHint": true,
         "openWorldHint": false
       },
-      "description": "Follow async work (build, playtest run, editor_lifecycle, git_revert, headless), which returns {job_id, state} unless called with wait_s.\n- status: state, last progress, result or error.\n- wait: up to wait_s (default 25), streaming progress.\n- cancel.\n- list: this project's jobs (any session of the project can poll them).",
+      "description": "Follow async work (build, playtest, editor_lifecycle, git_revert, headless: {job_id, state} unless wait_s).\n- status: state, last progress, result or error.\n- wait: up to wait_s (default 25), streaming progress.\n- cancel.\n- list: this project's jobs (any session of the project can poll them).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1746,7 +1754,7 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Open and save levels.\n- op=open: saves all dirty packages FIRST, then loads `level`.\n- op=save_all: saves every dirty package.\n- op=set_world_gamemode: sets the open level's GameMode override to `class` and saves.",
+      "description": "Open and save levels.\n- op=open: saves all dirty packages FIRST (save=false: never), then loads `level`.\n- op=save_all: saves every dirty package.\n- op=set_world_gamemode: sets the open level's GameMode override to `class` and saves.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1765,6 +1773,10 @@
               "set_world_gamemode"
             ],
             "type": "string"
+          },
+          "save": {
+            "description": "open: false = save nothing (refused while anything is unsaved)",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1841,7 +1853,7 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop; everything changed in the pie world is discarded.\n- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s (hold and axis durations are game time: they wait while the game is paused).\n- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate — your OS cursor is never moved or captured; the game's cursor stays there until action=release.\n- ui_click widget=\u003cname\u003e: click a visible widget (refused if hidden, ambiguous or covered). Needs the UnrealMCP plugin.",
+      "description": "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop; everything changed in the pie world is discarded.\n- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s (durations are game time: paused, they wait).\n- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate — your OS cursor is never moved or captured; the game's cursor stays there until action=release.\n- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the UnrealMCP plugin.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1930,7 +1942,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read the running game (PIE): gamestate properties (discovered by reflection), a class histogram `counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. The output schema is what pie_wait predicates address (gamestate.\u003cprop\u003e, counts.\u003cClass\u003e, pawn.speed).",
+      "description": "Read the running game (PIE): gamestate properties (discovered by reflection), a class histogram `counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. The output schema is what pie_wait predicates address (gamestate.Prop, counts.Class, pawn.speed).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1985,7 +1997,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Poll the running game until `predicate` holds → {met, pie_running, elapsed_s, polls, final_state}. met=false on timeout is a normal answer, not an error. Waits through PIE starting up; returns at once if PIE stops. timeout_s \u003e 25 runs as a job (wait_s, then job). Object paths need the plugin. Read-only: to poll a function with side effects use actor_call with until.",
+      "description": "Poll the running game until `predicate` holds → {met, pie_running, elapsed_s, polls, final_state}. met=false on timeout is an answer, not an error. Waits through PIE starting up; returns at once if PIE stops. timeout_s \u003e 25 runs as a job (wait_s, then job). Object paths need the plugin. Read-only: to poll a function with side effects use actor_call with until.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1998,7 +2010,7 @@
             "type": "boolean"
           },
           "predicate": {
-            "description": "conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave \u003e= 2 and counts.Enemy \u003e= 1'; or an object path: '@subsystem:\u003cClass\u003e.Getter().field \u003e= 3' (BlueprintPure/const getters only)",
+            "description": "conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave \u003e= 2 and counts.Enemy \u003e= 1'; or an object path: '@subsystem:Class.Getter().field \u003e= 3' (BlueprintPure/const getters only)",
             "type": "string"
           },
           "properties": {
@@ -2030,7 +2042,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, verdict_reasons?, timeline, events?, playtest_path} plus a contact sheet image via wait_s / job. record_events: the engine + game-journal event timeline (in playtest.json). op=batch seeds=[…]: a run per seed + the spread. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
+      "description": "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict, rubric, logs, timeline, playtest_path, …} + a contact sheet (wait_s / job). record_events: engine + game event timeline. op=batch seeds=[…]: a run per seed + the spread. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2347,7 +2359,7 @@
         "additionalProperties": false,
         "properties": {
           "actor": {
-            "description": "object: label, object path, (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:\u003cClass\u003e (editor subsystems too)",
+            "description": "object: label, object path, (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:Class (editor subsystems too)",
             "type": "string"
           },
           "class": {
@@ -2627,7 +2639,7 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Record and compare the editor level (Saved/MCP/snapshots).\n- take: store `name` (default auto): every actor's path, class, tags, transform.\n- diff: `name` vs `against` (default: now) → added, removed, moved, retagged (by object path); World Partition actors in unloaded cells are unknown, never removed.\n- list.\n- digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.\nUndo moves with snapshot_restore.",
+      "description": "Record and compare the editor level (Saved/MCP/snapshots).\n- take: store `name` (default auto): every actor's path, class, tags, transform (+ `properties`).\n- diff: `name` vs `against` (default: now) → added, removed, moved, retagged (by object path); World Partition actors in unloaded cells are unknown, never removed.\n- list.\n- digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.\nUndo moves with snapshot_restore.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2664,6 +2676,13 @@
             "description": "digest: position quantization in world units (default 1)",
             "type": "number"
           },
+          "properties": {
+            "description": "take: also these properties (e.g. Health); restore resets them",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "rot_bucket": {
             "description": "digest: rotation quantization in degrees (default 1)",
             "type": "number"
@@ -2694,7 +2713,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Move every actor that still exists back to its transform in snapshot `name` (by object path, parents first), as one undo step, then save. TRANSFORMS ONLY: spawned/deleted actors are listed in not_restored {added, removed, unknown (unloaded WP cells)}; for those use scene_clear or git_revert.",
+      "description": "Move every actor that still exists back to its transform in snapshot `name` (by object path, parents first), as one undo step, then save. Transforms and the snapshot's properties only: spawned/deleted actors are listed in not_restored {added, removed, unknown (unloaded WP cells)}; for those use scene_clear or git_revert.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2718,7 +2737,7 @@
         "idempotentHint": true,
         "openWorldHint": false
       },
-      "description": "Optional tool groups: enable one to get its tools.\n- design: design_audit (luminance, style, feel, novelty… audits), design_explore\n- ui: widget_edit (author UMG trees)\n- desktop: desktop_capture, desktop_input (OS screen/input)\n- polyworld: polyworld, polyworld_demolish\n- headless: headless (commandlets, tests)\n- world: scene, scene_clear (declarative scenes), world_query (traces, overlaps, nav)\n- game: game, game_command (the game's own API; on when .umcp.json declares game_api)\n- data: data_query, data_edit (DataTables, curves, Blueprints, input mappings, asset properties)\nops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).",
+      "description": "Optional tool groups: enable one to get its tools.\n- design: design_audit (feel, decision, style… audits), design_explore\n- ui: widget_edit (author UMG trees)\n- desktop: desktop_capture, desktop_input (OS screen/input)\n- polyworld: polyworld, polyworld_demolish\n- headless: headless (commandlets, tests)\n- world: scene, scene_clear (declarative scenes), world_query (traces, overlaps, nav)\n- game: game, game_command (the game's own API; on when .umcp.json declares game_api)\n- data: data_query, data_edit (tables, curves, Blueprints, input, settings)\nops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2765,7 +2784,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Step the editor's undo buffer (editor world; refused during PIE). Acts only when the next step is the server's own (title \"MCP: …\"): a human's edit on top is CONFLICT and nothing changes. Covers actor_edit, scene, snapshot_restore. Results with undoable:false (asset, widget, python, console edits) make no undo step: after one, undo is CONFLICT (it would revert an older edit underneath) — use snapshot_restore or git_revert.",
+      "description": "Step the editor's undo buffer (editor world; refused during PIE). Acts only when the next step is the server's own (title \"MCP: …\"): a human's edit on top is CONFLICT and nothing changes. Covers actor_edit, scene, snapshot_restore. After an undoable:false result (asset, widget, python, console edits: no undo step) undo is CONFLICT (it would revert an older edit) — use snapshot_restore or git_revert.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2938,7 +2957,7 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Inspect UMG widgets.\n- tree: a WidgetBlueprint's tree + digest.\n- describe: the palette, or one class's props and slot type.\n- render: a UserWidget class as a PNG (MCPAuthoring module).\nIn PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text; a HUD's bindings with their state — path_unreadable is a typo; source_null is normal before the pawn is possessed).",
+      "description": "Inspect UMG widgets.\n- tree: a WidgetBlueprint's tree + digest.\n- describe: the palette, or one class's props and slot type.\n- render: a UserWidget class as a PNG (MCPAuthoring module).\nIn PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text; a HUD's bindings' state: path_unreadable = a typo, source_null = no source yet, e.g. before possession).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3012,6 +3031,13 @@
           "mesh": {
             "description": "instances_*: only components whose mesh path contains this",
             "type": "string"
+          },
+          "object_types": {
+            "description": "sphere_overlap: world_static | world_dynamic | pawn | physics_body | vehicle | destructible (default: all)",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "op": {
             "enum": [

@@ -85,10 +85,10 @@ func pieSpec() *spec.Spec {
 		Name: "pie", Title: "Play In Editor", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
 		Description: "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop; everything changed in the pie world is discarded.\n" +
 			"- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s " +
-			"(hold and axis durations are game time: they wait while the game is paused).\n" +
+			"(durations are game time: paused, they wait).\n" +
 			"- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate — your OS cursor is never moved or captured; " +
 			"the game's cursor stays there until action=release.\n" +
-			"- ui_click widget=<name>: click a visible widget (refused if hidden, ambiguous or covered). Needs the UnrealMCP plugin.",
+			"- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the UnrealMCP plugin.",
 		Schema: spec.SchemaFor[pieIn](map[string][]any{"op": spec.OpEnum(ops...),
 			"action": {"tap", "press", "release", "hold", "axis", "release_all", "move", "click", "drag"}}, "op"),
 		Replaces: []string{"start_play", "stop_play", "pie_input"},
@@ -343,7 +343,7 @@ func pieObserveSpec() *spec.Spec {
 		Ops: []spec.OpSpec{{Tier: spec.ReadOnly, Idempotent: true, Reaches: []string{"pie_observe"}, Needs: []string{"pie"}}},
 		Description: "Read the running game (PIE): gamestate properties (discovered by reflection), a class histogram " +
 			"`counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. " +
-			"The output schema is what pie_wait predicates address (gamestate.<prop>, counts.<Class>, pawn.speed).",
+			"The output schema is what pie_wait predicates address (gamestate.Prop, counts.Class, pawn.speed).",
 		Schema:   spec.SchemaFor[pieObserveIn](nil),
 		Replaces: []string{"pie_observe", "pawn_state"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
@@ -364,7 +364,7 @@ func pieObserveSpec() *spec.Spec {
 }
 
 type pieWaitIn struct {
-	Predicate  string   `json:"predicate" jsonschema:"conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave >= 2 and counts.Enemy >= 1'; or an object path: '@subsystem:<Class>.Getter().field >= 3' (BlueprintPure/const getters only)"`
+	Predicate  string   `json:"predicate" jsonschema:"conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave >= 2 and counts.Enemy >= 1'; or an object path: '@subsystem:Class.Getter().field >= 3' (BlueprintPure/const getters only)"`
 	TimeoutS   float64  `json:"timeout_s,omitempty" jsonschema:"give up after this many seconds (default 20; up to 600 — beyond 25 the wait continues as a job)"`
 	WaitS      float64  `json:"wait_s,omitempty" jsonschema:"a job wait (timeout_s > 25): return after this many seconds (max 25), then follow it with job"`
 	IntervalS  float64  `json:"interval_s,omitempty" jsonschema:"seconds between observations (default 0.25)"`
@@ -380,7 +380,7 @@ func pieWaitSpec() *spec.Spec {
 		Name: "pie_wait", Title: "Wait for a game condition", Toolset: spec.Core, Timeout: sync28, Max: sync28,
 		Ops: []spec.OpSpec{{Tier: spec.ReadOnly, Idempotent: true, Required: []string{"predicate"}, Reaches: []string{"pie_observe", "observe_paths"}}},
 		Description: "Poll the running game until `predicate` holds → {met, pie_running, elapsed_s, polls, final_state}. " +
-			"met=false on timeout is a normal answer, not an error. Waits through PIE starting up; returns at once if PIE " +
+			"met=false on timeout is an answer, not an error. Waits through PIE starting up; returns at once if PIE " +
 			"stops. timeout_s > 25 runs as a job (wait_s, then job). Object paths need the plugin. Read-only: to poll a " +
 			"function with side effects use actor_call with until.",
 		Schema:   spec.SchemaFor[pieWaitIn](nil, "predicate"),
@@ -520,6 +520,7 @@ type worldQueryIn struct {
 	End    []float64 `json:"end,omitempty" jsonschema:"line_trace/nav_path: [x, y, z]"`
 	Center []float64 `json:"center,omitempty" jsonschema:"sphere_overlap: [x, y, z]"`
 	Radius float64   `json:"radius,omitempty" jsonschema:"sphere_overlap: radius (default 100)"`
+	Types  []string  `json:"object_types,omitempty" jsonschema:"sphere_overlap: world_static | world_dynamic | pawn | physics_body | vehicle | destructible (default: all)"`
 	Point  []float64 `json:"point,omitempty" jsonschema:"project_point: [x, y, z]"`
 	Tag    string    `json:"tag,omitempty" jsonschema:"instances_*: only ISM/HISM components with this component tag"`
 	Mesh   string    `json:"mesh,omitempty" jsonschema:"instances_*: only components whose mesh path contains this"`
@@ -537,11 +538,16 @@ func worldQuerySpec() *spec.Spec {
 	}
 	ops := []spec.OpSpec{
 		q("line_trace", "is the line from start to end blocked, and by what", "world_query", "start", "end"),
-		q("sphere_overlap", "actors overlapping a sphere", "world_query", "center"),
+		q("sphere_overlap", "actors overlapping a sphere (of object_types)", "world_query", "center"),
 		navq("nav_path", "can the AI walk from start to end", "world_query", "start", "end"),
 		navq("project_point", "is the point on the navmesh", "world_query", "point"),
 		q("instances_count", "ISM/HISM instance counts by mesh", "instances_count"),
 		q("instances_list", "ISM/HISM instance transforms", "instances_list"),
+	}
+	for i := range ops {
+		if ops[i].Name != "sphere_overlap" {
+			ops[i].Rejects = append(ops[i].Rejects, "object_types")
+		}
 	}
 	return &spec.Spec{
 		Name: "world_query", Title: "Spatial queries", Toolset: spec.World, Timeout: sync20, Max: sync28, Ops: ops,
@@ -557,7 +563,7 @@ func worldQuerySpec() *spec.Spec {
 				args = pick(c.Args, "tag", "mesh", "limit")
 			} else {
 				py = "world_query"
-				args = pick(c.Args, "start", "end", "center", "radius", "point")
+				args = pick(c.Args, "start", "end", "center", "radius", "point", "object_types")
 				args["kind"] = c.Op.Name
 			}
 			args["world"] = world
@@ -580,6 +586,7 @@ type snapshotIn struct {
 	Name        string  `json:"name,omitempty" jsonschema:"take: snapshot name (default auto; overwrites); diff: the BEFORE snapshot"`
 	Against     string  `json:"against,omitempty" jsonschema:"diff: the AFTER snapshot (default: the level right now)"`
 	ClassFilter string  `json:"class_filter,omitempty" jsonschema:"take/digest scope=actors: only actors whose class or label contains this"`
+	Properties  []string `json:"properties,omitempty" jsonschema:"take: also these properties (e.g. Health); restore resets them"`
 	Scope       string  `json:"scope,omitempty" jsonschema:"digest: instances (ISM/HISM, default) | actors"`
 	Tag         string  `json:"tag,omitempty" jsonschema:"digest scope=instances: component tag filter"`
 	Mesh        string  `json:"mesh,omitempty" jsonschema:"digest scope=instances: mesh path substring filter"`
@@ -590,33 +597,52 @@ type snapshotIn struct {
 
 func snapshotSpec() *spec.Spec {
 	ops := []spec.OpSpec{
-		{Name: "take", Summary: "record every actor's path, class, tags and transform", Tier: spec.Ephemeral, Idempotent: true, Reaches: []string{"snapshot_actors"}, Needs: []string{"project"}},
-		{Name: "diff", Summary: "added / removed / moved / retagged between two snapshots (or now)", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"name"}, Reaches: []string{"snapshot_actors"}, Needs: []string{"project"}},
-		{Name: "list", Summary: "stored snapshots", Tier: spec.ReadOnly, Idempotent: true, Needs: []string{"project"}},
-		{Name: "digest", Summary: "deterministic hash of actor or instance transforms", Tier: spec.ReadOnly, Idempotent: true, Reaches: []string{"snapshot_actors", "instances_list"}},
+		{Name: "take", Summary: "record every actor's path, class, tags, transform (+ properties)", Tier: spec.Ephemeral, Idempotent: true, Reaches: []string{"snapshot_actors"}, Needs: []string{"project"}},
+		{Name: "diff", Summary: "added / removed / moved / retagged / changed between two snapshots (or now)", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"name"}, Rejects: []string{"properties"}, Reaches: []string{"snapshot_actors"}, Needs: []string{"project"}},
+		{Name: "list", Summary: "stored snapshots", Tier: spec.ReadOnly, Idempotent: true, Rejects: []string{"properties"}, Needs: []string{"project"}},
+		{Name: "digest", Summary: "deterministic hash of actor or instance transforms", Tier: spec.ReadOnly, Idempotent: true, Rejects: []string{"properties"}, Reaches: []string{"snapshot_actors", "instances_list"}},
 	}
 	return &spec.Spec{
 		Name: "snapshot", Title: "Level snapshots", Toolset: spec.Core, Timeout: sync25, Max: sync28, Ops: ops,
-		Description: "Record and compare the editor level (Saved/MCP/snapshots).\n- take: store `name` (default auto): every actor's path, class, tags, transform.\n- diff: `name` vs `against` (default: now) → added, removed, moved, retagged (by object path); World Partition actors in unloaded cells are unknown, never removed.\n- list.\n- digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.\nUndo moves with snapshot_restore.",
+		Description: "Record and compare the editor level (Saved/MCP/snapshots).\n- take: store `name` (default auto): every actor's path, class, tags, transform (+ `properties`).\n- diff: `name` vs `against` (default: now) → added, removed, moved, retagged (by object path); World Partition actors in unloaded cells are unknown, never removed.\n- list.\n- digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.\nUndo moves with snapshot_restore.",
 		Schema:      spec.SchemaFor[snapshotIn](map[string][]any{"op": spec.OpEnum(ops...), "scope": {"instances", "actors"}}, "op"),
 		Replaces:    []string{"level_snapshot", "level_diff", "scene_snapshot", "scene_digest"},
 		Handler:     snapshotHandler,
 	}
 }
 
-// currentSnapshot asks the editor for its actors as a snapshot.File.
-func currentSnapshot(ctx context.Context, c *spec.Call, name, classFilter string) (*snapshot.File, error) {
+// currentSnapshot asks the editor for its actors (and the given properties) as a
+// snapshot.File. A property no actor in scope has, or one whose type cannot be
+// restored, is an error: a snapshot never silently records less than asked.
+func currentSnapshot(ctx context.Context, c *spec.Call, name, classFilter string, properties []string) (*snapshot.File, error) {
 	b, err := v2Bridge(c)
 	if err != nil {
 		return nil, err
 	}
-	raw, err := b.Call(ctx, "snapshot_actors", map[string]any{"class_filter": classFilter})
+	args := map[string]any{"class_filter": classFilter}
+	if len(properties) > 0 {
+		args["properties"] = properties
+	}
+	raw, err := b.Call(ctx, "snapshot_actors", args)
 	if err != nil {
 		return nil, err
 	}
-	f := &snapshot.File{Name: name, TakenAt: time.Now().UTC()}
+	f := &snapshot.File{Name: name, TakenAt: time.Now().UTC(), Properties: properties}
 	if err := json.Unmarshal(raw, f); err != nil {
 		return nil, fmt.Errorf("decode snapshot_actors: %w", err)
+	}
+	var extra struct {
+		Missing []string         `json:"properties_missing"`
+		Errors  []map[string]any `json:"property_errors"`
+	}
+	_ = json.Unmarshal(raw, &extra)
+	if len(extra.Missing) > 0 {
+		return nil, envelope.New(envelope.InvalidArgument, "no actor in scope has %s (reflected names, e.g. Health or bHidden)", strings.Join(extra.Missing, ", ")).
+			WithDetail("missing", extra.Missing)
+	}
+	if len(extra.Errors) > 0 {
+		return nil, envelope.New(envelope.InvalidArgument, "%d property value(s) cannot be restored; the first: %v", len(extra.Errors), extra.Errors[0]).
+			WithDetail("property_errors", extra.Errors)
 	}
 	return f, nil
 }
@@ -663,7 +689,7 @@ func snapshotHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		if err != nil {
 			return nil, err
 		}
-		f, err := currentSnapshot(ctx, c, name, in.ClassFilter)
+		f, err := currentSnapshot(ctx, c, name, in.ClassFilter, in.Properties)
 		if err != nil {
 			return nil, err
 		}
@@ -696,19 +722,23 @@ func snapshotHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			return nil, envelope.New(envelope.InvalidArgument, "%s was taken with class_filter %q and %s with %q; they cannot be compared",
 				name, a.ClassFilter, against, b.ClassFilter)
 		}
-	} else if b, err = currentSnapshot(ctx, c, "current", a.ClassFilter); err != nil { // compare like with like
+		if strings.Join(a.Properties, ",") != strings.Join(b.Properties, ",") {
+			return nil, envelope.New(envelope.InvalidArgument, "%s recorded properties %v and %s %v; they cannot be compared",
+				name, a.Properties, against, b.Properties)
+		}
+	} else if b, err = currentSnapshot(ctx, c, "current", a.ClassFilter, a.Properties); err != nil { // compare like with like
 		return nil, err
 	}
 	d := snapshot.Diff(a, b)
 	return &spec.Result{Data: map[string]any{"before": name, "after": orStr(in.Against, "current"), "diff": d},
-		Summary: fmt.Sprintf("+%d -%d moved %d retagged %d unknown %d", len(d.Added), len(d.Removed), len(d.Moved), len(d.Retagged), len(d.Unknown))}, nil
+		Summary: fmt.Sprintf("+%d -%d moved %d retagged %d changed %d unknown %d", len(d.Added), len(d.Removed), len(d.Moved), len(d.Retagged), len(d.Changed), len(d.Unknown))}, nil
 }
 
 func snapshotDigest(ctx context.Context, c *spec.Call, in snapshotIn) (*spec.Result, error) {
 	scope := orStr(in.Scope, "instances")
 	var items []snapshot.Transform
 	if scope == "actors" {
-		f, err := currentSnapshot(ctx, c, "digest", in.ClassFilter)
+		f, err := currentSnapshot(ctx, c, "digest", in.ClassFilter, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -764,7 +794,7 @@ func snapshotRestoreSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "snapshot_restore", Title: "Restore a snapshot", Toolset: spec.Core, Timeout: sync25, Max: sync28,
 		Ops:         []spec.OpSpec{{Tier: spec.Destructive, Idempotent: true, Reaches: []string{"snapshot_restore"}, Needs: []string{"project"}}},
-		Description: "Move every actor that still exists back to its transform in snapshot `name` (by object path, parents first), as one undo step, then save. TRANSFORMS ONLY: spawned/deleted actors are listed in not_restored {added, removed, unknown (unloaded WP cells)}; for those use scene_clear or git_revert.",
+		Description: "Move every actor that still exists back to its transform in snapshot `name` (by object path, parents first), as one undo step, then save. Transforms and the snapshot's properties only: spawned/deleted actors are listed in not_restored {added, removed, unknown (unloaded WP cells)}; for those use scene_clear or git_revert.",
 		Schema:      spec.SchemaFor[snapshotRestoreIn](nil),
 		Replaces:    []string{"scene_restore"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {

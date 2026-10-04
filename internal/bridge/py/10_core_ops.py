@@ -73,7 +73,16 @@ def _op_import_assets(args):
 # --- text-style ops (carry a "message" matching the Python server) ---------
 
 def _op_open_level(args):
-    unreal.EditorLoadingAndSavingUtils.save_dirty_packages(True, True)
+    if args.get("save") is False:
+        # Never save; and never let the load ask (its "save changes?" dialog is modal).
+        u = unreal.EditorLoadingAndSavingUtils
+        dirty = sorted({p.get_name() for p in list(u.get_dirty_map_packages()) + list(u.get_dirty_content_packages())})
+        if dirty:
+            raise _V2Error("PRECONDITION", "%d unsaved package(s) — save=false never saves them and opening would ask: "
+                           "save (level op=save_all), or discard them (editor_lifecycle op=restart discard_dirty=true)"
+                           % len(dirty), unsaved=dirty)
+    else:
+        unreal.EditorLoadingAndSavingUtils.save_dirty_packages(True, True)
     ok = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).load_level(args["level_path"])
     msg = ("Loaded " if ok else "FAILED to load ") + str(args["level_path"])
     return {"loaded": bool(ok), "level_path": args["level_path"], "message": msg}

@@ -83,3 +83,27 @@ func TestFilteredDiffKeepsUnloadedUnknown(t *testing.T) {
 		t.Fatalf("want WP_B unknown, not removed: %+v", d)
 	}
 }
+
+// R6.1: recorded properties diff by value (typed), only those the snapshot recorded.
+func TestDiffReportsChangedProperties(t *testing.T) {
+	hp := func(v float64) map[string]any { return map[string]any{"t": "float", "v": v} }
+	a := &File{Properties: []string{"Health"}, Actors: []Actor{
+		{Path: "/L.L:P.Turret_1", Label: "Turret", Props: map[string]any{"Health": hp(80)}},
+		{Path: "/L.L:P.Wall_2", Label: "Wall", Props: map[string]any{"Health": hp(500)}},
+		{Path: "/L.L:P.Rock_3", Label: "Rock"},
+	}}
+	b := &File{Properties: []string{"Health"}, Actors: []Actor{
+		{Path: "/L.L:P.Turret_1", Label: "Turret", Props: map[string]any{"Health": hp(5)}},
+		{Path: "/L.L:P.Wall_2", Label: "Wall", Props: map[string]any{"Health": hp(500)}},
+		{Path: "/L.L:P.Rock_3", Label: "Rock", Props: map[string]any{"Health": hp(1)}}, // gained it
+	}}
+	d := Diff(a, b)
+	if len(d.Changed) != 2 || d.Changed[0].Path != "/L.L:P.Rock_3" || d.Changed[0].From != nil ||
+		d.Changed[1].Label != "Turret" || d.Changed[1].Property != "Health" {
+		t.Fatalf("changed = %+v", d.Changed)
+	}
+	a.Properties = nil // a snapshot that recorded no properties reports none
+	if d := Diff(a, b); len(d.Changed) != 0 {
+		t.Fatalf("no recorded properties: %+v", d.Changed)
+	}
+}

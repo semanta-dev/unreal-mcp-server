@@ -1,6 +1,7 @@
 package bridgetest
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -106,16 +107,44 @@ func (w *World) snapshotActors(args map[string]any) (any, *OpError) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	flt, _ := args["class_filter"].(string)
+	var names []string
+	missing := map[string]bool{}
+	if ps, ok := args["properties"].([]any); ok {
+		for _, p := range ps {
+			names = append(names, fmt.Sprint(p))
+			missing[fmt.Sprint(p)] = true
+		}
+	}
 	var out []map[string]any
 	for _, a := range w.editor {
 		if flt != "" && !strings.Contains(strings.ToLower(a.Class+a.Label), strings.ToLower(flt)) {
 			continue
 		}
-		out = append(out, map[string]any{"path": a.Path, "label": a.Label, "class": a.Class,
-			"loc": a.Location, "rot": []float64{0, 0, 0}, "scale": []float64{1, 1, 1}})
+		row := map[string]any{"path": a.Path, "label": a.Label, "class": a.Class,
+			"loc": a.Location, "rot": []float64{0, 0, 0}, "scale": []float64{1, 1, 1}}
+		props := map[string]any{}
+		for _, n := range names {
+			if v, ok := a.Properties[n]; ok {
+				props[n] = map[string]any{"t": "float", "v": v}
+				delete(missing, n)
+			}
+		}
+		if len(props) > 0 {
+			row["props"] = props
+		}
+		out = append(out, row)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i]["path"].(string) < out[j]["path"].(string) })
-	return map[string]any{"world": "editor", "count": len(out), "actors": out, "world_partition": false, "class_filter": flt}, nil
+	res := map[string]any{"world": "editor", "count": len(out), "actors": out, "world_partition": false, "class_filter": flt}
+	if len(names) > 0 {
+		miss := []string{}
+		for n := range missing {
+			miss = append(miss, n)
+		}
+		sort.Strings(miss)
+		res["properties_missing"], res["property_errors"] = miss, []any{}
+	}
+	return res, nil
 }
 
 func (w *World) snapshotRestore(args map[string]any) (any, *OpError) {

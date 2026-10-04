@@ -90,6 +90,8 @@ def _op_asset_create(args):
     if exists and not args.get("replace"):
         raise _V2Error("CONFLICT", "%s already exists (op=replace overwrites it)" % dest, asset=dest)
     make = prep(args, dest)  # raises before anything is deleted
+    if args.get("dry_run"):
+        return {"dry_run": True, "asset": dest, "kind": kind, "would": "replace" if exists else "create"}
     replaced = False
     if exists:
         if not eal.delete_asset(dest):

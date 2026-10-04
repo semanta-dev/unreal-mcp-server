@@ -286,3 +286,16 @@ def test_widget_render_resolves_a_blueprint_asset_path_to_its_class(v2, ue, tmp_
     res = ok(v2, "widget_render", {"widget_class": "/Game/UI/WBP_Banner", "width": 64, "height": 32})
     assert seen == ["/Game/UI/WBP_Banner.WBP_Banner_C"] and res["ok"]
     assert err(v2, "widget_render", {"widget_class": "/Script/Engine.Actor"})["code"] == "BAD_VALUE"
+
+
+def test_asset_create_dry_run_validates_and_creates_nothing(v2, ue):
+    # R6.2: every input checked (the kind's own preparation), nothing deleted or created.
+    m = v2["_mcp2"]
+    made = []
+    m._ASSET_KINDS["blueprint"] = lambda args, dest: (lambda: made.append(dest) or {"created": dest})
+    ue.assets["/Game/BP/BP_A"] = object()
+    res = ok(v2, "asset_create", {"kind": "blueprint", "dest": "/Game/BP/BP_A", "class": "Actor", "replace": True, "dry_run": True})
+    assert res == {"dry_run": True, "asset": "/Game/BP/BP_A", "kind": "blueprint", "would": "replace"} and made == [] and ue.deleted == []
+    res = ok(v2, "asset_create", {"kind": "blueprint", "dest": "/Game/BP/BP_New", "class": "Actor", "dry_run": True})
+    assert res["would"] == "create" and made == []
+    assert err(v2, "asset_create", {"kind": "blueprint", "dest": "/Game/BP/BP_A", "class": "Actor", "dry_run": True})["code"] == "CONFLICT"

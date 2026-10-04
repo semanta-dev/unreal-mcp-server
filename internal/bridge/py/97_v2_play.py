@@ -151,11 +151,87 @@ def _snapshot_filter_match(actor, flt):
     return not flt or flt in actor.get_class().get_name().lower() or flt in actor.get_actor_label().lower()
 
 
+# R6.1: snapshot properties. A value is stored with its type so a restore rebuilds the
+# same type; a type that cannot round-trip is refused when the snapshot is taken.
+_SNAP_STRUCTS = (("Vector", ("x", "y", "z")), ("Vector2D", ("x", "y")), ("Rotator", ("pitch", "yaw", "roll")),
+                 ("LinearColor", ("r", "g", "b", "a")), ("Color", ("r", "g", "b", "a")))
+
+
+def _snap_value(v):
+    """A property value as {t, v} (JSON), or None when its type cannot round-trip."""
+    if v is None:
+        return {"t": "none", "v": None}
+    if isinstance(v, bool):
+        return {"t": "bool", "v": v}
+    if isinstance(v, int):
+        return {"t": "int", "v": v}
+    if isinstance(v, float):
+        return {"t": "float", "v": v}
+    enum_base = getattr(unreal, "EnumBase", None)
+    if enum_base is not None and isinstance(v, enum_base):
+        return {"t": "enum", "enum": type(v).__name__, "v": v.name}
+    for typ, kind in ((getattr(unreal, "Text", None), "text"), (getattr(unreal, "Name", None), "name")):
+        if isinstance(typ, type) and typ is not str and isinstance(v, typ):
+            return {"t": kind, "v": str(v)}
+    if isinstance(v, str):
+        return {"t": "str", "v": v}
+    for name, fields in _SNAP_STRUCTS:
+        typ = getattr(unreal, name, None)
+        if isinstance(typ, type) and isinstance(v, typ):
+            return {"t": name, "v": [getattr(v, f) for f in fields]}
+    if isinstance(v, unreal.Object):
+        return {"t": "object", "v": v.get_path_name()}
+    return None
+
+
+def _snap_restore_value(e):
+    t, v = e.get("t"), e.get("v")
+    if t in ("none", "bool", "int", "float", "str"):
+        return v
+    if t == "name":
+        return unreal.Name(v)
+    if t == "text":
+        return unreal.Text(v)
+    if t == "enum":
+        return getattr(getattr(unreal, e["enum"]), v)
+    for name, fields in _SNAP_STRUCTS:
+        if t == name:
+            if name == "Rotator":
+                return _pyr_to_rotator(v)
+            return getattr(unreal, name)(**dict(zip(fields, v, strict=True)))  # by name: FColor's fields are stored B, G, R, A
+    if t == "object":
+        obj = unreal.load_object(None, v)
+        if obj is None:
+            raise ValueError("%s no longer exists" % v)
+        return obj
+    raise ValueError("unknown stored type %r" % t)
+
+
+def _snap_props(a, names, path, missing, errors):
+    """The actor's values of the properties it has (by reflected name)."""
+    out = {}
+    for n in names:
+        try:
+            v = a.get_editor_property(n)
+        except Exception:
+            continue  # this actor has no such property
+        missing.discard(n)
+        e = _snap_value(v)
+        if e is None:
+            errors.append({"path": path, "property": n, "error": "a %s cannot be restored (snapshots keep bools, numbers, "
+                           "strings, names, texts, enums, vectors, rotators, colors and object references)" % type(v).__name__})
+            continue
+        out[n] = e
+    return out
+
+
 def _op_snapshot_actors(args):
     """Editor-world actors with path, label, class, tags and full transform; under
     World Partition also the actors that exist but are not loaded."""
     world, name = _v2_world({"world": "editor"}, "editor")
     flt = (args.get("class_filter") or "").lower()
+    names = [str(n) for n in args.get("properties") or []]
+    missing, prop_errors = set(names), []
     out = []
     for a in _world_actors(world, name):
         cn = a.get_class().get_name()
@@ -163,11 +239,19 @@ def _op_snapshot_actors(args):
         if not _snapshot_filter_match(a, flt):
             continue
         loc, rot, sc = a.get_actor_location(), a.get_actor_rotation(), a.get_actor_scale3d()
-        out.append({"path": _norm_path(a.get_path_name()), "label": label, "class": cn,
-                    "tags": [str(t) for t in a.tags],
-                    "loc": [loc.x, loc.y, loc.z], "rot": [rot.pitch, rot.yaw, rot.roll], "scale": [sc.x, sc.y, sc.z]})
+        row = {"path": _norm_path(a.get_path_name()), "label": label, "class": cn,
+               "tags": [str(t) for t in a.tags],
+               "loc": [loc.x, loc.y, loc.z], "rot": [rot.pitch, rot.yaw, rot.roll], "scale": [sc.x, sc.y, sc.z]}
+        if names:
+            props = _snap_props(a, names, row["path"], missing, prop_errors)
+            if props:
+                row["props"] = props
+        out.append(row)
     res = {"world": name, "count": len(out), "actors": out, "world_partition": False,
            "class_filter": args.get("class_filter") or ""}
+    if names:
+        res["properties_missing"] = sorted(missing)  # no actor in scope has them
+        res["property_errors"] = prop_errors
     known = _wp_actor_paths(world)
     if known is not None:
         res["world_partition"] = True
@@ -187,7 +271,7 @@ def _op_snapshot_restore(args):
     snap_paths = {t.get("path") for t in snap}
     known = _wp_actor_paths(world)  # World Partition: actors that exist, loaded or not
     unloaded = (known - set(by_path)) if known is not None else set()
-    restored, removed, unknown = 0, [], []
+    restored, removed, unknown, props_restored, prop_errors = 0, [], [], 0, []
 
     def depth(t):
         a, d = by_path.get(t.get("path")), 0
@@ -214,6 +298,12 @@ def _op_snapshot_restore(args):
                 a.set_actor_rotation(_pyr_to_rotator(rot), False)
             if scale:
                 a.set_actor_scale3d(unreal.Vector(scale[0], scale[1], scale[2]))
+            for k, e in (t.get("props") or {}).items():
+                try:
+                    a.set_editor_property(k, _snap_restore_value(e))
+                    props_restored += 1
+                except Exception as ex:
+                    prop_errors.append({"path": t.get("path"), "property": k, "error": str(ex)})
             restored += 1
     # A class-filtered snapshot only speaks for the actors its filter selects.
     flt = (args.get("class_filter") or "").lower()
@@ -222,6 +312,10 @@ def _op_snapshot_restore(args):
     if args.get("save", True):
         saved = bool(unreal.EditorLoadingAndSavingUtils.save_dirty_packages(True, False))
     out = {"restored": restored, "not_restored": {"added": added, "removed": removed}, "saved": saved}
+    if props_restored or prop_errors:
+        out["properties_restored"] = props_restored
+    if prop_errors:
+        out["property_errors"] = prop_errors
     if unknown:
         out["not_restored"]["unknown"] = unknown  # in World Partition cells that are not loaded
     return out

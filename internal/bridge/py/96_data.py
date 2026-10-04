@@ -118,7 +118,7 @@ def _op_data_table_upsert(args):
         raise _V2Error("BAD_VALUE", "rows must be {row name: {field: value}}")
     rows = _check_row_fields(path, dt, rows)
     current = _table_rows(dt)
-    created, updated, targets = [], [], {}
+    created, updated, targets, changes = [], [], {}, {}
     for name, fields in rows.items():
         existing = _row_name(current, name)
         if existing is None:
@@ -127,8 +127,13 @@ def _op_data_table_upsert(args):
             current[existing] = {}
         else:
             updated.append(existing)
+        changes[existing] = {c: {"from": current[existing].get(c), "to": v} for c, v in fields.items()
+                             if not _same_json(current[existing].get(c), v)}
         current[existing].update(fields)
         targets[existing] = fields
+    if args.get("dry_run"):
+        return {"dry_run": True, "asset": path, "created": created, "updated": updated, "changes": changes,
+                "checked": "row names and fields (a value the engine cannot import shows only on the real call)"}
     original = unreal.DataTableFunctionLibrary.export_data_table_to_json_string(dt)
     payload = [dict({"Name": n}, **r) for n, r in current.items()]
     fill = unreal.DataTableFunctionLibrary.fill_data_table_from_json_string
@@ -166,6 +171,8 @@ def _op_data_table_delete(args):
     missing = [n for n, r in found.items() if r is None]
     if missing:
         raise _V2Error("NOT_FOUND", "%s has no rows %s (nothing deleted)" % (path, ", ".join(missing)))
+    if args.get("dry_run"):
+        return {"dry_run": True, "asset": path, "deleted": list(found.values()), "total": len(current) - len(found)}
     with _transaction("MCP: delete rows from " + path.rsplit("/", 1)[-1]):
         dt.modify()
         for n in found.values():
@@ -252,6 +259,11 @@ def _op_data_set_properties(args):
     unknown = _known_props(obj, props)
     if len(unknown) == len(props):  # before any transaction: nothing would change
         raise _V2Error("BAD_VALUE", "%s has none of these properties" % path, property_errors=unknown)
+    if args.get("dry_run"):
+        known = {k: v for k, v in props.items() if k not in {u["property"] for u in unknown}}
+        now = _read_back(obj, known)
+        return {"dry_run": True, "asset": path, "changes": {k: {"from": now.get(k), "to": v} for k, v in known.items()},
+                "property_errors": unknown, "checked": "property names (a value of the wrong type shows only on the real call)"}
     with _transaction("MCP: set properties on " + path.rsplit("/", 1)[-1]):
         obj.modify()
         errors = _set_props(obj, {k: v for k, v in props.items() if k not in {u["property"] for u in unknown}}) + unknown
@@ -344,6 +356,8 @@ def _op_data_add_variable(args):
     taken = auth.check_member_name(bp, unreal.Name(name))
     if taken:
         raise _V2Error("CONFLICT", "%s: %s" % (path, taken))
+    if args.get("dry_run"):
+        return {"dry_run": True, "asset": path, "would_add": {"name": name, "type": pin.export_text()}}
     before = {v.get("name") for v in json.loads(auth.describe_blueprint_json(bp, False)).get("variables") or []}
     if not L.add_member_variable(bp, unreal.Name(name), pin):
         raise _V2Error("EDITOR_ERROR", "%s could not add %s" % (path, name))
@@ -411,6 +425,10 @@ def _op_data_input_mapping(args):
     vt = args.get("value_type")
     if vt is not None and vt not in _VALUE_TYPES:
         raise _V2Error("BAD_VALUE", "value_type must be one of %s (got %r)" % (", ".join(_VALUE_TYPES), vt))
+    if args.get("dry_run"):
+        exists = unreal.EditorAssetLibrary.does_asset_exist
+        return {"dry_run": True, "action": action_path, "context": context_path, "keys": [str(k) for k in keys],
+                "creates": [p for p in (action_path, context_path) if not exists(p)]}
     action, made_action = _input_asset(action_path, unreal.InputAction)
     context, made_context = _input_asset(context_path, unreal.InputMappingContext)
     # MapKey / UnmapAllKeysFromAction do not mark the package: mark it, so it saves.

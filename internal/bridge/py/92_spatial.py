@@ -1,3 +1,7 @@
+# The engine's default object channels, as ObjectTypeQuery1..6 (a project's own channels follow).
+_OBJECT_TYPES = {"world_static": 1, "world_dynamic": 2, "pawn": 3, "physics_body": 4, "vehicle": 5, "destructible": 6}
+
+
 # --- P4 spatial verification: nav / trace / overlap queries -----------------
 
 def _op_world_query(args):
@@ -32,11 +36,18 @@ def _op_world_query(args):
                 "distance": _hp("distance")}
     if kind == "sphere_overlap":
         c = args["center"]
+        names = args.get("object_types") or list(_OBJECT_TYPES)
+        bad = [n for n in names if n not in _OBJECT_TYPES]
+        if bad:
+            raise _V2Error("BAD_VALUE", "object_types: unknown %s (the engine's object channels: %s)" % (bad, ", ".join(_OBJECT_TYPES)))
+        # Every type asked for — before, only WorldStatic: pawns, physics bodies and every
+        # movable actor were invisible to the overlap.
+        types = [getattr(unreal.ObjectTypeQuery, "OBJECT_TYPE_QUERY%d" % _OBJECT_TYPES[n]) for n in names]
         actors = unreal.SystemLibrary.sphere_overlap_actors(
-            world, unreal.Vector(c[0], c[1], c[2]), float(args.get("radius", 100.0)),
-            [unreal.ObjectTypeQuery.OBJECT_TYPE_QUERY1], None, []) or []
-        return {"kind": kind, "count": len(actors),
-                "actors": [a.get_actor_label() for a in actors]}
+            world, unreal.Vector(c[0], c[1], c[2]), float(args.get("radius", 100.0)), types, None, []) or []
+        return {"kind": kind, "count": len(actors), "object_types": names,
+                "actors": [a.get_actor_label() for a in actors],
+                "hits": [{"label": a.get_actor_label(), "path": a.get_path_name(), "class": a.get_class().get_name()} for a in actors]}
     if kind == "nav_path":
         s, e = args["start"], args["end"]
         nav = unreal.NavigationSystemV1.get_navigation_system(world)

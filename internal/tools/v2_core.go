@@ -146,7 +146,7 @@ func editorSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "editor", Title: "Editor status", Toolset: spec.Core, Max: sync28, Ops: ops,
 		Description: "Inspect the connected Unreal Editor.\n" +
-			"- op=status: engine version, project, current level, is_in_pie, viewport camera, selection, actor count.\n" +
+			"- op=status: engine, project, level, is_in_pie, camera, selection, actor count.\n" +
 			"- op=ping: cheap liveness probe.\n" +
 			"- op=health: ping, then check expect_version, expect_plugin and for crashes since `since` → {healthy, plugin_api, problems[]}.",
 		Schema:   spec.SchemaFor[editorIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
@@ -329,18 +329,19 @@ type levelIn struct {
 	Op    string `json:"op" jsonschema:"open | save_all | set_world_gamemode"`
 	Level string `json:"level,omitempty" jsonschema:"open: level asset path, e.g. /Game/Maps/L_Arena"`
 	Class string `json:"class,omitempty" jsonschema:"set_world_gamemode: the GameMode class"`
+	Save  *bool  `json:"save,omitempty" jsonschema:"open: false = save nothing (refused while anything is unsaved)"`
 }
 
 func levelSpec() *spec.Spec {
 	ops := []spec.OpSpec{
 		{Name: "open", Summary: "save dirty packages, then load the level", Tier: spec.Mutating, Timeout: sync25, Required: []string{"level"}, Reaches: []string{"open_level"}},
-		{Name: "save_all", Summary: "save every dirty package", Tier: spec.Mutating, Timeout: sync25, Reaches: []string{"save_all"}},
-		{Name: "set_world_gamemode", Summary: "set this level's WorldSettings GameMode override (saves)", Tier: spec.Mutating, Timeout: sync15, Required: []string{"class"}, Reaches: []string{"set_world_gamemode"}},
+		{Name: "save_all", Summary: "save every dirty package", Tier: spec.Mutating, Timeout: sync25, Rejects: []string{"save"}, Reaches: []string{"save_all"}},
+		{Name: "set_world_gamemode", Summary: "set this level's WorldSettings GameMode override (saves)", Tier: spec.Mutating, Timeout: sync15, Required: []string{"class"}, Rejects: []string{"save"}, Reaches: []string{"set_world_gamemode"}},
 	}
 	return &spec.Spec{
 		Name: "level", Title: "Level", Toolset: spec.Core, Max: sync28, Ops: ops,
 		Description: "Open and save levels.\n" +
-			"- op=open: saves all dirty packages FIRST, then loads `level`.\n" +
+			"- op=open: saves all dirty packages FIRST (save=false: never), then loads `level`.\n" +
 			"- op=save_all: saves every dirty package.\n" +
 			"- op=set_world_gamemode: sets the open level's GameMode override to `class` and saves.",
 		Schema:   spec.SchemaFor[levelIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
@@ -352,7 +353,11 @@ func levelSpec() *spec.Spec {
 			}
 			switch c.Op.Name {
 			case "open":
-				out, err := v2Op(ctx, c, "open_level", map[string]any{"level_path": in.Level})
+				args := map[string]any{"level_path": in.Level}
+				if in.Save != nil {
+					args["save"] = *in.Save
+				}
+				out, err := v2Op(ctx, c, "open_level", args)
 				if err == nil && out["loaded"] == false {
 					return nil, withLog(envelope.New(envelope.OperationFailed, "could not load level %s", in.Level), out)
 				}
@@ -379,10 +384,10 @@ func levelSpec() *spec.Spec {
 type actorQueryIn struct {
 	Op         string         `json:"op" jsonschema:"list | get | find"`
 	World      string         `json:"world,omitempty" jsonschema:"editor (default) | pie | auto (PIE when running)"`
-	Actor      string         `json:"actor,omitempty" jsonschema:"get: a label, an object path, or (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud; @subsystem:<Class>"`
+	Actor      string         `json:"actor,omitempty" jsonschema:"get: a label, an object path, or (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud; @subsystem:Class"`
 	Filter     string         `json:"filter,omitempty" jsonschema:"list/find: case-insensitive substring of label or class"`
 	Class      string         `json:"class,omitempty" jsonschema:"list/find: only this class and its subclasses"`
-	Where      map[string]any `json:"where,omitempty" jsonschema:"find: property -> value equality filter on reflected properties"`
+	Where      map[string]any `json:"where,omitempty" jsonschema:"find: property → value equality filter on reflected properties"`
 	Properties []string       `json:"properties,omitempty" jsonschema:"list/find: reflected properties to include per actor"`
 	Limit      int            `json:"limit,omitempty" jsonschema:"max actors returned (default 200; count is always the full total)"`
 }
@@ -425,7 +430,7 @@ type actorEditIn struct {
 	Rotation   []float64      `json:"rotation,omitempty" jsonschema:"[pitch, yaw, roll] in degrees"`
 	Scale      []float64      `json:"scale,omitempty" jsonschema:"[x, y, z]"`
 	StaticMesh string         `json:"static_mesh,omitempty" jsonschema:"spawn: static mesh asset for a StaticMeshActor"`
-	Properties map[string]any `json:"properties,omitempty" jsonschema:"spawn/set_properties: property -> value (asset paths load as objects)"`
+	Properties map[string]any `json:"properties,omitempty" jsonschema:"spawn/set_properties: property → value (asset paths load as objects)"`
 }
 
 func actorEditSpec() *spec.Spec {
@@ -468,8 +473,8 @@ func undoSpec() *spec.Spec {
 		Name: "undo", Title: "Undo the server's edits", Toolset: spec.Core, Timeout: sync15, Max: sync28, Ops: ops,
 		Description: "Step the editor's undo buffer (editor world; refused during PIE). Acts only when the next step is " +
 			"the server's own (title \"MCP: …\"): a human's edit on top is CONFLICT and nothing changes. Covers actor_edit, " +
-			"scene, snapshot_restore. Results with undoable:false (asset, widget, python, console edits) make no undo step: " +
-			"after one, undo is CONFLICT (it would revert an older edit underneath) — use snapshot_restore or git_revert.",
+			"scene, snapshot_restore. After an undoable:false result (asset, widget, python, console edits: no undo step) undo is " +
+			"CONFLICT (it would revert an older edit) — use snapshot_restore or git_revert.",
 		Schema: spec.SchemaFor[undoIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			out, err := v2Op(ctx, c, "editor_undo", map[string]any{"redo": c.Op.Name == "redo"})
@@ -488,9 +493,9 @@ func undoSpec() *spec.Spec {
 // --- actor_call ------------------------------------------------------------------
 
 type actorCallIn struct {
-	Actor     string         `json:"actor" jsonschema:"a label, an object path, @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:<Class> (a game subsystem)"`
+	Actor     string         `json:"actor" jsonschema:"a label, an object path, @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:Class (a game subsystem)"`
 	Function  string         `json:"function" jsonschema:"the UFUNCTION name to call"`
-	Args      map[string]any `json:"args,omitempty" jsonschema:"parameter name -> value"`
+	Args      map[string]any `json:"args,omitempty" jsonschema:"parameter name → value"`
 	Parse     string         `json:"parse,omitempty" jsonschema:"json: the function returns a JSON string; decode it (an error if it is not JSON)"`
 	World     string         `json:"world,omitempty" jsonschema:"pie (default). editor is UNSUPPORTED in v2.0"`
 	Until     string         `json:"until,omitempty" jsonschema:"poll until this predicate over {result} holds, e.g. 'result >= 3'; the function RE-RUNS each poll"`

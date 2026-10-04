@@ -30,7 +30,7 @@
 _tier readonly_
 
 Inspect the connected Unreal Editor.
-- op=status: engine version, project, current level, is_in_pie, viewport camera, selection, actor count.
+- op=status: engine, project, level, is_in_pie, camera, selection, actor count.
 - op=ping: cheap liveness probe.
 - op=health: ping, then check expect_version, expect_plugin and for crashes since `since` → {healthy, plugin_api, problems[]}.
 
@@ -89,7 +89,7 @@ Run an Unreal console command. world=editor (default): editor context (viewport/
 _tier mutating_
 
 Open and save levels.
-- op=open: saves all dirty packages FIRST, then loads `level`.
+- op=open: saves all dirty packages FIRST (save=false: never), then loads `level`.
 - op=save_all: saves every dirty package.
 - op=set_world_gamemode: sets the open level's GameMode override to `class` and saves.
 
@@ -104,6 +104,7 @@ Open and save levels.
 | `class` | string | set_world_gamemode: the GameMode class |
 | `level` | string | open: level asset path, e.g. /Game/Maps/L_Arena |
 | `op` | string | one of: open, save_all, set_world_gamemode |
+| `save` | boolean | open: false = save nothing (refused while anything is unsaved) |
 
 ### `actor_query` — Find actors
 
@@ -122,13 +123,13 @@ Read actors in the editor level (world=editor, default), the running game (pie) 
 
 | param | type | description |
 |---|---|---|
-| `actor` | string | get: a label, an object path, or (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud; @subsystem:<Class> |
+| `actor` | string | get: a label, an object path, or (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud; @subsystem:Class |
 | `class` | string | list/find: only this class and its subclasses |
 | `filter` | string | list/find: case-insensitive substring of label or class |
 | `limit` | integer | max actors returned (default 200; count is always the full total) |
 | `op` | string | one of: list, get, find |
 | `properties` | string[] | list/find: reflected properties to include per actor |
-| `where` | object | find: property -> value equality filter on reflected properties |
+| `where` | object | find: property → value equality filter on reflected properties |
 | `world` | string | editor (default) \| pie \| auto (PIE when running) — one of: editor, pie, auto |
 
 ### `actor_edit` — Edit actors
@@ -153,7 +154,7 @@ spawn, delete, transform, set_properties: both worlds (pie spawn: plugin API 5);
 | `label` | string | spawn: the new actor's label |
 | `location` | number[] | [x, y, z] |
 | `op` | string | one of: spawn, delete, transform, set_properties |
-| `properties` | object | spawn/set_properties: property -> value (asset paths load as objects) |
+| `properties` | object | spawn/set_properties: property → value (asset paths load as objects) |
 | `rotation` | number[] | [pitch, yaw, roll] in degrees |
 | `scale` | number[] | [x, y, z] |
 | `static_mesh` | string | spawn: static mesh asset for a StaticMeshActor |
@@ -171,8 +172,8 @@ Call a UFUNCTION on an actor in the running game (PIE) and return its result. Wi
 
 | param | type | description |
 |---|---|---|
-| `actor` | string | a label, an object path, @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:<Class> (a game subsystem) |
-| `args` | object | parameter name -> value |
+| `actor` | string | a label, an object path, @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:Class (a game subsystem) |
+| `args` | object | parameter name → value |
 | `function` | string | the UFUNCTION name to call |
 | `interval_s` | number | until: seconds between polls (default 0.25) |
 | `parse` | string | json: the function returns a JSON string; decode it (an error if it is not JSON) — one of: json |
@@ -184,7 +185,7 @@ Call a UFUNCTION on an actor in the running game (PIE) and return its result. Wi
 
 _tier destructive_
 
-Step the editor's undo buffer (editor world; refused during PIE). Acts only when the next step is the server's own (title "MCP: …"): a human's edit on top is CONFLICT and nothing changes. Covers actor_edit, scene, snapshot_restore. Results with undoable:false (asset, widget, python, console edits) make no undo step: after one, undo is CONFLICT (it would revert an older edit underneath) — use snapshot_restore or git_revert.
+Step the editor's undo buffer (editor world; refused during PIE). Acts only when the next step is the server's own (title "MCP: …"): a human's edit on top is CONFLICT and nothing changes. Covers actor_edit, scene, snapshot_restore. After an undoable:false result (asset, widget, python, console edits: no undo step) undo is CONFLICT (it would revert an older edit) — use snapshot_restore or git_revert.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -277,6 +278,7 @@ kind: blueprint (class = parent) | data_asset (class) | data_table (row_struct) 
 |---|---|---|
 | `class` | string | blueprint/widget_blueprint: parent class; data_asset: its class |
 | `dest` | string | new asset path, e.g. /Game/BP/BP_LaserTurret |
+| `dry_run` | boolean | check all inputs, create nothing |
 | `kind` | string | blueprint \| data_asset \| data_table \| material_instance \| widget_blueprint — one of: blueprint, data_asset, data_table, material_instance, widget_blueprint |
 | `op` | string | one of: create, replace |
 | `params` | object | material_instance: {scalar:{name:value}, vector:{name:[r,g,b,a]}, texture:{name:asset}} |
@@ -305,7 +307,7 @@ Edit a Blueprint's class defaults; each op compiles and saves.
 | `class` | string | add_component: component class; assign_subclass: the class to assign |
 | `name` | string | add_component: the new component's name |
 | `op` | string | one of: set_defaults, add_component, assign_subclass |
-| `properties` | object | set_defaults: CDO property -> value, e.g. {Range: 4000} (asset paths load as objects) |
+| `properties` | object | set_defaults: CDO property → value, e.g. {Range: 4000} (asset paths load as objects) |
 | `property` | string | assign_subclass: a TSubclassOf property, e.g. ProjectileClass |
 
 ### `asset_import` — Import assets
@@ -349,7 +351,7 @@ Discover what an object exposes, without knowing the game.
 
 | param | type | description |
 |---|---|---|
-| `actor` | string | object: label, object path, (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:<Class> (editor subsystems too) |
+| `actor` | string | object: label, object path, (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:Class (editor subsystems too) |
 | `class` | string | class: /Script path, /Game Blueprint, Module.Class or short name |
 | `enum` | string | enum: a UENUM(BlueprintType) name or UserDefinedEnum asset |
 | `exclude` | string[] | object/class: glob patterns to exclude |
@@ -416,7 +418,7 @@ Inspect UMG widgets.
 - tree: a WidgetBlueprint's tree + digest.
 - describe: the palette, or one class's props and slot type.
 - render: a UserWidget class as a PNG (MCPAuthoring module).
-In PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text; a HUD's bindings with their state — path_unreadable is a typo; source_null is normal before the pawn is possessed).
+In PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text; a HUD's bindings' state: path_unreadable = a typo, source_null = no source yet, e.g. before possession).
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -443,9 +445,9 @@ _tier ephemeral_
 Play In Editor.
 - start (simulate=true: no player); waits until running.
 - stop; everything changed in the pie world is discarded.
-- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s (hold and axis durations are game time: they wait while the game is paused).
+- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s (durations are game time: paused, they wait).
 - cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate — your OS cursor is never moved or captured; the game's cursor stays there until action=release.
-- ui_click widget=<name>: click a visible widget (refused if hidden, ambiguous or covered). Needs the UnrealMCP plugin.
+- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the UnrealMCP plugin.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -474,7 +476,7 @@ Play In Editor.
 
 _tier readonly_
 
-Read the running game (PIE): gamestate properties (discovered by reflection), a class histogram `counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. The output schema is what pie_wait predicates address (gamestate.<prop>, counts.<Class>, pawn.speed).
+Read the running game (PIE): gamestate properties (discovered by reflection), a class histogram `counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. The output schema is what pie_wait predicates address (gamestate.Prop, counts.Class, pawn.speed).
 
 | tier | required | needs |
 |---|---|---|
@@ -494,7 +496,7 @@ Read the running game (PIE): gamestate properties (discovered by reflection), a 
 
 _tier readonly_
 
-Poll the running game until `predicate` holds → {met, pie_running, elapsed_s, polls, final_state}. met=false on timeout is a normal answer, not an error. Waits through PIE starting up; returns at once if PIE stops. timeout_s > 25 runs as a job (wait_s, then job). Object paths need the plugin. Read-only: to poll a function with side effects use actor_call with until.
+Poll the running game until `predicate` holds → {met, pie_running, elapsed_s, polls, final_state}. met=false on timeout is an answer, not an error. Waits through PIE starting up; returns at once if PIE stops. timeout_s > 25 runs as a job (wait_s, then job). Object paths need the plugin. Read-only: to poll a function with side effects use actor_call with until.
 
 | tier | required | needs |
 |---|---|---|
@@ -504,7 +506,7 @@ Poll the running game until `predicate` holds → {met, pie_running, elapsed_s, 
 |---|---|---|
 | `interval_s` | number | seconds between observations (default 0.25) |
 | `pawn` | boolean | observe the pawn too (needed for pawn.* predicates) |
-| `predicate` | string | conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave >= 2 and counts.Enemy >= 1'; or an object path: '@subsystem:<Class>.Getter().field >= 3' (BlueprintPure/const getters only) |
+| `predicate` | string | conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave >= 2 and counts.Enemy >= 1'; or an object path: '@subsystem:Class.Getter().field >= 3' (BlueprintPure/const getters only) |
 | `properties` | string[] | pin exact gamestate property names so the predicate can use them verbatim |
 | `timeout_s` | number | give up after this many seconds (default 20; up to 600 — beyond 25 the wait continues as a job) |
 | `wait_s` | number | a job wait (timeout_s > 25): return after this many seconds (max 25), then follow it with job |
@@ -514,7 +516,7 @@ Poll the running game until `predicate` holds → {met, pie_running, elapsed_s, 
 _tier ephemeral_
 
 Record and compare the editor level (Saved/MCP/snapshots).
-- take: store `name` (default auto): every actor's path, class, tags, transform.
+- take: store `name` (default auto): every actor's path, class, tags, transform (+ `properties`).
 - diff: `name` vs `against` (default: now) → added, removed, moved, retagged (by object path); World Partition actors in unloaded cells are unknown, never removed.
 - list.
 - digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.
@@ -522,8 +524,8 @@ Undo moves with snapshot_restore.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
-| `take` | ephemeral | record every actor's path, class, tags and transform |  | editor, project |
-| `diff` | readonly | added / removed / moved / retagged between two snapshots (or now) | name | editor, project |
+| `take` | ephemeral | record every actor's path, class, tags, transform (+ properties) |  | editor, project |
+| `diff` | readonly | added / removed / moved / retagged / changed between two snapshots (or now) | name | editor, project |
 | `list` | readonly | stored snapshots |  | editor, project |
 | `digest` | readonly | deterministic hash of actor or instance transforms |  | editor |
 
@@ -536,6 +538,7 @@ Undo moves with snapshot_restore.
 | `name` | string | take: snapshot name (default auto; overwrites); diff: the BEFORE snapshot |
 | `op` | string | one of: take, diff, list, digest |
 | `pos_bucket` | number | digest: position quantization in world units (default 1) |
+| `properties` | string[] | take: also these properties (e.g. Health); restore resets them |
 | `rot_bucket` | number | digest: rotation quantization in degrees (default 1) |
 | `scope` | string | digest: instances (ISM/HISM, default) \| actors — one of: instances, actors |
 | `tag` | string | digest scope=instances: component tag filter |
@@ -544,7 +547,7 @@ Undo moves with snapshot_restore.
 
 _tier destructive_
 
-Move every actor that still exists back to its transform in snapshot `name` (by object path, parents first), as one undo step, then save. TRANSFORMS ONLY: spawned/deleted actors are listed in not_restored {added, removed, unknown (unloaded WP cells)}; for those use scene_clear or git_revert.
+Move every actor that still exists back to its transform in snapshot `name` (by object path, parents first), as one undo step, then save. Transforms and the snapshot's properties only: spawned/deleted actors are listed in not_restored {added, removed, unknown (unloaded WP cells)}; for those use scene_clear or git_revert.
 
 | tier | required | needs |
 |---|---|---|
@@ -661,7 +664,7 @@ Listen to the running game (PIE only, UnrealMCP plugin).
 
 _tier ephemeral · offline_
 
-Follow async work (build, playtest run, editor_lifecycle, git_revert, headless), which returns {job_id, state} unless called with wait_s.
+Follow async work (build, playtest, editor_lifecycle, git_revert, headless: {job_id, state} unless wait_s).
 - status: state, last progress, result or error.
 - wait: up to wait_s (default 25), streaming progress.
 - cancel.
@@ -711,7 +714,7 @@ Read the editor log files (works while the editor is busy or gone).
 _tier readonly · offline_
 
 Score evidence offline.
-- rubric: re-score a playtest `timeline` → PASS|WARN|FAIL with frame evidence.
+- rubric: re-score a playtest `timeline` → a verdict with frame evidence.
 - perf: CsvProfiler CSV → frame-time percentiles + hitches; .memreport → memory buckets.
 - image_diff: `path` vs `baseline` → hash distance, luma delta, pass.
 - scenarios: the saved playtest suite.
@@ -726,7 +729,7 @@ Score evidence offline.
 | param | type | description |
 |---|---|---|
 | `baseline` | string | image_diff: the image to compare against |
-| `dir` | string | scenarios: directory of scenario/v1 files (default <project>/.mcp/scenarios) |
+| `dir` | string | scenarios: directory of scenario/v1 files (default the project's .mcp/scenarios) |
 | `hitch_ms` | number | perf: frames slower than this are hitches (default 33.3) |
 | `logs` | object | rubric: {errors, warnings, ensures} for log checks |
 | `max_dhash` | integer | image_diff: pass threshold on dHash distance (default 8; 0 = exact) |
@@ -742,14 +745,14 @@ _tier mutating · offline_
 
 The project's git repo (no editor).
 - status / diff / log (+ checkpoints).
-- checkpoint: stage (default all but Saved/Intermediate/DerivedDataCache), commit `message` (hooks run) and tag umcp/cp/<n>; nothing to commit tags HEAD. git_revert only goes back to these.
+- checkpoint: stage (default all but Saved/Intermediate/DerivedDataCache), commit `message` (hooks run) and tag umcp/cp/N; nothing to commit tags HEAD. git_revert only goes back to these.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
 | `status` | readonly | branch, staged, unstaged, untracked |  | project |
 | `diff` | readonly | working-tree diff |  | project |
 | `log` | readonly | recent commits + checkpoint tags |  | project |
-| `checkpoint` | mutating | commit + tag umcp/cp/<n> | message | project |
+| `checkpoint` | mutating | commit + tag umcp/cp/N | message | project |
 
 | param | type | description |
 |---|---|---|
@@ -762,7 +765,7 @@ The project's git repo (no editor).
 
 _tier exec_
 
-Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, verdict_reasons?, timeline, events?, playtest_path} plus a contact sheet image via wait_s / job. record_events: the engine + game-journal event timeline (in playtest.json). op=batch seeds=[…]: a run per seed + the spread. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.
+Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict, rubric, logs, timeline, playtest_path, …} + a contact sheet (wait_s / job). record_events: engine + game event timeline. op=batch seeds=[…]: a run per seed + the spread. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -828,7 +831,7 @@ Compile the project's C++ (async job). strategy=auto picks from the git diff: he
 
 _tier destructive_
 
-Restore the project's files to a git op=checkpoint (umcp/cp/<n> only, else PRECONDITION): changed files are restored, files added since are deleted, untracked files are kept. History is not rewritten (the revert shows as working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing via a backup in Saved/MCP/revert-backup. rebuild_required means C++ changed: run build.
+Restore the project's files to a git op=checkpoint (umcp/cp/N only, else PRECONDITION): changed files are restored, files added since are deleted, untracked files are kept. History is kept (the revert is working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing via a backup in Saved/MCP/revert-backup. rebuild_required means C++ changed: run build.
 
 | tier | required | needs |
 |---|---|---|
@@ -838,7 +841,7 @@ Restore the project's files to a git op=checkpoint (umcp/cp/<n> only, else PRECO
 |---|---|---|
 | `discard_dirty` | boolean | if the editor must close: THROW AWAY unsaved packages instead of PRECONDITION |
 | `dry_run` | boolean | report what would change (files, editor restart) without doing it |
-| `to` | string | a checkpoint: umcp/cp/<n> or just <n> (from git op=checkpoint / op=log) |
+| `to` | string | a checkpoint: umcp/cp/N or just N (from git op=checkpoint / op=log) |
 | `wait_s` | number | wait up to this many seconds (max 25) before returning the job |
 
 ### `toolsets` — Toolsets and capabilities
@@ -846,14 +849,14 @@ Restore the project's files to a git op=checkpoint (umcp/cp/<n> only, else PRECO
 _tier ephemeral · offline_
 
 Optional tool groups: enable one to get its tools.
-- design: design_audit (luminance, style, feel, novelty… audits), design_explore
+- design: design_audit (feel, decision, style… audits), design_explore
 - ui: widget_edit (author UMG trees)
 - desktop: desktop_capture, desktop_input (OS screen/input)
 - polyworld: polyworld, polyworld_demolish
 - headless: headless (commandlets, tests)
 - world: scene, scene_clear (declarative scenes), world_query (traces, overlaps, nav)
 - game: game, game_command (the game's own API; on when .umcp.json declares game_api)
-- data: data_query, data_edit (DataTables, curves, Blueprints, input mappings, asset properties)
+- data: data_query, data_edit (tables, curves, Blueprints, input, settings)
 ops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).
 
 | op | tier | does | required | needs |
@@ -1120,7 +1123,7 @@ Spatial questions (world=editor default, pie, auto; results echo it).
 | op | tier | does | required | needs |
 |---|---|---|---|---|
 | `line_trace` | readonly | is the line from start to end blocked, and by what | start, end | editor |
-| `sphere_overlap` | readonly | actors overlapping a sphere | center | editor |
+| `sphere_overlap` | readonly | actors overlapping a sphere (of object_types) | center | editor |
 | `nav_path` | readonly | can the AI walk from start to end | start, end | editor, navmesh |
 | `project_point` | readonly | is the point on the navmesh | point | editor, navmesh |
 | `instances_count` | readonly | ISM/HISM instance counts by mesh |  | editor |
@@ -1132,6 +1135,7 @@ Spatial questions (world=editor default, pie, auto; results echo it).
 | `end` | number[] | line_trace/nav_path: [x, y, z] |
 | `limit` | integer | instances_list: max instances (default 8192; truncated:true when cut) |
 | `mesh` | string | instances_*: only components whose mesh path contains this |
+| `object_types` | string[] | sphere_overlap: world_static \| world_dynamic \| pawn \| physics_body \| vehicle \| destructible (default: all) |
 | `op` | string | one of: line_trace, sphere_overlap, nav_path, project_point, instances_count, instances_list |
 | `point` | number[] | project_point: [x, y, z] |
 | `radius` | number | sphere_overlap: radius (default 100) |
@@ -1271,6 +1275,7 @@ Edit game data; each op saves. set_properties (any non-Blueprint asset), setting
 | `class` | string | settings: the settings class, e.g. /Script/EngineSettings.GeneralProjectSettings |
 | `context` | string | input_mapping: the InputMappingContext asset (created if missing) |
 | `default` |  | add_variable: the default value |
+| `dry_run` | boolean | check and report the change, change nothing (not settings / curve_keys: the plugin checks those while writing) |
 | `expose_on_spawn` | boolean | add_variable: a spawn parameter |
 | `instance_editable` | boolean | add_variable: editable per instance |
 | `keys` | string[] | input_mapping: the action's keys in that context, exactly (e.g. [LeftShift]; [] unmaps) |

@@ -537,7 +537,7 @@ func tailStr(s string) string {
 // --- git_revert (§2.5) -----------------------------------------------------------
 
 type gitRevertIn struct {
-	To           string  `json:"to" jsonschema:"a checkpoint: umcp/cp/<n> or just <n> (from git op=checkpoint / op=log)"`
+	To           string  `json:"to" jsonschema:"a checkpoint: umcp/cp/N or just N (from git op=checkpoint / op=log)"`
 	DiscardDirty bool    `json:"discard_dirty,omitempty" jsonschema:"if the editor must close: THROW AWAY unsaved packages instead of PRECONDITION"`
 	DryRun       bool    `json:"dry_run,omitempty" jsonschema:"report what would change (files, editor restart) without doing it"`
 	WaitS        float64 `json:"wait_s,omitempty" jsonschema:"wait up to this many seconds (max 25) before returning the job"`
@@ -547,7 +547,7 @@ func gitRevertSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "git_revert", Title: "Revert to a checkpoint", Toolset: spec.Core, Timeout: sync20, Max: sync28,
 		Ops:         []spec.OpSpec{{Tier: spec.Destructive, Async: true, Required: []string{"to"}, Reaches: []string{"packages_state", "pie_stop", "editor_ping", "quit_editor"}, Needs: []string{"project"}}},
-		Description: "Restore the project's files to a git op=checkpoint (umcp/cp/<n> only, else PRECONDITION): changed files are restored, files added since are deleted, untracked files are kept. History is not rewritten (the revert shows as working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing via a backup in Saved/MCP/revert-backup. rebuild_required means C++ changed: run build.",
+		Description: "Restore the project's files to a git op=checkpoint (umcp/cp/N only, else PRECONDITION): changed files are restored, files added since are deleted, untracked files are kept. History is kept (the revert is working-tree changes). If the editor has any of those assets loaded it is closed safely first (PRECONDITION listing unsaved packages unless discard_dirty) and relaunched on the same map; otherwise they are reported possibly_stale. All-or-nothing via a backup in Saved/MCP/revert-backup. rebuild_required means C++ changed: run build.",
 		Schema:      spec.SchemaFor[gitRevertIn](nil, "to"),
 		Replaces:    []string{"git_revert_to"},
 		Handler:     gitRevert,
@@ -596,7 +596,7 @@ func gitRevert(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		tag = "umcp/cp/" + tag
 	}
 	if !cpTag.MatchString(tag) {
-		return nil, envelope.New(envelope.Precondition, "git_revert only goes back to checkpoints (umcp/cp/<n>), not %q", in.To).
+		return nil, envelope.New(envelope.Precondition, "git_revert only goes back to checkpoints (umcp/cp/N), not %q", in.To).
 			WithHint("make one with git op=checkpoint; list them with git op=log")
 	}
 	if _, err := build.Run(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/tags/"+tag+"^{commit}"); err != nil {

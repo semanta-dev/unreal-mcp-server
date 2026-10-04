@@ -28,6 +28,8 @@ type Actor struct {
 	Loc   [3]float64 `json:"loc"`
 	Rot   [3]float64 `json:"rot"` // pitch, yaw, roll
 	Scale [3]float64 `json:"scale"`
+	// Props are the snapshot's chosen properties this actor has, each {t: type, v: value}.
+	Props map[string]any `json:"props,omitempty"`
 }
 
 // File is a stored snapshot.
@@ -38,6 +40,7 @@ type File struct {
 	WorldPartition bool      `json:"world_partition"`
 	ClassFilter    string    `json:"class_filter,omitempty"` // only actors whose class/label contain this
 	Unloaded       []string  `json:"unloaded,omitempty"`     // WP: known but not loaded when taken (any filter)
+	Properties     []string  `json:"properties,omitempty"`   // the properties recorded (Actor.Props)
 	Actors         []Actor   `json:"actors"`
 }
 
@@ -143,12 +146,22 @@ type Retag struct {
 	To   []string `json:"to"`
 }
 
+// Change is one recorded property whose value differs (From/To nil: the actor did not
+// have it on that side).
+type Change struct {
+	Ref
+	Property string `json:"property"`
+	From     any    `json:"from"`
+	To       any    `json:"to"`
+}
+
 // DiffResult is the change from snapshot A to B.
 type DiffResult struct {
 	Added    []Ref   `json:"added"`
 	Removed  []Ref   `json:"removed"`
 	Moved    []Move  `json:"moved"`
 	Retagged []Retag `json:"retagged"`
+	Changed  []Change `json:"changed"` // recorded properties (File.Properties)
 	// Unknown are actors present in one snapshot whose counterpart was in an unloaded
 	// World Partition cell of the other: they may or may not still exist.
 	Unknown []Ref `json:"unknown"`
@@ -159,7 +172,7 @@ const Tolerance = 0.01
 
 // Diff compares a to b by object path.
 func Diff(a, b *File) DiffResult {
-	res := DiffResult{Added: []Ref{}, Removed: []Ref{}, Moved: []Move{}, Retagged: []Retag{}, Unknown: []Ref{}}
+	res := DiffResult{Added: []Ref{}, Removed: []Ref{}, Moved: []Move{}, Retagged: []Retag{}, Changed: []Change{}, Unknown: []Ref{}}
 	inA, inB := index(a), index(b)
 	unloadedA, unloadedB := set(a.Unloaded), set(b.Unloaded)
 	for p, x := range inA {
@@ -175,6 +188,11 @@ func Diff(a, b *File) DiffResult {
 			}
 			if !sameTags(x.Tags, y.Tags) {
 				res.Retagged = append(res.Retagged, Retag{Ref{p, y.Label}, x.Tags, y.Tags})
+			}
+			for _, prop := range a.Properties {
+				if !sameJSON(x.Props[prop], y.Props[prop]) {
+					res.Changed = append(res.Changed, Change{Ref{p, y.Label}, prop, x.Props[prop], y.Props[prop]})
+				}
 			}
 		}
 	}
@@ -193,7 +211,14 @@ func Diff(a, b *File) DiffResult {
 	}
 	sort.Slice(res.Moved, func(i, j int) bool { return res.Moved[i].Path < res.Moved[j].Path })
 	sort.Slice(res.Retagged, func(i, j int) bool { return res.Retagged[i].Path < res.Retagged[j].Path })
+	sort.SliceStable(res.Changed, func(i, j int) bool { return res.Changed[i].Path < res.Changed[j].Path })
 	return res
+}
+
+func sameJSON(a, b any) bool {
+	ja, _ := json.Marshal(a)
+	jb, _ := json.Marshal(b)
+	return string(ja) == string(jb)
 }
 
 func index(f *File) map[string]Actor {

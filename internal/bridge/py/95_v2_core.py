@@ -505,6 +505,8 @@ def _note_op(op, args):
     if op == "open_level":
         del _MCP_EDITS[:]  # a new map starts a new undo buffer
         del _MCP_REDO[:]
+    elif args.get("dry_run"):
+        pass  # checked, changed nothing
     elif op in _UNTRACKED_EDIT_OPS or (op in _UNTRACKED_WORLD_OPS and not _pie_running()):
         _note_edit("untracked", op)
 

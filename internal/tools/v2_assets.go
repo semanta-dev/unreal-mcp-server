@@ -184,6 +184,7 @@ type assetCreateIn struct {
 	Parent    string         `json:"parent,omitempty" jsonschema:"material_instance: parent material asset"`
 	Params    map[string]any `json:"params,omitempty" jsonschema:"material_instance: {scalar:{name:value}, vector:{name:[r,g,b,a]}, texture:{name:asset}}"`
 	RootPanel string         `json:"root_panel,omitempty" jsonschema:"widget_blueprint: root panel (default CanvasPanel; Overlay for a stacked full-screen menu)"`
+	DryRun    bool           `json:"dry_run,omitempty" jsonschema:"check all inputs, create nothing"`
 }
 
 func assetCreateSpec() *spec.Spec {
@@ -205,11 +206,14 @@ func assetCreateSpec() *spec.Spec {
 			if v, _ := c.Args[need].(string); need != "" && v == "" {
 				return nil, envelope.New(envelope.InvalidArgument, "kind=%s requires %s", kind, need)
 			}
-			args := pick(c.Args, "kind", "dest", "class", "row_struct", "parent", "params", "root_panel")
+			args := pick(c.Args, "kind", "dest", "class", "row_struct", "parent", "params", "root_panel", "dry_run")
 			args["replace"] = c.Op.Name == "replace"
 			out, err := v2Op(ctx, c, "asset_create", args)
 			if err != nil {
 				return nil, err
+			}
+			if out["dry_run"] == true {
+				return &spec.Result{Data: out, Summary: fmt.Sprintf("dry run: would %v %v", out["would"], c.Args["dest"])}, nil
 			}
 			verb := "created"
 			if out["replaced"] == true {
@@ -226,7 +230,7 @@ func assetCreateSpec() *spec.Spec {
 type assetEditIn struct {
 	Op         string         `json:"op" jsonschema:"set_defaults | add_component | assign_subclass"`
 	Asset      string         `json:"asset" jsonschema:"the Blueprint asset path"`
-	Properties map[string]any `json:"properties,omitempty" jsonschema:"set_defaults: CDO property -> value, e.g. {Range: 4000} (asset paths load as objects)"`
+	Properties map[string]any `json:"properties,omitempty" jsonschema:"set_defaults: CDO property → value, e.g. {Range: 4000} (asset paths load as objects)"`
 	Class      string         `json:"class,omitempty" jsonschema:"add_component: component class; assign_subclass: the class to assign"`
 	Name       string         `json:"name,omitempty" jsonschema:"add_component: the new component's name"`
 	Property   string         `json:"property,omitempty" jsonschema:"assign_subclass: a TSubclassOf property, e.g. ProjectileClass"`
@@ -342,7 +346,7 @@ func assetImport(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 
 type reflectIn struct {
 	Op         string   `json:"op" jsonschema:"object | class | enum"`
-	Actor      string   `json:"actor,omitempty" jsonschema:"object: label, object path, (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:<Class> (editor subsystems too)"`
+	Actor      string   `json:"actor,omitempty" jsonschema:"object: label, object path, (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:Class (editor subsystems too)"`
 	World      string   `json:"world,omitempty" jsonschema:"object: editor (default) | pie | auto"`
 	Class      string   `json:"class,omitempty" jsonschema:"class: /Script path, /Game Blueprint, Module.Class or short name"`
 	Enum       string   `json:"enum,omitempty" jsonschema:"enum: a UENUM(BlueprintType) name or UserDefinedEnum asset"`
@@ -517,7 +521,7 @@ func widgetQuerySpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "widget_query", Title: "Inspect UMG widgets", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
 		Description: "Inspect UMG widgets.\n- tree: a WidgetBlueprint's tree + digest.\n- describe: the palette, or one class's props and slot type.\n- render: a UserWidget class as a PNG (MCPAuthoring module).\n" +
-			"In PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text; a HUD's bindings with their state — path_unreadable is a typo; source_null is normal before the pawn is possessed).",
+			"In PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text; a HUD's bindings' state: path_unreadable = a typo, source_null = no source yet, e.g. before possession).",
 		Schema:   spec.SchemaFor[widgetQueryIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces: []string{"widget_tree", "widget_describe", "widget_render"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {

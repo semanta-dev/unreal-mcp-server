@@ -54,7 +54,7 @@ func jobSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "job", Title: "Background jobs", Toolset: spec.Core, Offline: true, Timeout: sync28, Max: sync28, Ops: ops,
-		Description: "Follow async work (build, playtest run, editor_lifecycle, git_revert, headless), which returns {job_id, state} unless called with wait_s.\n- status: state, last progress, result or error.\n- wait: up to wait_s (default 25), streaming progress.\n- cancel.\n- list: this project's jobs (any session of the project can poll them).",
+		Description: "Follow async work (build, playtest, editor_lifecycle, git_revert, headless: {job_id, state} unless wait_s).\n- status: state, last progress, result or error.\n- wait: up to wait_s (default 25), streaming progress.\n- cancel.\n- list: this project's jobs (any session of the project can poll them).",
 		Schema:      spec.SchemaFor[jobIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces:    []string{"job_status", "job_cancel"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
@@ -191,7 +191,7 @@ type analyzeIn struct {
 	HitchMs  float64            `json:"hitch_ms,omitempty" jsonschema:"perf: frames slower than this are hitches (default 33.3)"`
 	MaxDHash *int               `json:"max_dhash,omitempty" jsonschema:"image_diff: pass threshold on dHash distance (default 8; 0 = exact)"`
 	MaxLuma  *float64           `json:"max_luma_delta,omitempty" jsonschema:"image_diff: pass threshold on mean-luma delta (default 0.15)"`
-	Dir      string             `json:"dir,omitempty" jsonschema:"scenarios: directory of scenario/v1 files (default <project>/.mcp/scenarios)"`
+	Dir      string             `json:"dir,omitempty" jsonschema:"scenarios: directory of scenario/v1 files (default the project's .mcp/scenarios)"`
 }
 
 // timelineFrame / logCounts are the JSON shapes of a playtest timeline and its log
@@ -217,7 +217,7 @@ func analyzeSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "analyze", Title: "Analyze results offline", Toolset: spec.Core, Offline: true, Timeout: sync20, Max: sync28, Ops: ops,
-		Description: "Score evidence offline.\n- rubric: re-score a playtest `timeline` → PASS|WARN|FAIL with frame evidence.\n- perf: CsvProfiler CSV → frame-time percentiles + hitches; .memreport → memory buckets.\n- image_diff: `path` vs `baseline` → hash distance, luma delta, pass.\n- scenarios: the saved playtest suite.",
+		Description: "Score evidence offline.\n- rubric: re-score a playtest `timeline` → a verdict with frame evidence.\n- perf: CsvProfiler CSV → frame-time percentiles + hitches; .memreport → memory buckets.\n- image_diff: `path` vs `baseline` → hash distance, luma delta, pass.\n- scenarios: the saved playtest suite.",
 		Schema:      spec.SchemaFor[analyzeIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces:    []string{"playtest_evaluate", "perf_parse", "image_compare", "scenario_list"},
 		Handler:     analyze,
@@ -318,11 +318,11 @@ func gitSpec() *spec.Spec {
 		{Name: "status", Summary: "branch, staged, unstaged, untracked", Tier: spec.ReadOnly, Idempotent: true, Needs: []string{"project"}},
 		{Name: "diff", Summary: "working-tree diff", Tier: spec.ReadOnly, Idempotent: true, Needs: []string{"project"}},
 		{Name: "log", Summary: "recent commits + checkpoint tags", Tier: spec.ReadOnly, Idempotent: true, Needs: []string{"project"}},
-		{Name: "checkpoint", Summary: "commit + tag umcp/cp/<n>", Tier: spec.Mutating, Required: []string{"message"}, Needs: []string{"project"}},
+		{Name: "checkpoint", Summary: "commit + tag umcp/cp/N", Tier: spec.Mutating, Required: []string{"message"}, Needs: []string{"project"}},
 	}
 	return &spec.Spec{
 		Name: "git", Title: "Project git", Toolset: spec.Core, Offline: true, Timeout: sync25, Max: sync28, Ops: ops,
-		Description: "The project's git repo (no editor).\n- status / diff / log (+ checkpoints).\n- checkpoint: stage (default all but Saved/Intermediate/DerivedDataCache), commit `message` (hooks run) and tag umcp/cp/<n>; nothing to commit tags HEAD. git_revert only goes back to these.",
+		Description: "The project's git repo (no editor).\n- status / diff / log (+ checkpoints).\n- checkpoint: stage (default all but Saved/Intermediate/DerivedDataCache), commit `message` (hooks run) and tag umcp/cp/N; nothing to commit tags HEAD. git_revert only goes back to these.",
 		Schema:      spec.SchemaFor[gitIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces:    []string{"git_status", "git_diff", "git_log", "git_checkpoint"},
 		Handler:     gitHandler,
@@ -331,7 +331,7 @@ func gitSpec() *spec.Spec {
 
 var cpTag = regexp.MustCompile(`^umcp/cp/(\d+)$`)
 
-// checkpoints lists the umcp/cp/<n> tags, highest n first.
+// checkpoints lists the umcp/cp/N tags, highest n first.
 func checkpoints(ctx context.Context, dir string) ([]string, error) {
 	out, err := build.Run(ctx, dir, "tag", "--list", "umcp/cp/*")
 	if err != nil {
@@ -583,7 +583,7 @@ func playtestSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "playtest", Title: "Automated playtest", Toolset: spec.Core, Timeout: sync15, Max: sync28, Ops: ops,
-		Description: "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, verdict_reasons?, timeline, events?, playtest_path} plus a contact sheet image via wait_s / job. record_events: the engine + game-journal event timeline (in playtest.json). op=batch seeds=[…]: a run per seed + the spread. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
+		Description: "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict, rubric, logs, timeline, playtest_path, …} + a contact sheet (wait_s / job). record_events: engine + game event timeline. op=batch seeds=[…]: a run per seed + the spread. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
 		Schema:      spec.SchemaFor[playtestIn](map[string][]any{"op": spec.OpEnum(ops...), "beat_errors": {"fail", "warn"}}, "op"),
 		Replaces:    []string{"playtest_capture", "scenario_run"},
 		Handler:     playtestHandler,

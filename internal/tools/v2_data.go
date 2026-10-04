@@ -74,10 +74,11 @@ type dataEditIn struct {
 	Context          string         `json:"context,omitempty" jsonschema:"input_mapping: the InputMappingContext asset (created if missing)"`
 	Keys             []string       `json:"keys,omitempty" jsonschema:"input_mapping: the action's keys in that context, exactly (e.g. [LeftShift]; [] unmaps)"`
 	ValueType        string         `json:"value_type,omitempty" jsonschema:"input_mapping: digital | axis1d | axis2d | axis3d"`
+	DryRun           bool           `json:"dry_run,omitempty" jsonschema:"check and report the change, change nothing (not settings / curve_keys: the plugin checks those while writing)"`
 }
 
 var dataEditParams = []string{"asset", "class", "properties", "rows", "row_names", "points", "name", "type", "default",
-	"instance_editable", "expose_on_spawn", "action", "context", "keys", "value_type"}
+	"instance_editable", "expose_on_spawn", "action", "context", "keys", "value_type", "dry_run"}
 
 // dataRejects is every dataEdit param except keep (each op takes only its own).
 func dataRejects(keep ...string) []string {
@@ -96,13 +97,13 @@ func dataRejects(keep ...string) []string {
 
 func dataEditSpec() *spec.Spec {
 	ops := []spec.OpSpec{
-		{Name: "set_properties", Summary: "set properties on an asset (per-property errors)", Tier: spec.Mutating, Required: []string{"asset", "properties"}, Rejects: dataRejects("asset", "properties"), Reaches: []string{"data_set_properties"}},
+		{Name: "set_properties", Summary: "set properties on an asset (per-property errors)", Tier: spec.Mutating, Required: []string{"asset", "properties"}, Rejects: dataRejects("asset", "properties", "dry_run"), Reaches: []string{"data_set_properties"}},
 		{Name: "settings", Summary: "set a settings class's defaults and write its Default*.ini", Tier: spec.Mutating, Required: []string{"class", "properties"}, Rejects: dataRejects("class", "properties"), Reaches: []string{"data_set_settings"}, Needs: []string{"plugin>=6"}},
-		{Name: "table_upsert", Summary: "insert or update DataTable rows by name (others untouched)", Tier: spec.Mutating, Required: []string{"asset", "rows"}, Rejects: dataRejects("asset", "rows"), Reaches: []string{"data_table_upsert"}},
-		{Name: "table_delete", Summary: "delete DataTable rows by name", Tier: spec.Destructive, Required: []string{"asset", "row_names"}, Rejects: dataRejects("asset", "row_names"), Reaches: []string{"data_table_delete"}},
+		{Name: "table_upsert", Summary: "insert or update DataTable rows by name (others untouched)", Tier: spec.Mutating, Required: []string{"asset", "rows"}, Rejects: dataRejects("asset", "rows", "dry_run"), Reaches: []string{"data_table_upsert"}},
+		{Name: "table_delete", Summary: "delete DataTable rows by name", Tier: spec.Destructive, Required: []string{"asset", "row_names"}, Rejects: dataRejects("asset", "row_names", "dry_run"), Reaches: []string{"data_table_delete"}},
 		{Name: "curve_keys", Summary: "replace a float curve's keys", Tier: spec.Mutating, Required: []string{"asset", "points"}, Rejects: dataRejects("asset", "points"), Reaches: []string{"data_curve_keys"}, Needs: []string{"plugin>=6"}},
-		{Name: "add_variable", Summary: "add a member variable to a Blueprint", Tier: spec.Mutating, Required: []string{"asset", "name", "type"}, Rejects: dataRejects("asset", "name", "type", "default", "instance_editable", "expose_on_spawn"), Reaches: []string{"data_add_variable"}, Needs: []string{"plugin>=6"}},
-		{Name: "input_mapping", Summary: "an InputAction's keys in a mapping context", Tier: spec.Mutating, Required: []string{"action", "context", "keys"}, Rejects: dataRejects("action", "context", "keys", "value_type"), Reaches: []string{"data_input_mapping"}},
+		{Name: "add_variable", Summary: "add a member variable to a Blueprint", Tier: spec.Mutating, Required: []string{"asset", "name", "type"}, Rejects: dataRejects("asset", "name", "type", "default", "instance_editable", "expose_on_spawn", "dry_run"), Reaches: []string{"data_add_variable"}, Needs: []string{"plugin>=6"}},
+		{Name: "input_mapping", Summary: "an InputAction's keys in a mapping context", Tier: spec.Mutating, Required: []string{"action", "context", "keys"}, Rejects: dataRejects("action", "context", "keys", "value_type", "dry_run"), Reaches: []string{"data_input_mapping"}},
 	}
 	return &spec.Spec{
 		Name: "data_edit", Title: "Edit game data", Toolset: spec.Data, Timeout: sync15, Max: sync28, Ops: ops,
@@ -143,9 +144,15 @@ func dataEditHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		}
 		args = pick(c.Args, "action", "context", "keys", "value_type")
 	}
+	if in.DryRun {
+		args["dry_run"] = true
+	}
 	out, err := v2Op(ctx, c, py, args)
 	if err != nil {
 		return nil, err
+	}
+	if in.DryRun {
+		return &spec.Result{Data: out, Summary: c.Op.Name + " dry run: nothing changed"}, nil
 	}
 	if c.Op.Name == "add_variable" || c.Op.Name == "input_mapping" || c.Op.Name == "settings" {
 		out["undoable"] = false // no editor transaction: roll back with git_revert

@@ -352,3 +352,44 @@ def test_stray_cleanup_never_touches_a_look_alike(v2, ue):
     removed = _bp_fixture(ue, state, rename=lambda n: n + "_0")
     env = call(v2, "data_add_variable", {"asset": "/Game/R3/BP", "name": "Armor", "type": "int"})
     assert env["code"] == "EDITOR_ERROR" and removed == ["Armor_0"], (env, removed)
+
+
+# R6.2: dry_run checks everything a real call checks first, reports the change, and
+# changes nothing (no transaction, no save, no asset created).
+
+def test_dry_runs_change_nothing(v2, ue):
+    before = json.dumps(ue.dt.rows, sort_keys=True)
+    env = call(v2, "data_table_upsert", {"asset": "/Game/Data/DT_Waves", "dry_run": True,
+                                         "rows": {"wave_02": {"enemy_count": 9}, "Wave_03": {"enemy_count": 12}}})
+    r = env["result"]
+    assert env["ok"] and r["dry_run"] and r["created"] == ["Wave_03"] and r["updated"] == ["Wave_02"], env
+    assert r["changes"]["Wave_02"] == {"EnemyCount": {"from": 8, "to": 9}}
+    env = call(v2, "data_table_upsert", {"asset": "/Game/Data/DT_Waves", "dry_run": True, "rows": {"Wave_01": {"EnemyCnt": 1}}})
+    assert env["code"] == "BAD_VALUE"  # the same checks as the real call
+    env = call(v2, "data_table_delete", {"asset": "/Game/Data/DT_Waves", "rows": ["wave_01"], "dry_run": True})
+    assert env["ok"] and env["result"]["deleted"] == ["Wave_01"] and env["result"]["total"] == 1, env
+    assert call(v2, "data_table_delete", {"asset": "/Game/Data/DT_Waves", "rows": ["Wave_09"], "dry_run": True})["code"] == "NOT_FOUND"
+    env = call(v2, "data_set_properties", {"asset": "/Game/Data/DA_Tuning", "dry_run": True,
+                                           "properties": {"player_damage_multiplier": 1.5, "nope": 1}})
+    r = env["result"]
+    assert env["ok"] and r["changes"] == {"player_damage_multiplier": {"from": 1.0, "to": 1.5}}, env
+    assert [e["property"] for e in r["property_errors"]] == ["nope"]
+    assert json.dumps(ue.dt.rows, sort_keys=True) == before and ue.dt.modified == 0 and ue.tuning.modified == 0
+    assert ue.saved == [] and all(entry[1] != "committed" for entry in Tx.log)
+
+
+def test_add_variable_and_input_mapping_dry_runs(v2, ue):
+    state = {"variables": [{"name": "Health"}], "components": [], "functions": [], "events": []}
+    _bp_fixture(ue, state)
+    env = call(v2, "data_add_variable", {"asset": "/Game/R3/BP", "name": "Armor", "type": "int", "dry_run": True})
+    assert env["ok"] and env["result"]["would_add"]["name"] == "Armor" and state["variables"] == [{"name": "Health"}], env
+    assert call(v2, "data_add_variable", {"asset": "/Game/R3/BP", "name": "health", "type": "int", "dry_run": True})["code"] == "CONFLICT"
+    ue.Key = Key
+    ue.InputLibrary = _NS(key_is_valid=lambda k: k.name in ("LeftShift", "E"))
+    ue.EditorAssetLibrary.does_asset_exist = lambda p: p == "/Game/Input/IMC_Aesir"
+    env = call(v2, "data_input_mapping", {"action": "/Game/Input/IA_Dash", "context": "/Game/Input/IMC_Aesir",
+                                          "keys": ["LeftShift"], "dry_run": True})
+    assert env["ok"] and env["result"]["creates"] == ["/Game/Input/IA_Dash"] and ue.saved == [], env
+    env = call(v2, "data_input_mapping", {"action": "/Game/Input/IA_Dash", "context": "/Game/Input/IMC_Aesir",
+                                          "keys": ["LeftShfit"], "dry_run": True})
+    assert env["code"] == "BAD_VALUE"
