@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -676,10 +677,11 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 		}
 		return nil, err
 	}
-	stop := func() {
+	stop := func() error {
 		if playing {
-			stopPIEAndWait(ctx, c)
+			return stopPIEAndWait(ctx, c)
 		}
+		return nil
 	}
 	if playing {
 		progress("starting " + mode)
@@ -748,7 +750,9 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 	defer cancel()
 	b, _ := v2Bridge(c)
 	raw, stopErr := b.Call(cctx, "capture_stop", map[string]any{"session": session})
-	stop()
+	if err := stop(); err != nil {
+		beatErrs = append(beatErrs, "teardown: "+err.Error())
+	}
 	result := map[string]any{"scenario": sc.Name, "session": session}
 	if seed != nil {
 		result["seed"] = *seed
@@ -791,6 +795,9 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 	if in.Perf && playing {
 		values, csvPath, perrs, perr := perfPass(ctx, c, sc, duration, progress, false, seed)
 		beatErrs = append(beatErrs, perrs...)
+		if errors.Is(perr, errUnseeded) {
+			seedErrs = append(seedErrs, perr.Error())
+		}
 		if perr != nil {
 			result["perf_error"] = perr.Error()
 		} else {
@@ -800,6 +807,9 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 				// The event recorder's cost: the same run profiled with it on (R5.4).
 				with, withCSV, werrs, werr := perfPass(ctx, c, sc, duration, progress, true, seed)
 				beatErrs = append(beatErrs, werrs...)
+				if errors.Is(werr, errUnseeded) {
+					seedErrs = append(seedErrs, werr.Error())
+				}
 				if werr != nil {
 					pc["with_events_error"] = werr.Error()
 				} else {
@@ -853,12 +863,16 @@ func notePlaytestJSON(dir string, result map[string]any, events *eval.EventLog) 
 
 // stopPIEAndWait stops PIE on a detached context and waits until it has stopped: the next
 // pie_start (a perf pass, the next seed) must not see the dying session as running.
-func stopPIEAndWait(ctx context.Context, c *spec.Call) {
+func stopPIEAndWait(ctx context.Context, c *spec.Call) error {
 	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	_, _ = v2Op(cctx, c, "pie_stop", nil)
-	_ = waitPIE(cctx, c, false, 15*time.Second)
+	err := waitPIE(cctx, c, false, 15*time.Second)
 	forgetGameWorld(c)
+	if err != nil {
+		return fmt.Errorf("PIE did not stop (the next play would run in it): %w", err)
+	}
+	return nil
 }
 
 // finalVerdict folds what the rubric cannot see into the verdict: a crash always fails

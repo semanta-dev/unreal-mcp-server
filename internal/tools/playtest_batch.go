@@ -77,9 +77,9 @@ type batchRun struct {
 	BeatErrors   []string           `json:"beat_errors,omitempty"`
 	PlaytestPath string             `json:"playtest_path,omitempty"`
 	Waves        []map[string]any   `json:"waves"`
-	Checks       map[string]string  `json:"checks,omitempty"` // id -> passed | failed | insufficient
-	Values       map[string]float64 `json:"values,omitempty"` // check id -> the number it measured
-	Events       map[string]float64 `json:"events,omitempty"` // kind -> count
+	Checks       map[string]string  `json:"checks,omitempty"`      // id -> passed | failed | insufficient
+	Values       map[string]float64 `json:"values,omitempty"`      // check id -> the number it measured
+	Events       map[string]float64 `json:"events,omitempty"`      // kind -> count
 	NoEvidence   []string           `json:"no_evidence,omitempty"` // kinds this run cannot speak for (source off, gap, undeclared)
 	log          *eval.EventLog
 }

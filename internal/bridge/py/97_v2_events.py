@@ -21,7 +21,9 @@ def _events_world_t(world):
 def _events_gap(sess, source, why, dropped=0, from_t=None):
     """Record a stretch in which the source's events may be missing. One that ends at the
     window's start (the first drain's look back) is before the window and not a gap."""
-    start = sess["last_t"].get(source, sess["start_t"]) if from_t is None else from_t
+    # From where the source was last read completely (taken), not the last drain: the
+    # journal's newest second is held back, so a drain does not take all it saw.
+    start = sess["taken"].get(source, sess["start_t"]) if from_t is None else from_t
     gap = {"source": source, "from_t": start, "to_t": sess["now_t"], "dropped": int(dropped or 0), "reason": why}
     if sess.get("initial") and gap["to_t"] <= sess["start_t"]:
         sess["before_window"].append(gap)
@@ -43,11 +45,13 @@ def _events_add(sess, source, events):
         if len(sess["events"]) >= _EVENTS_MAX:
             if not sess.get("full"):
                 sess["full"] = True
-                # Every recorded source loses events from here on, not only this one.
+                # Every recorded source loses events from here on: this one from the first
+                # event dropped, the others from where they were last read completely.
                 for src, state in sess["sources"].items():
                     if state == "recorded":
+                        start = float(e.get("t") or sess["now_t"]) if src == source else sess["taken"].get(src, sess["start_t"])
                         sess["open_gaps"].append(_events_gap(sess, src, "the session holds %d events: later ones were "
-                                                             "not kept" % _EVENTS_MAX, from_t=sess["now_t"]))
+                                                             "not kept" % _EVENTS_MAX, from_t=min(start, sess["now_t"])))
             return
         e = dict(e)
         e["source"] = source
@@ -56,7 +60,9 @@ def _events_add(sess, source, events):
 
 def _journal_cursor(nxt, seq):
     """A cursor just after `seq` in the journal's epoch (cursors are "<epoch>:<seq>")."""
-    epoch = str(nxt).rsplit(":", 1)[0]
+    if not isinstance(nxt, str) or ":" not in nxt:
+        raise RuntimeError("the journal answered without a next_cursor \"<epoch>:<seq>\" (GAME_CONTRACT)")
+    epoch = nxt.rsplit(":", 1)[0]
     return "%s:%d" % (epoch, int(seq))
 
 
@@ -69,7 +75,8 @@ def _events_world_changed(sess, why, at_t=None):
     sess["world_changed"] = why
     for src in ("engine", "journal"):
         if sess["sources"].get(src) == "recorded":
-            start = at_t if at_t is not None else sess["last_t"].get(src, sess["start_t"])
+            # The engine was drained up to the loss (at_t); the journal only up to what it took.
+            start = at_t if (at_t is not None and src == "engine") else sess["taken"].get(src, sess["start_t"])
             _events_gap(sess, src, why, from_t=min(start, sess["now_t"]))
 
 
@@ -108,10 +115,9 @@ def _events_drain(sess, final=False):
                     return
                 if not out.get("more"):
                     break
-            sess["last_t"]["engine"] = sess["now_t"]
+            sess["taken"]["engine"] = sess["now_t"]
         except Exception as e:
-            _events_gap(sess, "engine", "drain failed: %s" % e)
-            sess["last_t"]["engine"] = sess["now_t"]
+            _events_gap(sess, "engine", "drain failed: %s" % e)  # taken stays: the gap runs from there
     j = sess.get("journal")
     if j is not None:
         try:
@@ -137,7 +143,7 @@ def _events_drain(sess, final=False):
                 if len(ready) < len(evs):
                     if ready:
                         sess["journal_cursor"] = _journal_cursor(nxt, ready[-1]["seq"])
-                    elif out.get("gap") and nxt is not None:
+                    elif out.get("gap"):
                         sess["journal_cursor"] = _journal_cursor(nxt, int(evs[0]["seq"]) - 1)
                     done = True
                     break
@@ -149,10 +155,12 @@ def _events_drain(sess, final=False):
                 sess["journal_cursor"] = nxt
             if not done:
                 _events_gap(sess, "journal", "the journal had more than 64 pages to read in one drain")
-            sess["last_t"]["journal"] = sess["now_t"]
+            else:
+                # Read completely up to the settle threshold (everything, on the last drain).
+                sess["taken"]["journal"] = max(sess["taken"].get("journal", sess["start_t"]),
+                                               sess["now_t"] if final else min(settle, sess["now_t"]))
         except Exception as e:
-            _events_gap(sess, "journal", "drain failed: %s" % e)
-            sess["last_t"]["journal"] = sess["now_t"]
+            _events_gap(sess, "journal", "drain failed: %s" % e)  # taken stays: the gap runs from there
 
 
 def _events_unregister(sess):
@@ -177,16 +185,21 @@ def _events_tick(session):
     return _cb
 
 
-def _event_kinds(obj, capabilities):
-    """The event kinds the game declares (GetCapabilitiesJson event_kinds), or None."""
+def _event_kinds(lib, obj, capabilities):
+    """(the event kinds the game declares — GetCapabilitiesJson event_kinds —, or None and
+    why). The capabilities read is a game_api read: pure or const, checked."""
     if not capabilities:
-        return None
+        return None, "the project's game_api names no capabilities function"
+    if not lib.is_pure_or_const(obj.get_class(), capabilities):
+        return None, "%s is not BlueprintPure or const: it is not read" % capabilities
     try:
         caps = _game_json(capabilities, obj.call_method(capabilities))
-    except Exception:
-        return None
+    except Exception as e:
+        return None, "%s failed: %s" % (capabilities, e)
     kinds = caps.get("event_kinds")
-    return sorted(str(k) for k in kinds) if isinstance(kinds, list) else None
+    if not isinstance(kinds, list):
+        return None, "%s has no event_kinds list" % capabilities
+    return sorted(str(k) for k in kinds), None
 
 
 def _op_events_start(args):
@@ -194,15 +207,23 @@ def _op_events_start(args):
     recorder (API 8; older: the engine source is unavailable, never a failure);
     journal: {class, function, capabilities?} of the game_api (absent: unavailable)."""
     session = _safe_name(args.get("session") or "", "session")
-    live = [s for s, v in _MCP_EVENT_SESSIONS.items() if v["running"] and not v.get("world_ended")]
-    if live:
-        # The engine recorder is one per game: a second session would restart it under the first.
-        raise _V2Error("CONFLICT", "event session %s is recording: stop it first (one session at a time)" % live[0])
     world = _game_world()
     if world is None:
         raise _V2Error("NOT_IN_PIE", "PIE is not running")
+    # A session whose world is gone (PIE ended, a map travel) can record nothing more: if its
+    # stop never came (the server went away), it is evicted rather than blocking for good.
+    evicted = []
+    for s, v in list(_MCP_EVENT_SESSIONS.items()):
+        if v.get("world_ended") or v.get("world_changed") or v.get("world") is not world:
+            _events_unregister(v)
+            _MCP_EVENT_SESSIONS.pop(s, None)
+            evicted.append(s)
+    live = [s for s, v in _MCP_EVENT_SESSIONS.items() if v["running"]]
+    if live:
+        # The engine recorder is one per game: a second session would restart it under the first.
+        raise _V2Error("CONFLICT", "event session %s is recording: stop it first (one session at a time)" % live[0])
     now = _events_world_t(world)
-    sess = {"session": session, "running": True, "start_t": now, "now_t": now, "last_t": {}, "events": [], "gaps": [],
+    sess = {"session": session, "running": True, "world": world, "start_t": now, "now_t": now, "taken": {}, "events": [], "gaps": [],
             "before_window": [], "open_gaps": [], "sources": {"server": "recorded"}, "source_why": {}, "elapsed": 0.0,
             "last_drain": 0.0, "interval_s": max(0.1, float(args.get("interval_s") or 0.5)), "engine_cursor": 0,
             "journal_cursor": "", "journal_kinds": None}
@@ -215,7 +236,9 @@ def _op_events_start(args):
             raise _V2Error("BAD_VALUE", "%s.%s is not BlueprintPure or const" % (obj.get_class().get_name(), j["function"]))
         sess["journal"] = {"obj": obj, "function": j["function"]}
         sess["sources"]["journal"] = "recorded"
-        sess["journal_kinds"] = _event_kinds(obj, j.get("capabilities"))
+        sess["journal_kinds"], why = _event_kinds(lib, obj, j.get("capabilities"))
+        if why:
+            sess["source_why"]["journal_kinds"] = why
     else:
         sess["sources"]["journal"] = "unavailable"
         sess["source_why"]["journal"] = args.get("journal_why") or "the project declares no game_api (.umcp.json): no game journal"
@@ -242,8 +265,11 @@ def _op_events_start(args):
             sess["recorder"].stop_recording()
         raise
     _MCP_EVENT_SESSIONS[session] = sess
-    return {"session": session, "start_t": now, "sources": sess["sources"], "source_why": sess["source_why"],
-            "bound": sess.get("bound_at_start"), "journal_kinds": sess["journal_kinds"]}
+    out = {"session": session, "start_t": now, "sources": sess["sources"], "source_why": sess["source_why"],
+           "bound": sess.get("bound_at_start"), "journal_kinds": sess["journal_kinds"]}
+    if evicted:
+        out["evicted"] = evicted  # sessions of a world that is gone, never stopped
+    return out
 
 
 def _op_seed_random(args):

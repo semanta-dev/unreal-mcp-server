@@ -106,6 +106,8 @@ void UMCPEventRecorder::OnWorldCleanup(UWorld* World, bool bSessionEnded, bool b
 		return;
 	}
 	// The recorded world is going: stop here and say so (a drain reports world_lost).
+	FWorldDelegates::OnWorldCleanup.Remove(CleanupHandle);
+	CleanupHandle.Reset();
 	bWorldLost = true;
 	LostT = World->GetTimeSeconds();
 	World->RemoveOnActorSpawnedHandler(SpawnHandle);

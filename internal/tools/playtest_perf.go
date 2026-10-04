@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +18,9 @@ import (
 // running — no frame capture, no event recorder — under the engine's CsvProfiler, and
 // scores perf_csv.* from that CSV (the game's frame times, not the recorder's).
 
+// errUnseeded: a pass of a seeded run whose seed could not be applied (it FAILs the run).
+var errUnseeded = errors.New("the pass was not seeded")
+
 // perfPass is one CsvProfiler run of the scenario's beats. It returns the perf_csv
 // values, the CSV's path, and the pass's beat errors (prefixed with the pass's name).
 // withEvents runs the event recorder through the pass (to measure its overhead).
@@ -31,7 +35,7 @@ func perfPass(ctx context.Context, c *spec.Call, sc *eval.Scenario, duration flo
 	}
 	csvDir := filepath.Join(pd, "Saved", "Profiling", "CSV")
 	before := csvFiles(csvDir)
-	stopPIE := func() { stopPIEAndWait(ctx, c) }
+	stopPIE := func() error { return stopPIEAndWait(ctx, c) }
 	progress(name + ": starting " + orStr(sc.Mode, "pie"))
 	forgetGameWorld(c)
 	if _, err := v2Op(ctx, c, "pie_start", map[string]any{"simulate": sc.Mode == "simulate"}); err != nil {
@@ -43,8 +47,9 @@ func perfPass(ctx context.Context, c *spec.Call, sc *eval.Scenario, duration flo
 	}
 	var errs []string
 	if seed != nil {
-		for _, e := range applySeed(ctx, c, sc, *seed) {
-			errs = append(errs, name+": "+e)
+		if serrs := applySeed(ctx, c, sc, *seed); len(serrs) > 0 {
+			_ = stopPIE()
+			return nil, "", nil, fmt.Errorf("%w: %s: %s", errUnseeded, name, strings.Join(serrs, "; "))
 		}
 	}
 	if sc.TimeDilation > 0 && sc.TimeDilation != 1 {
@@ -81,7 +86,9 @@ func perfPass(ctx context.Context, c *spec.Call, sc *eval.Scenario, duration flo
 	// The CSV is written after the capture ends (asynchronously): wait for a new file
 	// whose size has settled, while PIE still runs.
 	path, err := waitNewCSV(cctx, csvDir, before)
-	stopPIE()
+	if serr := stopPIE(); serr != nil {
+		errs = append(errs, name+": "+serr.Error())
+	}
 	if stopErr != nil {
 		return nil, "", errs, fmt.Errorf("csvprofile stop: %w", stopErr)
 	}

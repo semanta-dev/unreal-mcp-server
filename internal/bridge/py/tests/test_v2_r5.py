@@ -215,7 +215,7 @@ def test_a_lost_world_is_an_engine_gap_to_the_end(v2, ue):
     # The recording ends where the world went: both sources lost the rest (the new world's
     # clock is not this one's), nothing after is drained, the window ends at detection.
     assert out["end_t"] == 12.0 and {(g["source"], g["from_t"], g["to_t"]) for g in out["gaps"]} == {
-        ("engine", 11.5, 12.0), ("journal", 11.5, 12.0)}, out
+        ("engine", 11.5, 12.0), ("journal", 10.0, 12.0)}, out  # the journal was taken up to 10.0 only
     assert ue.ticks[-1] is None
 
 
@@ -275,3 +275,57 @@ def test_pie_end_unregisters_the_tick(v2, ue):
     assert ue.ticks[-1] is None and cb is not None
     out = call(v2, "events_stop", {"session": "e1"})["result"]
     assert {g["source"] for g in out["gaps"]} == {"engine", "journal"}
+
+
+
+def test_gaps_start_where_a_source_was_last_read_completely(v2, ue):
+    # The journal's newest second is held back: a world change loses it, so the gap starts there.
+    call(v2, "events_start", {"session": "t1", "journal": JOURNAL})
+    tick(ue, 2.0)  # now 12: the journal is taken up to 11
+    ue.journal["events"] = [{"seq": 1, "t": 11.6, "kind": "hit"}]  # held back
+    tick(ue, 0.5)  # now 12.5: settle 11.5, the hit is still held
+    ue.clock["t"] = 0.2  # restart: the held hit is gone with its world
+    ue.ticks[-1](0.6)
+    out = call(v2, "events_stop", {"session": "t1"})["result"]
+    j = [g for g in out["gaps"] if g["source"] == "journal"][0]
+    assert j["from_t"] == 11.5 and j["to_t"] == 12.5 and not any(e["kind"] == "hit" for e in out["events"]), out
+
+
+def test_a_full_session_gap_starts_at_the_first_dropped_event(v2, ue):
+    m = v2["_mcp2"]
+    old = m._EVENTS_MAX
+    m._EVENTS_MAX = 2
+    try:
+        call(v2, "events_start", {"session": "c1", "journal": JOURNAL})
+        ue.rec.events = [{"seq": i, "t": 10.0 + 0.1 * i, "kind": "damage"} for i in range(1, 6)]
+        tick(ue)
+        out = call(v2, "events_stop", {"session": "c1"})["result"]
+    finally:
+        m._EVENTS_MAX = old
+    g = {x["source"]: x for x in out["gaps"]}
+    assert abs(g["engine"]["from_t"] - 10.3) < 1e-9 and g["journal"]["from_t"] == 10.0, out
+
+
+def test_capabilities_are_read_only_and_their_failure_is_said(v2, ue):
+    ue.MCPCoreLibrary.is_pure_or_const = lambda cls, fn: str(fn) == "GetEventsSince"
+    out = call(v2, "events_start", {"session": "p1", "journal": JOURNAL})["result"]
+    assert out["journal_kinds"] is None and "not BlueprintPure" in out["source_why"]["journal_kinds"], out
+    call(v2, "events_stop", {"session": "p1"})
+
+
+def test_a_session_whose_world_is_gone_is_evicted(v2, ue):
+    call(v2, "events_start", {"session": "old", "journal": JOURNAL})
+    m = v2["_mcp2"]
+    m._MCP_EVENT_SESSIONS["old"]["world"] = "OLD_PIE"  # its stop never came; PIE restarted
+    env = call(v2, "events_start", {"session": "new", "journal": JOURNAL})
+    assert env["ok"] and env["result"]["evicted"] == ["old"], env
+    call(v2, "events_stop", {"session": "new"})
+
+
+def test_a_journal_without_next_cursor_is_a_gap(v2, ue):
+    call(v2, "events_start", {"session": "n1", "journal": JOURNAL})
+    sub = v2["_mcp2"]._MCP_EVENT_SESSIONS["n1"]["journal"]["obj"]
+    sub.functions["GetEventsSince"] = lambda c: json.dumps({"events": [{"seq": 1, "t": 10.9, "kind": "hit"}], "gap": True})
+    tick(ue, 1.0)
+    out = call(v2, "events_stop", {"session": "n1"})["result"]
+    assert any("next_cursor" in g["reason"] for g in out["gaps"]), out

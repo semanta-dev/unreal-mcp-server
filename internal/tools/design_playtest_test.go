@@ -144,7 +144,6 @@ func TestDecisionAuditFromAPlaytest(t *testing.T) {
 	}
 }
 
-
 // R5 review: a hit near the end of the recording, whose responses (and late visual
 // stamp) may not have been recorded, is not audited; an undeclared kind is refused.
 func TestFeelAuditWindowEdgesAndUndeclaredKinds(t *testing.T) {

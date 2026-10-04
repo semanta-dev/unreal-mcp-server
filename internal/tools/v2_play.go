@@ -582,17 +582,17 @@ func worldQuerySpec() *spec.Spec {
 // --- snapshot / snapshot_restore -------------------------------------------------
 
 type snapshotIn struct {
-	Op          string  `json:"op" jsonschema:"take | diff | list | digest"`
-	Name        string  `json:"name,omitempty" jsonschema:"take: snapshot name (default auto; overwrites); diff: the BEFORE snapshot"`
-	Against     string  `json:"against,omitempty" jsonschema:"diff: the AFTER snapshot (default: the level right now)"`
-	ClassFilter string  `json:"class_filter,omitempty" jsonschema:"take/digest scope=actors: only actors whose class or label contains this"`
+	Op          string   `json:"op" jsonschema:"take | diff | list | digest"`
+	Name        string   `json:"name,omitempty" jsonschema:"take: snapshot name (default auto; overwrites); diff: the BEFORE snapshot"`
+	Against     string   `json:"against,omitempty" jsonschema:"diff: the AFTER snapshot (default: the level right now)"`
+	ClassFilter string   `json:"class_filter,omitempty" jsonschema:"take/digest scope=actors: only actors whose class or label contains this"`
 	Properties  []string `json:"properties,omitempty" jsonschema:"take: also these properties (e.g. Health); restore resets them"`
-	Scope       string  `json:"scope,omitempty" jsonschema:"digest: instances (ISM/HISM, default) | actors"`
-	Tag         string  `json:"tag,omitempty" jsonschema:"digest scope=instances: component tag filter"`
-	Mesh        string  `json:"mesh,omitempty" jsonschema:"digest scope=instances: mesh path substring filter"`
-	PosBucket   float64 `json:"pos_bucket,omitempty" jsonschema:"digest: position quantization in world units (default 1)"`
-	RotBucket   float64 `json:"rot_bucket,omitempty" jsonschema:"digest: rotation quantization in degrees (default 1)"`
-	Limit       int     `json:"limit,omitempty" jsonschema:"digest instances: max hashed (default 5,000,000; more fails)"`
+	Scope       string   `json:"scope,omitempty" jsonschema:"digest: instances (ISM/HISM, default) | actors"`
+	Tag         string   `json:"tag,omitempty" jsonschema:"digest scope=instances: component tag filter"`
+	Mesh        string   `json:"mesh,omitempty" jsonschema:"digest scope=instances: mesh path substring filter"`
+	PosBucket   float64  `json:"pos_bucket,omitempty" jsonschema:"digest: position quantization in world units (default 1)"`
+	RotBucket   float64  `json:"rot_bucket,omitempty" jsonschema:"digest: rotation quantization in degrees (default 1)"`
+	Limit       int      `json:"limit,omitempty" jsonschema:"digest instances: max hashed (default 5,000,000; more fails)"`
 }
 
 func snapshotSpec() *spec.Spec {

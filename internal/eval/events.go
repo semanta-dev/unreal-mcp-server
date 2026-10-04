@@ -89,7 +89,11 @@ func (l *EventLog) KindUnknown(kind string) string {
 		return ""
 	}
 	if l.JournalKinds == nil {
-		return "the game declares no event kinds (GetCapabilitiesJson event_kinds), so a journal kind cannot be checked"
+		why := "the game declares no event kinds (GetCapabilitiesJson event_kinds)"
+		if w := l.SourceWhy["journal_kinds"]; w != "" {
+			why = "the game's event kinds are unknown: " + w
+		}
+		return why + ", so a journal kind cannot be checked"
 	}
 	for _, k := range l.JournalKinds {
 		if k == kind {

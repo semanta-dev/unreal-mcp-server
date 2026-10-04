@@ -159,7 +159,7 @@ func feelFromPlaytest(raw []byte) (any, error) {
 		return nil, insufficientEvidence([]string{"events." + strings.Join(kinds, "/")}, fmt.Sprintf("no %s events in the window (a hit needs %.4g s of recording after it)", strings.Join(kinds, "/"), math.Max(within, 1.0)))
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].T < events[j].T })
-	return map[string]any{"source": in.Source, "window": []float64{lo, hi}, "events": len(events),
+	return map[string]any{"source": in.Source, "window": []float64{lo - d.Window[0], hi - d.Window[0]}, "events": len(events),
 		"audit": audit.FeelAudit(events, orDefault(in.WithinMs, 120), orDefaultInt(in.MaxFXPerEvent, 4))}, nil
 }
 
@@ -245,7 +245,7 @@ func decisionFromPlaytest(raw []byte) (any, error) {
 	for i := range pts {
 		pts[i].Available = avail
 	}
-	return map[string]any{"source": in.Source, "window": []float64{lo, hi}, "points": len(pts), "available": avail,
+	return map[string]any{"source": in.Source, "window": []float64{lo - d.Window[0], hi - d.Window[0]}, "points": len(pts), "available": avail,
 		"audit": audit.DecisionAudit(pts)}, nil
 }
 
