@@ -853,6 +853,10 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 		// An unseeded run in a seeded batch is not the run asked for, beat_errors=warn or not.
 		verdict, reasons = "FAIL", append(reasons, "the run was not seeded")
 	}
+	if result["teardown_error"] != nil && verdict != "FAIL" {
+		// PIE would not stop: whatever plays next would play in it — never a warning.
+		verdict, reasons = "FAIL", append(reasons, "PIE would not stop")
+	}
 	result["verdict"], result["rubric"] = verdict, reportToJSON(rep)
 	if len(reasons) > 0 {
 		result["verdict_reasons"] = reasons
