@@ -191,7 +191,7 @@ type analyzeIn struct {
 	Timeline []timelineFrame    `json:"timeline,omitempty" jsonschema:"rubric: a playtest result's timeline"`
 	Logs     *logCounts         `json:"logs,omitempty" jsonschema:"rubric: {errors, warnings, ensures} for log checks"`
 	Rubric   []eval.RubricCheck `json:"rubric,omitempty" jsonschema:"rubric: [{id, kind, path, params?, severity?, allow_perturbed?}]"`
-	Path     string             `json:"path,omitempty" jsonschema:"perf: a CsvProfiler .csv or a .memreport; image_diff: an image"`
+	Path     string             `json:"path,omitempty" jsonschema:"perf: a CsvProfiler .csv or a .memreport; image_diff: an image; rubric, events: a playtest_path"`
 	Baseline string             `json:"baseline,omitempty" jsonschema:"image_diff: the image to compare against"`
 	HitchMs  float64            `json:"hitch_ms,omitempty" jsonschema:"perf: hitch threshold in ms (default 33.3)"`
 	MaxDHash *int               `json:"max_dhash,omitempty" jsonschema:"image_diff: max dHash distance (default 8; 0 = exact)"`
@@ -216,7 +216,7 @@ type logCounts struct {
 
 func analyzeSpec() *spec.Spec {
 	ops := []spec.OpSpec{
-		{Name: "rubric", Summary: "score a recorded timeline against checks", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"timeline", "rubric"}},
+		{Name: "rubric", Summary: "score a recorded timeline against checks", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"rubric"}},
 		{Name: "perf", Summary: "frame-time percentiles / memory buckets", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"path"}},
 		{Name: "image_diff", Summary: "perceptual compare with a pass verdict", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"path", "baseline"}},
 		{Name: "scenarios", Summary: "the saved playtest suite: name + valid per file", Tier: spec.ReadOnly, Idempotent: true},
@@ -271,6 +271,15 @@ func analyze(_ context.Context, c *spec.Call) (*spec.Result, error) {
 		samples := make([]eval.Sample, len(in.Timeline))
 		for i, f := range in.Timeline {
 			samples[i] = eval.Sample{Index: f.Index, TWorld: f.TWorld, State: f.State}
+		}
+		if (len(in.Timeline) > 0) == (in.Path != "") {
+			return nil, envelope.New(envelope.InvalidArgument, "rubric scores a timeline or a playtest_path (path), one of them")
+		}
+		if in.Path != "" {
+			var err error
+			if samples, err = playtestSamples(projectPath(c, in.Path)); err != nil {
+				return nil, err
+			}
 		}
 		if diags := eval.LintRubric(in.Rubric); eval.HasErrors(diags) {
 			return nil, envelope.New(envelope.InvalidArgument, "the rubric has errors").WithDetail("diagnostics", diags)
@@ -878,8 +887,24 @@ func notePlaytestJSON(dir string, result map[string]any, events *eval.EventLog) 
 	}
 	if p, err := writePlaytestJSON(dir, result, events); err == nil {
 		result["playtest_path"] = p
+		compactTimeline(result)
 	} else {
 		result["playtest_path_error"] = err.Error()
+	}
+}
+
+// compactTimeline swaps the per-frame timeline (tens of KB: every frame's state) for
+// its frame count and final state once playtest.json holds it, so a result read back
+// through job does not fill the agent's context; analyze op=rubric path= rescores it.
+func compactTimeline(result map[string]any) {
+	tl, ok := result["timeline"].([]map[string]any)
+	if !ok {
+		return
+	}
+	delete(result, "timeline")
+	result["timeline_frames"] = len(tl)
+	if n := len(tl); n > 0 {
+		result["final_state"] = tl[n-1]["state"]
 	}
 }
 

@@ -133,7 +133,7 @@ func eventSummary(log *eval.EventLog, engine map[string]any) map[string]any {
 // verdict, rubric and the merged event timeline.
 func writePlaytestJSON(dir string, result map[string]any, log *eval.EventLog) (string, error) {
 	doc := map[string]any{"schema": "playtest/v1", "written": time.Now().UTC().Format(time.RFC3339)}
-	for _, k := range []string{"scenario", "session", "verdict", "verdict_reasons", "rubric", "beat_errors", "logs", "crash", "perf_csv"} {
+	for _, k := range []string{"scenario", "session", "verdict", "verdict_reasons", "rubric", "beat_errors", "logs", "crash", "perf_csv", "timeline"} {
 		if v, ok := result[k]; ok {
 			doc[k] = v
 		}

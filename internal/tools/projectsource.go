@@ -21,7 +21,7 @@ import (
 const (
 	sourceReadLines = 400
 	sourceListMax   = 500
-	sourceHitsMax   = 200
+	sourceHitsMax   = 60 // a search is for finding: truncated says narrow it
 	sourceFileMax   = 4 << 20
 )
 

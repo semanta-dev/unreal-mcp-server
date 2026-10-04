@@ -268,7 +268,7 @@
             "type": "string"
           },
           "path": {
-            "description": "perf: a CsvProfiler .csv or a .memreport; image_diff: an image",
+            "description": "perf: a CsvProfiler .csv or a .memreport; image_diff: an image; rubric, events: a playtest_path",
             "type": "string"
           },
           "rubric": {

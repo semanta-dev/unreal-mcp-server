@@ -513,3 +513,28 @@ func TestAnalyzeEventsReadsAPlaytest(t *testing.T) {
 		t.Fatalf("missing file = %v", e)
 	}
 }
+
+// The playtest result carries the timeline's frame count and final state, not every
+// frame (102 KB live, back through each job wait); playtest.json holds the frames and
+// analyze op=rubric path= scores them.
+func TestPlaytestResultCompactsTheTimeline(t *testing.T) {
+	h := startHarness(t, harnessOpts{project: t.TempDir()})
+	rec := &bridgetest.Recorder{Dir: t.TempDir(), Frames: 3, State: func(i int) map[string]any {
+		return map[string]any{"gamestate": map[string]any{"wave": float64(i)}}
+	}}
+	rec.Install(h.emu)
+	sc := `{"schema":"scenario/v1","name":"c","mode":"pie","duration_s":0.5,"interval_s":0.1,
+	 "rubric":[{"id":"w","kind":"reached","path":"gamestate.wave","params":{"value":2}}]}`
+	out := structured(t, h.call(t, "playtest", map[string]any{"op": "run", "json": sc, "wait_s": 20}))
+	r, _ := out["result"].(map[string]any)
+	if r == nil || r["timeline"] != nil || r["timeline_frames"] != 3.0 || r["final_state"] == nil || r["playtest_path"] == nil {
+		t.Fatalf("playtest result = %v", out)
+	}
+	rubric := []any{map[string]any{"id": "w", "kind": "reached", "path": "gamestate.wave", "params": map[string]any{"value": 2}}}
+	if res := structured(t, h.call(t, "analyze", map[string]any{"op": "rubric", "path": r["playtest_path"], "rubric": rubric})); res["verdict"] != "PASS" {
+		t.Fatalf("rubric from playtest_path = %v", res)
+	}
+	if e := errorOf(t, h.call(t, "analyze", map[string]any{"op": "rubric", "rubric": rubric})); e["code"] != "INVALID_ARGUMENT" {
+		t.Fatalf("rubric with neither timeline nor path = %v", e)
+	}
+}

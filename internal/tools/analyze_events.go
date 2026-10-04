@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jdziat/unreal-mcp-server/internal/eval"
 	"github.com/jdziat/unreal-mcp-server/internal/tools/envelope"
 	"github.com/jdziat/unreal-mcp-server/internal/tools/spec"
 )
@@ -73,4 +74,30 @@ func playtestEvents(path string, kinds []string, limit int) (*spec.Result, error
 func num(v any) float64 {
 	f, _ := v.(float64)
 	return f
+}
+
+// playtestSamples reads the per-frame timeline a playtest wrote into playtest.json.
+func playtestSamples(path string) ([]eval.Sample, error) {
+	if st, err := os.Stat(path); err == nil && st.IsDir() {
+		path = filepath.Join(path, "playtest.json")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, envelope.New(envelope.NotFound, "%v", err).WithHint("pass a playtest result's playtest_path")
+	}
+	var doc struct {
+		Timeline []struct {
+			Frame int            `json:"frame"`
+			T     float64        `json:"t"`
+			State map[string]any `json:"state"`
+		} `json:"timeline"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil || doc.Timeline == nil {
+		return nil, envelope.New(envelope.InvalidArgument, "%s holds no timeline (a playtest's playtest.json does)", path)
+	}
+	out := make([]eval.Sample, len(doc.Timeline))
+	for i, f := range doc.Timeline {
+		out[i] = eval.Sample{Index: f.Frame, TWorld: f.T, State: f.State}
+	}
+	return out, nil
 }

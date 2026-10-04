@@ -733,7 +733,7 @@ Score evidence offline.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
-| `rubric` | readonly | score a recorded timeline against checks | timeline, rubric |  |
+| `rubric` | readonly | score a recorded timeline against checks | rubric |  |
 | `perf` | readonly | frame-time percentiles / memory buckets | path |  |
 | `image_diff` | readonly | perceptual compare with a pass verdict | path, baseline |  |
 | `scenarios` | readonly | the saved playtest suite: name + valid per file |  |  |
@@ -749,7 +749,7 @@ Score evidence offline.
 | `max_dhash` | integer | image_diff: max dHash distance (default 8; 0 = exact) |
 | `max_luma_delta` | number | image_diff: max mean-luma delta (default 0.15) |
 | `op` | string | one of: rubric, perf, image_diff, scenarios, events |
-| `path` | string | perf: a CsvProfiler .csv or a .memreport; image_diff: an image |
+| `path` | string | perf: a CsvProfiler .csv or a .memreport; image_diff: an image; rubric, events: a playtest_path |
 | `rubric` | object[] | rubric: [{id, kind, path, params?, severity?, allow_perturbed?}] |
 | `timeline` | object[] | rubric: a playtest result's timeline |
 

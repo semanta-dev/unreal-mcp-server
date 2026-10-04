@@ -236,6 +236,9 @@ func opArgs(sp *spec.Spec, op spec.OpSpec, dir, png string) map[string]any {
 			args["key"] = "W"
 		}
 	case "analyze":
+		if op.Name == "rubric" {
+			args["timeline"] = []any{map[string]any{"index": 0, "t_world": 0, "state": map[string]any{}}}
+		}
 		if op.Name == "events" {
 			pt := filepath.Join(dir, "playtest.json")
 			_ = os.WriteFile(pt, []byte(`{"events":[{"t":1,"kind":"hit","by_player":true}]}`), 0o644)
