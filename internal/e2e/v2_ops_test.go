@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -345,5 +346,24 @@ func TestPlaytestWorldClock(t *testing.T) {
 	mixed := `{"schema":"scenario/v1","name":"mixed","beats":[{"at_s":1,"console":"x"},{"at_world_s":1,"console":"y"}]}`
 	if e := errorOf(t, h.call(t, "playtest", map[string]any{"op": "run", "json": mixed})); e["code"] != "INVALID_ARGUMENT" || !strings.Contains(fmt.Sprint(e), "one clock") {
 		t.Fatalf("mixed clocks = %v", e)
+	}
+}
+
+// R2 review: at_world_s counts game time in one world — a map travel fails the beat.
+func TestPlaytestWorldClockAcrossTravel(t *testing.T) {
+	h := startHarness(t, harnessOpts{})
+	h.world.PluginAPI = 5
+	rec := &bridgetest.Recorder{Dir: t.TempDir(), Frames: 2, State: func(i int) map[string]any {
+		return map[string]any{"gamestate": map[string]any{"wave": float64(2)}}
+	}}
+	rec.Install(h.emu)
+	time.AfterFunc(500*time.Millisecond, func() { h.world.TravelTo("/Game/Maps/UEDPIE_0_L_City.L_City") })
+	scenario := `{"schema":"scenario/v1","name":"travel","mode":"pie","duration_s":1.5,"interval_s":0.1,
+	 "beats":[{"at_world_s":1.2,"input":{"key":"W"}}],
+	 "rubric":[{"id":"waves","kind":"reached","path":"gamestate.wave","params":{"value":2}}]}`
+	out := structured(t, h.call(t, "playtest", map[string]any{"op": "run", "json": scenario, "wait_s": 20}))
+	r, _ := out["result"].(map[string]any)
+	if r == nil || !strings.Contains(fmt.Sprint(r["beat_errors"]), "world changed") || len(h.world.RecordedInputs()) != 0 {
+		t.Fatalf("a beat after a map travel = %v", out)
 	}
 }

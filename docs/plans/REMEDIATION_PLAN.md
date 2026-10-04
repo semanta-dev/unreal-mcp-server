@@ -123,7 +123,7 @@ projects, live T4 runs and the specialist gate per phase.
 | ID | Item | Acceptance |
 |---|---|---|
 | R2.1 | `pie op=input` gains `axis` + `value` (mouse X/Y, gamepad sticks/triggers); the plugin injects **every tick** for `duration_s` (axis values are per-frame) | live: Aesir yaw changes by the injected amount |
-| R2.2 | `pie op=cursor` move/click/drag in viewport coordinates via Slate; sets **GameAndUI** input mode without mouse capture (never locks the user's OS cursor); updates the cached cursor so `DeprojectMousePosition` sees it | live: click a UMG button and a PolyWorld tile, focused and unfocused editor |
+| R2.2 | `pie op=cursor` move/click/drag in viewport coordinates via Slate; events from a virtual Slate user, inside the game viewport only — the user's OS cursor is never moved or captured and the game's input mode is left alone (revised after the R2 review: switching it to GameAndUI broke an FPS's mouse-look for good); updates the cached cursor so `DeprojectMousePosition` sees it | live: click a UMG button and a PolyWorld tile, focused and unfocused editor |
 | R2.3 | `pie op=ui_click widget=<name>` (resolve a live widget, click its centre) | live |
 | R2.4 | Playtest beats: `input` (R2.1–2.3) and `game_command` (R1.5) added to the existing exec/console/wait beats; schedule on **world time** (`at_world_s`) | T1 + live scenario |
 | R2.5 | PIE spawn per R0.2: Python if the spike finds a game-world spawn, else a plugin UFUNCTION (`UMCPControlSubsystem::SpawnInGame`) | live |
@@ -205,6 +205,7 @@ An audit whose evidence has no source for a game returns `insufficient_evidence`
 | Core text renaming moved tools as "toolset `world`" (R0.1) | +80 |
 | **Net** | **≈ −1 800 → ~43.2 KB** |
 | *Measured after R0 (46 tools / 34 core)* | *41 818 B core (−3 165 B vs v2.0.2's 44 983 B); all toolsets 61 188 B* |
+| *Measured after R2 (48 tools / 34 core)* | *43 808 B core; all toolsets 65 006 B* |
 
 New optional toolsets: `game` (`game`, `game_command`), `data` (`data_query`, `data_edit`), `world` (moved tools).
 Count pins: **50 tools / 34 core** after the plan (from 45 / 36). All toolsets ≤ 75 000 B (est. ~66 KB). Each phase

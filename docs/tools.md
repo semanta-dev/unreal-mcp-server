@@ -140,7 +140,7 @@ spawn, delete, transform, set_properties: both worlds (pie spawn: plugin API 5);
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
-| `spawn` | mutating | spawn into the editor level, or the running game (world=pie; plugin API 5) | world, class | editor |
+| `spawn` | mutating | spawn into the editor level, or the running game (world=pie; plugin API 5) | world, class | editor, plugin>=5 for pie |
 | `delete` | destructive | destroy an actor | world, actor | editor |
 | `transform` | mutating | set location/rotation/scale | world, actor | editor |
 | `set_properties` | mutating | set reflected properties | world, actor, properties | editor |
@@ -445,7 +445,7 @@ Play In Editor.
 |---|---|---|---|---|
 | `start` | ephemeral | start Play In Editor (or Simulate) |  | editor |
 | `stop` | ephemeral | stop PIE (game-world changes are discarded) |  | editor |
-| `input` | ephemeral | inject a key/button or an analog axis into the running game | key | editor, pie, plugin |
+| `input` | ephemeral | inject a key/button or an analog axis into the running game |  | editor, pie, plugin, plugin>=5 for axis |
 | `cursor` | ephemeral | move/click/drag the game's cursor (viewport pixels); release gives it back |  | editor, pie, plugin>=5 |
 | `ui_click` | ephemeral | click a visible live widget by name | widget | editor, pie, plugin>=5 |
 
@@ -759,7 +759,7 @@ Validate that the game works (async job). op=run plays a scenario/v1 (`path` or 
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
-| `run` | exec, async | play a scenario: frames + state + beats + rubric verdict |  | editor, plugin>=5 for input/game_command beats |
+| `run` | exec, async | play a scenario: frames + state + beats + rubric verdict |  | editor, plugin>=3 for game_command beats, plugin>=5 for cursor/ui_click/axis beats |
 
 | param | type | description |
 |---|---|---|

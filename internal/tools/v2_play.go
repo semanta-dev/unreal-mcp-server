@@ -77,7 +77,7 @@ func pieSpec() *spec.Spec {
 	ops := []spec.OpSpec{
 		{Name: "start", Summary: "start Play In Editor (or Simulate)", Tier: spec.Ephemeral, Idempotent: true, Rejects: concat([]string{"action", "duration_s"}, pieInputOnly, piePointer), Timeout: sync28, Reaches: []string{"pie_preflight", "pie_start", "editor_ping"}},
 		{Name: "stop", Summary: "stop PIE (game-world changes are discarded)", Tier: spec.Ephemeral, Idempotent: true, Rejects: concat([]string{"simulate", "ignore_blueprint_errors", "action", "duration_s"}, pieInputOnly, piePointer), Reaches: []string{"pie_stop", "editor_ping"}},
-		{Name: "input", Summary: "inject a key/button or an analog axis into the running game", Tier: spec.Ephemeral, Required: []string{"key"}, Rejects: concat(pieStartFlags, piePointer), Reaches: []string{"pie_input"}, Needs: []string{"pie", "plugin"}},
+		{Name: "input", Summary: "inject a key/button or an analog axis into the running game", Tier: spec.Ephemeral, Rejects: concat(pieStartFlags, piePointer), Reaches: []string{"pie_input", "pie_axis_stats"}, Needs: []string{"pie", "plugin", "plugin>=5 for axis"}},
 		{Name: "cursor", Summary: "move/click/drag the game's cursor (viewport pixels); release gives it back", Tier: spec.Ephemeral, Rejects: concat(pieStartFlags, pieInputOnly, []string{"widget"}), Reaches: []string{"pie_cursor"}, Needs: []string{"pie", "plugin>=5"}},
 		{Name: "ui_click", Summary: "click a visible live widget by name", Tier: spec.Ephemeral, Required: []string{"widget"}, Rejects: concat(pieStartFlags, pieInputOnly, []string{"action", "duration_s", "position", "to"}), Reaches: []string{"pie_ui_click"}, Needs: []string{"pie", "plugin>=5"}},
 	}
@@ -93,6 +93,34 @@ func pieSpec() *spec.Spec {
 		Replaces: []string{"start_play", "stop_play", "pie_input"},
 		Handler:  pieHandler,
 	}
+}
+
+// axisWaitMax is the longest axis hold the input call waits out (a sync call's budget).
+const axisWaitMax = 5.0
+
+// awaitAxis waits for a short axis hold to finish and adds what it sent: {ticks, total}
+// (axis input is per frame, so its effect is ticks × value, whatever the frame rate).
+// A longer hold returns at once with done:false.
+func awaitAxis(ctx context.Context, c *spec.Call, key string, durationS float64, out map[string]any) {
+	if durationS > axisWaitMax {
+		out["done"] = false
+		return
+	}
+	deadline := time.Now().Add(secs(durationS + 2))
+	for time.Now().Before(deadline) {
+		if sleepCtx(ctx, 50*time.Millisecond) != nil {
+			return
+		}
+		st, err := v2Op(ctx, c, "pie_axis_stats", map[string]any{"key": key})
+		if err != nil {
+			return
+		}
+		if st["active"] != true {
+			out["done"], out["ticks"], out["total"] = true, st["ticks"], st["total"]
+			return
+		}
+	}
+	out["done"] = false
 }
 
 func concat(lists ...[]string) []string {
@@ -117,10 +145,16 @@ func pieInputHandler(ctx context.Context, c *spec.Call, in pieIn) (*spec.Result,
 	}
 	switch c.Op.Name {
 	case "input":
+		if (in.Key == "") != (in.Action == "release_all") {
+			return nil, envelope.New(envelope.InvalidArgument, "input needs key (except action=release_all, which takes none)")
+		}
 		if (in.Action == "axis") != (in.Value != nil) {
 			return nil, envelope.New(envelope.InvalidArgument, "value goes with action=axis, and action=axis needs value")
 		}
 		out, err := v2Op(ctx, c, "pie_input", pick(c.Args, "key", "action", "duration_s", "value"))
+		if err == nil && in.Action == "axis" {
+			awaitAxis(ctx, c, in.Key, orDefault(in.DurationS, 0.1), out)
+		}
 		return &spec.Result{Data: out, Summary: fmt.Sprintf("%s %s", orStr(in.Action, "tap"), in.Key)}, err
 	case "cursor":
 		if in.Action == "release" {

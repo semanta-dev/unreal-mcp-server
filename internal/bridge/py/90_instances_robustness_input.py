@@ -253,7 +253,7 @@ def _pointer_result(raw, what):
     if not res.get("ok"):
         msg = str(res.get("error") or "refused")
         code = ("NOT_FOUND" if msg.startswith("no visible") else
-                "CONFLICT" if " are named " in msg or "is covered" in msg else
+                "CONFLICT" if " are named " in msg or "is covered" in msg or "is disabled" in msg else
                 "NOT_IN_PIE" if msg in ("no game viewport", "no game world") else "BAD_VALUE")
         raise _V2Error(code, "%s: %s" % (what, msg))
     res.pop("ok", None)
@@ -293,4 +293,14 @@ def _op_pie_ui_click(args):
     widget = str(args.get("widget") or "")
     if not widget:
         raise _V2Error("BAD_VALUE", "ui_click needs widget (the name of a widget on screen)")
-    return _pointer_result(ctrl.click_widget(widget, str(args.get("button") or "")), "ui_click " + widget)
+    res = _pointer_result(ctrl.click_widget(widget, str(args.get("button") or "")), "ui_click " + widget)
+    if not res.get("handled"):
+        raise _V2Error("CONFLICT", "ui_click %s: the widget did not take the click (not interactive?)" % widget, hit=res.get("hit"))
+    return res
+
+
+def _op_pie_axis_stats(args):
+    """The current or last axis injection for `key`: {active, ticks, total} (plugin API 5)."""
+    _need_plugin(5, "axis input")
+    _, ctrl = _pie_control()
+    return json.loads(ctrl.get_axis_stats_json(str(args.get("key") or "")))

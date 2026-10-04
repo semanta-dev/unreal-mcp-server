@@ -76,12 +76,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "MCP|Control")
 	FString InjectAxis(const FString& KeyName, float Value, float DurationSeconds);
 
+	/** The current (or last) InjectAxis for KeyName as JSON {active, ticks, total}: how
+	 *  many game ticks it sent and their sum — axis input is per frame, so the effect is
+	 *  ticks x value, whatever the frame rate. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Control")
+	FString GetAxisStatsJson(const FString& KeyName) const;
+
 	/** Cursor input through Slate (plugin API 5), in VIEWPORT pixels (the coordinates
-	 *  DescribeLiveWidgets reports). Sets GameAndUI input mode without mouse lock and
-	 *  routes Slate pointer events with no platform window: the user's OS cursor is never
-	 *  moved or captured, the game viewport's cached cursor is (so DeprojectMousePosition
-	 *  sees it), and widgets get real hover/press/release. Each returns JSON
-	 *  {ok, viewport:[x,y], screen:[x,y], handled} or {ok:false, error}. */
+	 *  DescribeLiveWidgets reports), inside the game viewport only. Events come from a
+	 *  virtual Slate user: the user's OS cursor is never moved or captured and the game's
+	 *  input mode is left alone; the game viewport's cached cursor follows (so
+	 *  DeprojectMousePosition sees it) and widgets get real hover/press/release. Each
+	 *  returns JSON {ok, viewport:[x,y], screen:[x,y], handled, hit} or {ok:false, error}. */
 	UFUNCTION(BlueprintCallable, Category = "MCP|Control")
 	FString MoveCursor(float X, float Y);
 
@@ -127,6 +133,8 @@ public:
 	virtual TStatId GetStatId() const override;
 	virtual ETickableTickType GetTickableTickType() const override;
 	virtual bool IsTickable() const override;
+	/** Releases and drags must finish in a paused game (building while paused is normal). */
+	virtual bool IsTickableWhenPaused() const override { return true; }
 	virtual UWorld* GetTickableGameObjectWorld() const override { return GetWorld(); }
 
 private:
@@ -151,12 +159,16 @@ private:
 	{
 		float Value = 0.f;
 		float Remaining = 0.f;
+		bool bZeroNext = false; // a stick/trigger: send its rest value next tick, alone
+		int32 Ticks = 0;
+		double Total = 0.0;
 	};
 	TMap<FString, FAxisHold> Axes;
+	TMap<FString, FAxisHold> AxisDone; // each key's last finished injection (GetAxisStatsJson)
 
 	struct FDragState
 	{
-		FVector2D From, To;
+		FVector2D From, To; // viewport pixels
 		float Duration = 0.f, Elapsed = 0.f;
 		FKey Button;
 	};
@@ -166,37 +178,38 @@ private:
 	 *  frame can be missed by Enhanced Input). */
 	struct FPendingUp
 	{
-		FVector2D Screen;
+		FVector2D Viewport;
 		FKey Button;
 		int32 Ticks = 2;
 	};
 	TArray<FPendingUp> PendingUps;
 
-	/** Viewport pixels <-> Slate screen space; false without a game viewport. */
-	bool ViewportToScreen(const FVector2D& Viewport, FVector2D& OutScreen) const;
+	/** Viewport pixels -> Slate screen space; false (and why) without a game viewport or
+	 *  for a position outside it. */
+	bool ViewportToScreen(const FVector2D& Viewport, FVector2D& OutScreen, FString* OutWhy) const;
 	FVector2D ScreenToViewport(const FVector2D& Screen) const;
-	void EnterCursorMode() const;
 	/** Kind: 0 move, 1 press, 2 release. bHeld: Button is down during a move. Routes to
 	 *  the widget path under Screen as this subsystem's virtual Slate user; OutHit gets
 	 *  the Slate type of the widget hit. Returns whether a widget handled the event. */
-	bool SendPointer(const FVector2D& Screen, const FKey& Button, int32 Kind, bool bHeld, FString* OutHit = nullptr,
-		bool* OutGameViewport = nullptr);
+	bool SendPointer(const FVector2D& Viewport, const FKey& Button, int32 Kind, bool bHeld, FString* OutHit = nullptr,
+		bool* OutGameViewport = nullptr, FString* OutRefusal = nullptr);
 	/** Press at Screen; a UI widget's click completes at once (Slate needs no frame), a
 	 *  press the game viewport takes is released two ticks later (game input samples per frame). */
-	bool Click(const FVector2D& Screen, const FKey& Button, FString& OutHit);
+	bool Click(const FVector2D& Viewport, const FKey& Button, FString& OutHit, FString& OutRefusal);
 
-	FString PointerResult(const FVector2D& Screen, bool bHandled, const FString& Hit, const FString& Widget = FString()) const;
+	FString PointerResult(const FVector2D& Viewport, bool bHandled, const FString& Hit, const FString& Widget = FString()) const;
 
 	/** The virtual Slate user the pointer events come from: its hover, press and capture
 	 *  are its own, so the real cursor (and whatever has captured it) never interferes. */
 	TSharedPtr<class FSlateVirtualUserHandle> VirtualUser;
 
-	/** Where the agent put the game's cursor (Slate screen space), re-applied each tick. */
-	TOptional<FVector2D> PinnedScreen;
+	/** Where the agent put the game's cursor (viewport pixels: a moved or resized window
+	 *  keeps the same game pixel), re-applied each tick. */
+	TOptional<FVector2D> PinnedViewport;
 	FDelegateHandle WorldTickStartHandle;
 	FDelegateHandle PostActorTickHandle;
 	FVector2D TickCursor = FVector2D(-1.0, -1.0);
 	void OnWorldTickStart(UWorld* World, ELevelTick TickType, float DeltaSeconds);
 	void OnPostActorTick(UWorld* World, ELevelTick TickType, float DeltaSeconds);
-	static constexpr int32 VirtualUserIndex = 7;
+	static constexpr int32 VirtualUserIndex = 9;
 };

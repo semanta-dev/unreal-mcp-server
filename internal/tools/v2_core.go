@@ -430,7 +430,7 @@ type actorEditIn struct {
 
 func actorEditSpec() *spec.Spec {
 	ops := []spec.OpSpec{
-		{Name: "spawn", Summary: "spawn into the editor level, or the running game (world=pie; plugin API 5)", Tier: spec.Mutating, Required: []string{"world", "class"}, Rejects: []string{"actor"}, Reaches: []string{"actor_spawn"}},
+		{Name: "spawn", Summary: "spawn into the editor level, or the running game (world=pie; plugin API 5)", Tier: spec.Mutating, Required: []string{"world", "class"}, Rejects: []string{"actor"}, Reaches: []string{"actor_spawn"}, Needs: []string{"plugin>=5 for pie"}},
 		{Name: "delete", Summary: "destroy an actor", Tier: spec.Destructive, Required: []string{"world", "actor"}, Reaches: []string{"actor_delete"}},
 		{Name: "transform", Summary: "set location/rotation/scale", Tier: spec.Mutating, Idempotent: true, Required: []string{"world", "actor"}, Reaches: []string{"actor_transform"}},
 		{Name: "set_properties", Summary: "set reflected properties", Tier: spec.Mutating, Idempotent: true, Required: []string{"world", "actor", "properties"}, Reaches: []string{"actor_set_properties"}},

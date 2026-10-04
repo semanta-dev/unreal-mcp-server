@@ -66,17 +66,23 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
   ([`docs/polyworld-migration.md`](docs/polyworld-migration.md)); it is removed in v2.3.
 
 - **Play like a player** (plugin API 5): `pie op=input action=axis key=MouseX value=… duration_s=…` sends an analog
-  axis every game tick (a mouse axis is that frame's delta; a stick or trigger returns to rest at the end);
+  axis every game tick (a mouse axis is that frame's delta; a stick or trigger returns to rest the tick after; a hold
+  of up to 5 s is waited out and reports `ticks` and `total` — the effect is ticks × value whatever the frame rate;
+  `action=release_all` takes no key);
   `pie op=cursor action=move|click|drag position=[x,y] (to=[x,y])` moves, clicks and drags the game's cursor in viewport
-  pixels through Slate — UMG and raw-Slate UI alike, with the editor focused or in the background (GameAndUI input, no
-  mouse lock; the OS cursor is never moved or captured). The game's cursor (what `GetMousePosition` /
-  `DeprojectMousePosition` read) stays where the agent put it until `action=release` or PIE ends. `pie op=ui_click
-  widget=<name>` clicks the centre of the one visible live widget with that name (refused when none, several, or
-  something covers it). Game code that reads the hardware cursor itself sees the user's mouse.
+  pixels through Slate — UMG and raw-Slate UI alike, with the editor focused or in the background, in a paused game
+  too — inside the game viewport only (a position off it, or covered by editor UI, is refused). The OS cursor is
+  never moved or captured and the game's input mode is left alone. The game's cursor (what `GetMousePosition` /
+  `DeprojectMousePosition` read) stays where the agent put it until `action=release` (from then on it follows the
+  real mouse's next move) or PIE ends. `pie op=ui_click
+  widget=<name>` clicks the centre of the one visible, enabled live widget with that name (refused when none,
+  several, disabled, covered, or nothing takes the click). Game code that reads the hardware cursor itself sees the
+  user's mouse.
 - `actor_edit op=spawn world=pie` spawns into the running game (plugin API 5; it was `UNSUPPORTED`).
 - Playtest beats: `input` (a key/axis, a cursor action, or a widget click) and `game_command` (the game's own command;
   a `request_id` unique per run and beat unless given), and `at_world_s` — beats on the game's clock (paused time does
-  not count; a beat the clock never reaches within the window fails, never runs early). One clock per scenario.
+  not count; a beat the clock never reaches within the window fails, never runs early; the clock is one world's — a
+  map travel fails the beat). One clock per scenario; input steps are checked when the scenario is parsed.
 - `Needs` may say when it applies: playtest declares `plugin>=5 for input/game_command beats`.
 
 ### Fixed

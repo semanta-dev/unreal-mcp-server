@@ -573,7 +573,7 @@ func playtestSpec() *spec.Spec {
 			Reaches: []string{"open_level", "pie_start", "pie_stop", "console", "actor_set_properties",
 				"capture_start", "capture_stop", "actor_call", "pie_observe", "observe_paths", "editor_ping",
 				"pie_input", "pie_cursor", "pie_ui_click", "pie_time", "game_read", "game_command"},
-			Needs: []string{"plugin>=5 for input/game_command beats"}},
+			Needs: []string{"plugin>=3 for game_command beats", "plugin>=5 for cursor/ui_click/axis beats"}},
 	}
 	return &spec.Spec{
 		Name: "playtest", Title: "Automated playtest", Toolset: spec.Core, Timeout: sync15, Max: sync28, Ops: ops,
@@ -837,19 +837,20 @@ func runBeatsV2(ctx context.Context, c *spec.Call, beats []eval.Beat, duration f
 		progress(msg)
 	}
 	var world0 float64
+	var worldName string
 	if worldClock {
-		t, err := gameTime(ctx, c)
+		t, w, err := gameTime(ctx, c)
 		if err != nil {
 			fail(0, "at_world_s", fmt.Errorf("the game clock is unreadable: %w", err))
 			return errs
 		}
-		world0 = t
+		world0, worldName = t, w
 	}
 	runID := strconv.FormatInt(start.UnixNano(), 36) // game_command request_ids: unique per run
 	for i, bt := range ordered {
 		if worldClock {
 			if bt.AtWorldS > 0 {
-				if err := waitGameTime(ctx, c, world0+bt.AtWorldS, end); err != nil {
+				if err := waitGameTime(ctx, c, worldName, world0+bt.AtWorldS, end); err != nil {
 					if ctx.Err() != nil {
 						return errs
 					}
@@ -934,26 +935,31 @@ func runInputBeat(ctx context.Context, c *spec.Call, in *eval.InputStep) error {
 	return err
 }
 
-// gameTime reads the running game's clock (world seconds).
-func gameTime(ctx context.Context, c *spec.Call) (float64, error) {
+// gameTime reads the running game's clock (world seconds) and which world it is.
+func gameTime(ctx context.Context, c *spec.Call) (float64, string, error) {
 	out, err := v2Op(ctx, c, "pie_time", nil)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	t, ok := out["world_time_s"].(float64)
 	if !ok {
-		return 0, envelope.New(envelope.OperationFailed, "pie_time returned no world_time_s")
+		return 0, "", envelope.New(envelope.OperationFailed, "pie_time returned no world_time_s")
 	}
-	return t, nil
+	w, _ := out["world"].(string)
+	return t, w, nil
 }
 
 // waitGameTime polls the game clock until it reaches target, or fails when the window
-// ends first (a paused or slowed game) — never runs a beat early.
-func waitGameTime(ctx context.Context, c *spec.Call, target float64, end time.Time) error {
+// ends first (a paused or slowed game) — never runs a beat early. The clock belongs to
+// one world: after a map travel it restarts, so a changed world fails the beat.
+func waitGameTime(ctx context.Context, c *spec.Call, world string, target float64, end time.Time) error {
 	last := -1.0
 	for {
-		t, err := gameTime(ctx, c)
+		t, w, err := gameTime(ctx, c)
 		if err == nil {
+			if world != "" && w != world {
+				return fmt.Errorf("the game world changed (%s → %s, a map travel?): at_world_s counts game time in one world", world, w)
+			}
 			if t >= target {
 				return nil
 			}

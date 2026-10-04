@@ -39,7 +39,17 @@ type World struct {
 	Inputs []map[string]any
 	// WorldTimeScale is game seconds per real second (0 = 1; a paused game: tiny).
 	WorldTimeScale float64
+	// PIEWorld is the running game world's path pie_time reports (a test changes it to
+	// model a map travel).
+	PIEWorld string
 	pieStarted     time.Time
+}
+
+// TravelTo models a map travel inside the running game: pie_time reports a new world.
+func (w *World) TravelTo(path string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.PIEWorld = path
 }
 
 // RecordedInputs returns a copy of the input the game received.

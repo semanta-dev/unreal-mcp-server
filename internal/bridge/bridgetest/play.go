@@ -45,7 +45,23 @@ func (w *World) installPlay(e *Emulator) {
 		if scale == 0 {
 			scale = 1
 		}
-		return map[string]any{"world_time_s": time.Since(w.pieStarted).Seconds() * scale, "paused": false}, nil
+		world := w.PIEWorld
+		if world == "" {
+			world = "/Game/Maps/UEDPIE_0_L_Test.L_Test"
+		}
+		return map[string]any{"world_time_s": time.Since(w.pieStarted).Seconds() * scale, "paused": false, "world": world}, nil
+	})
+	// An axis hold the fake game has already finished: 6 ticks of the last value.
+	e.Handle("pie_axis_stats", func(args map[string]any) (any, *OpError) {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		v := 0.0
+		for _, in := range w.Inputs {
+			if in["op"] == "pie_input" && in["key"] == args["key"] {
+				v, _ = in["value"].(float64)
+			}
+		}
+		return map[string]any{"active": false, "ticks": 6.0, "total": 6 * v}, nil
 	})
 	for _, op := range []string{"pie_input", "pie_cursor", "pie_ui_click"} {
 		op := op

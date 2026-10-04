@@ -89,6 +89,7 @@ _OPS = {
     "pie_cursor": _op_pie_cursor,
     "pie_ui_click": _op_pie_ui_click,
     "pie_time": _op_pie_time,
+    "pie_axis_stats": _op_pie_axis_stats,
 }
 
 

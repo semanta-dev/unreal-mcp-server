@@ -87,6 +87,7 @@ var PyOps = map[string]PyOp{
 	"pie_ui_click":        {Tier: Ephemeral, Plugin: 5, Note: "clicks the centre of a named visible live widget"},
 	"pie_observe":         {Tier: ReadOnly},
 	"pie_time":            {Tier: ReadOnly},
+	"pie_axis_stats":      {Tier: ReadOnly, Plugin: 5},
 	"pie_screenshot":      {Tier: Ephemeral},
 	"pie_set_property":    {Tier: Ephemeral},
 	"play_test_sound":     {Tier: Ephemeral},

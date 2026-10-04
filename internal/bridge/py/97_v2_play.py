@@ -102,7 +102,8 @@ def _op_pie_time(args):
     if not world:
         raise _V2Error("NOT_IN_PIE", "PIE is not running (start it with pie op=start)")
     return {"world_time_s": float(unreal.GameplayStatics.get_time_seconds(world)),
-            "paused": bool(unreal.GameplayStatics.is_game_paused(world))}
+            "paused": bool(unreal.GameplayStatics.is_game_paused(world)),
+            "world": world.get_path_name()}  # a map travel starts a new world (and a new clock)
 
 
 def _op_pie_observe_v2(args):

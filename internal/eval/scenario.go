@@ -87,6 +87,35 @@ func (s *InputStep) Kind() string {
 	return kind
 }
 
+// inputActions are the actions each kind of input step takes.
+var inputActions = map[string]map[string]bool{
+	"input":  {"": true, "tap": true, "press": true, "release": true, "hold": true, "axis": true},
+	"cursor": {"": true, "move": true, "click": true, "drag": true},
+}
+
+// check says what is wrong with the step ("" when nothing), the same rules as pie
+// op=input / cursor / ui_click — caught when the scenario is parsed, not mid-run.
+func (s *InputStep) check() string {
+	kind := s.Kind()
+	switch {
+	case kind == "":
+		return "input needs exactly one of key, position, widget"
+	case kind != "ui_click" && !inputActions[kind][s.Action]:
+		return fmt.Sprintf("a %s step takes no action %q", kind, s.Action)
+	case kind == "ui_click" && s.Action != "":
+		return "a widget click takes no action"
+	case (s.Action == "axis") != (s.Value != nil):
+		return "value goes with action=axis, and action=axis needs value"
+	case kind == "cursor" && len(s.Position) != 2:
+		return "position is [x, y] in viewport pixels"
+	case (s.Action == "drag") != (s.To != nil):
+		return "to goes with action=drag, and action=drag needs to"
+	case s.To != nil && len(s.To) != 2:
+		return "to is [x, y] in viewport pixels"
+	}
+	return ""
+}
+
 // GameCommandStep runs one of the game's commands (game_command; the project's
 // game_api). RequestID defaults to one unique per run and beat.
 type GameCommandStep struct {
@@ -168,8 +197,8 @@ func ParseScenario(data []byte) (*Scenario, []Diagnostic, error) {
 		n := 0
 		if b.Input != nil {
 			n++
-			if b.Input.Kind() == "" {
-				add("error", fmt.Sprintf("beats[%d].input", i), "input needs exactly one of key, position, widget")
+			if msg := b.Input.check(); msg != "" {
+				add("error", fmt.Sprintf("beats[%d].input", i), msg)
 			}
 		}
 		if b.GameCommand != nil {

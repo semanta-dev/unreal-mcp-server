@@ -45,6 +45,9 @@ class Ctrl:
         self._rec("release")
         return True
 
+    def get_axis_stats_json(self, key):
+        return json.dumps({"active": False, "ticks": 30, "total": 150.0})
+
     def click_widget(self, name, button):
         self._rec("widget", name, button)
         return json.dumps({
@@ -52,6 +55,8 @@ class Ctrl:
             "Hidden": {"ok": False, "error": "no visible live widget named 'Hidden'"},
             "Twice": {"ok": False, "error": "2 visible widgets are named 'Twice': a, b"},
             "Under": {"ok": False, "error": "'Under' is covered at its centre by SBorder"},
+            "Off": {"ok": False, "error": "'Off' is disabled"},
+            "Label": {"ok": True, "viewport": [1, 2], "screen": [1, 2], "handled": False, "hit": "STextBlock"},
         }[name])
 
 
@@ -108,13 +113,27 @@ def test_ui_click(v2, ue):
     assert call(v2, "pie_ui_click", {"widget": "Twice"})["code"] == "CONFLICT"
     assert call(v2, "pie_ui_click", {"widget": "Under"})["code"] == "CONFLICT"
     assert call(v2, "pie_ui_click", {})["code"] == "BAD_VALUE"
+    assert call(v2, "pie_ui_click", {"widget": "Off"})["code"] == "CONFLICT"
+    env = call(v2, "pie_ui_click", {"widget": "Label"})  # nothing took the click: not a success
+    assert env["code"] == "CONFLICT" and "did not take" in env["error"], env
+
+
+def test_axis_stats(v2, ue):
+    env = call(v2, "pie_axis_stats", {"key": "MouseX"})
+    assert env["ok"] and env["result"] == {"active": False, "ticks": 30, "total": 150.0}, env
 
 
 def test_pie_time(v2, ue):
     ue.GameplayStatics.get_time_seconds = lambda world: 12.5
     ue.GameplayStatics.is_game_paused = lambda world: False
-    env = call(v2, "pie_time", {})
-    assert env["ok"] and env["result"] == {"world_time_s": 12.5, "paused": False}, env
+    m = v2["_mcp2"]
+    orig = m._game_world
+    try:
+        m._game_world = lambda: _NS(get_path_name=lambda: "/Game/Maps/UEDPIE_0_L.L")
+        env = call(v2, "pie_time", {})
+        assert env["ok"] and env["result"] == {"world_time_s": 12.5, "paused": False, "world": "/Game/Maps/UEDPIE_0_L.L"}, env
+    finally:
+        m._game_world = orig
     ue.pie_actors = None
     assert call(v2, "pie_time", {})["code"] == "NOT_IN_PIE"
 

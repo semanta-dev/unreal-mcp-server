@@ -223,6 +223,9 @@ func opArgs(sp *spec.Spec, op spec.OpSpec, dir, png string) map[string]any {
 		if op.Name == "cursor" {
 			args["position"] = []any{10.0, 20.0}
 		}
+		if op.Name == "input" {
+			args["key"] = "W"
+		}
 	case "analyze":
 		if op.Name == "perf" {
 			csv := filepath.Join(dir, "perf.csv")

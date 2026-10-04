@@ -1,6 +1,9 @@
 package eval
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseValid(t *testing.T) {
 	data := []byte(`{
@@ -97,5 +100,33 @@ func TestLintRubricRejectsRecorderPerf(t *testing.T) {
 	}
 	if !got["rubric[0].path"] || !got["rubric[1].path"] || got["rubric[2].path"] || got["rubric[3].path"] || len(got) != 2 {
 		t.Fatalf("errors on %v, want rubric[0] and rubric[1] only (diags %v)", got, diags)
+	}
+}
+
+// R2 review: input steps are checked when the scenario is parsed, not mid-run.
+func TestInputStepsAreChecked(t *testing.T) {
+	for step, want := range map[string]string{
+		`{"key":"MouseX","action":"axis"}`:               "needs value",
+		`{"key":"W","value":1}`:                          "value goes with",
+		`{"position":[1,2],"action":"click","to":[3,4]}`: "to goes with",
+		`{"position":[1,2],"action":"drag"}`:             "needs to",
+		`{"position":[1],"action":"click"}`:              "position is",
+		`{"key":"W","action":"click"}`:                   "no action",
+		`{"widget":"B","action":"tap"}`:                  "no action",
+		`{"key":"W","widget":"B"}`:                       "exactly one",
+	} {
+		_, diags, err := ParseScenario([]byte(`{"schema":"scenario/v1","name":"x","beats":[{"input":` + step + `}]}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, d := range diags {
+			if d.Severity == "error" && strings.Contains(d.Message, want) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("input %s: want an error containing %q, got %+v", step, want, diags)
+		}
 	}
 }

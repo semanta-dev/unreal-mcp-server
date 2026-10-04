@@ -168,18 +168,20 @@ void UMCPControlSubsystem::ReleaseAll()
 		}
 	}
 	ReleaseTimers.Reset();
-	if (APlayerController* PC = ResolvePC())
+	// Axes: a mouse delta just stops; a stick/trigger returns to rest on the next tick,
+	// alone in its frame (this frame may already have had its value).
+	for (auto It = Axes.CreateIterator(); It; ++It)
 	{
-		for (const TPair<FString, FAxisHold>& A : Axes)
+		if (IsMouseDeltaAxis(FKey(FName(*It.Key()))))
 		{
-			const FKey Key = FKey(FName(*A.Key));
-			if (!IsMouseDeltaAxis(Key))
-			{
-				PC->InputKey(FInputKeyEventArgs::CreateSimulated(Key, IE_Axis, 0.f, 1));
-			}
+			AxisDone.Add(It.Key(), It.Value());
+			It.RemoveCurrent();
+		}
+		else
+		{
+			It.Value().bZeroNext = true;
 		}
 	}
-	Axes.Reset();
 	if (Drag.IsSet())
 	{
 		PendingUps.Add({Drag->To, Drag->Button, 0});
@@ -189,7 +191,7 @@ void UMCPControlSubsystem::ReleaseAll()
 	PendingUps.Reset();
 	for (const FPendingUp& Up : Ups)
 	{
-		SendPointer(Up.Screen, Up.Button, 2, false);
+		SendPointer(Up.Viewport, Up.Button, 2, false);
 	}
 }
 
@@ -216,16 +218,16 @@ void UMCPControlSubsystem::OnWorldTickStart(UWorld* World, ELevelTick TickType, 
 	// Before the player controller reads input this frame: the game's cursor is the
 	// agent's — where it last put it, mid-drag too (the frame that reads a drag's press
 	// must see its start, not the real cursor).
-	if (World == GetWorld() && PinnedScreen.IsSet())
+	if (World == GetWorld() && PinnedViewport.IsSet())
 	{
-		SendPointer(PinnedScreen.GetValue(), Drag.IsSet() ? Drag->Button : EKeys::Invalid, 0, Drag.IsSet());
+		SendPointer(PinnedViewport.GetValue(), Drag.IsSet() ? Drag->Button : EKeys::Invalid, 0, Drag.IsSet());
 	}
 }
 
 bool UMCPControlSubsystem::ReleaseCursor()
 {
-	const bool bWasPinned = PinnedScreen.IsSet();
-	PinnedScreen.Reset();
+	const bool bWasPinned = PinnedViewport.IsSet();
+	PinnedViewport.Reset();
 	return bWasPinned;
 }
 
@@ -233,12 +235,10 @@ void UMCPControlSubsystem::Deinitialize()
 {
 	FWorldDelegates::OnWorldTickStart.Remove(WorldTickStartHandle);
 	FWorldDelegates::OnWorldPostActorTick.Remove(PostActorTickHandle);
-	PinnedScreen.Reset();
+	PinnedViewport.Reset();
 	ReleaseAll();
-	if (VirtualUser.IsValid() && FSlateApplication::IsInitialized())
-	{
-		FSlateApplication::Get().UnregisterUser(VirtualUser->GetUserIndex());
-	}
+	// The handle unregisters the virtual user when its last reference goes (another PIE
+	// client may still hold it): never unregister it here.
 	VirtualUser.Reset();
 	Super::Deinitialize();
 }
@@ -358,9 +358,25 @@ FString UMCPControlSubsystem::InjectAxis(const FString& KeyName, float Value, fl
 		return TEXT("no player controller in the game world");
 	}
 	FAxisHold& Hold = Axes.FindOrAdd(KeyName);
+	Hold = FAxisHold();
 	Hold.Value = Value;
 	Hold.Remaining = DurationSeconds;
 	return FString();
+}
+
+FString UMCPControlSubsystem::GetAxisStatsJson(const FString& KeyName) const
+{
+	TSharedRef<FJsonObject> O = MakeShared<FJsonObject>();
+	const FAxisHold* Live = Axes.Find(KeyName);
+	const FAxisHold* Done = AxisDone.Find(KeyName);
+	const FAxisHold* H = Live ? Live : Done;
+	O->SetBoolField(TEXT("active"), Live != nullptr);
+	O->SetNumberField(TEXT("ticks"), H ? H->Ticks : 0);
+	O->SetNumberField(TEXT("total"), H ? H->Total : 0.0);
+	FString S;
+	TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> W = TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&S);
+	FJsonSerializer::Serialize(O, W);
+	return S;
 }
 
 TStatId UMCPControlSubsystem::GetStatId() const
@@ -381,25 +397,47 @@ bool UMCPControlSubsystem::IsTickable() const
 void UMCPControlSubsystem::Tick(float DeltaTime)
 {
 	APlayerController* PC = ResolvePC();
+	const UWorld* World = GetWorld();
+	const bool bPaused = World && World->IsPaused();
 	for (auto It = Axes.CreateIterator(); It; ++It)
 	{
 		const FKey Key = FKey(FName(*It.Key()));
+		FAxisHold& H = It.Value();
 		if (!PC)
 		{
 			It.RemoveCurrent();
 			continue;
 		}
-		// This tick's value: one frame's worth of axis input (a mouse axis is a delta).
-		PC->InputKey(FInputKeyEventArgs::CreateSimulated(Key, IE_Axis, It.Value().Value, /*NumSamples=*/1));
-		It.Value().Remaining -= DeltaTime;
-		if (It.Value().Remaining <= 0.f)
+		if (H.bZeroNext)
 		{
-			if (!IsMouseDeltaAxis(Key))
-			{
-				// A stick or trigger stays where it was last put: return it to rest.
-				PC->InputKey(FInputKeyEventArgs::CreateSimulated(Key, IE_Axis, 0.f, 1));
-			}
+			// Alone in its frame: an axis's value is the sum of the frame's samples, and a
+			// stick/trigger keeps its last value when a frame has none — so the zero must not
+			// share a frame with the last value.
+			PC->InputKey(FInputKeyEventArgs::CreateSimulated(Key, IE_Axis, 0.f, 1));
+			AxisDone.Add(It.Key(), H);
 			It.RemoveCurrent();
+			continue;
+		}
+		if (bPaused)
+		{
+			continue; // a hold is game time: it waits while the game is paused
+		}
+		// This tick's value: one frame's worth of axis input (a mouse axis is a delta).
+		PC->InputKey(FInputKeyEventArgs::CreateSimulated(Key, IE_Axis, H.Value, /*NumSamples=*/1));
+		H.Ticks += 1;
+		H.Total += H.Value;
+		H.Remaining -= DeltaTime;
+		if (H.Remaining <= 0.f)
+		{
+			if (IsMouseDeltaAxis(Key))
+			{
+				AxisDone.Add(It.Key(), H);
+				It.RemoveCurrent();
+			}
+			else
+			{
+				H.bZeroNext = true; // a stick/trigger returns to rest next tick
+			}
 		}
 	}
 	if (Drag.IsSet())
@@ -409,7 +447,7 @@ void UMCPControlSubsystem::Tick(float DeltaTime)
 		const float A = D.Duration > 0.f ? FMath::Clamp(D.Elapsed / D.Duration, 0.f, 1.f) : 1.f;
 		const FVector2D At = FMath::Lerp(D.From, D.To, (double)A);
 		SendPointer(At, D.Button, 0, true);
-		PinnedScreen = At;
+		PinnedViewport = At;
 		if (A >= 1.f)
 		{
 			PendingUps.Add({D.To, D.Button, 1});
@@ -422,28 +460,40 @@ void UMCPControlSubsystem::Tick(float DeltaTime)
 		{
 			const FPendingUp Up = PendingUps[i];
 			PendingUps.RemoveAt(i);
-			SendPointer(Up.Screen, Up.Button, 2, false);
+			SendPointer(Up.Viewport, Up.Button, 2, false);
 		}
 	}
 }
 
 // --- API 5: cursor through Slate -------------------------------------------------------
 
-bool UMCPControlSubsystem::ViewportToScreen(const FVector2D& Viewport, FVector2D& OutScreen) const
+bool UMCPControlSubsystem::ViewportToScreen(const FVector2D& Viewport, FVector2D& OutScreen, FString* OutWhy) const
 {
 	UWorld* World = GetWorld();
 	UGameViewportClient* GVC = World ? World->GetGameViewport() : nullptr;
 	TSharedPtr<SViewport> Widget = GVC ? GVC->GetGameViewportWidget() : nullptr;
-	if (!Widget.IsValid())
+	FVector2D Pixels;
+	if (GVC)
 	{
+		GVC->GetViewportSize(Pixels);
+	}
+	const FGeometry& G = Widget.IsValid() ? Widget->GetTickSpaceGeometry() : FGeometry();
+	const FVector2D Local(G.GetLocalSize());
+	if (!Widget.IsValid() || Pixels.X <= 0.0 || Pixels.Y <= 0.0 || Local.X <= 0.0 || Local.Y <= 0.0)
+	{
+		if (OutWhy)
+		{
+			*OutWhy = TEXT("no game viewport");
+		}
 		return false;
 	}
-	const FGeometry& G = Widget->GetTickSpaceGeometry();
-	FVector2D Pixels;
-	GVC->GetViewportSize(Pixels);
-	const FVector2D Local(G.GetLocalSize());
-	if (Pixels.X <= 0.0 || Pixels.Y <= 0.0 || Local.X <= 0.0 || Local.Y <= 0.0)
+	// Only the game: a position off the viewport would land on the editor's own UI.
+	if (Viewport.X < 0.0 || Viewport.Y < 0.0 || Viewport.X >= Pixels.X || Viewport.Y >= Pixels.Y)
 	{
+		if (OutWhy)
+		{
+			*OutWhy = FString::Printf(TEXT("(%g, %g) is outside the game viewport (%g x %g pixels)"), Viewport.X, Viewport.Y, Pixels.X, Pixels.Y);
+		}
 		return false;
 	}
 	// Viewport pixels are the viewport widget's local space times the DPI scale.
@@ -458,7 +508,7 @@ FVector2D UMCPControlSubsystem::ScreenToViewport(const FVector2D& Screen) const
 	TSharedPtr<SViewport> Widget = GVC ? GVC->GetGameViewportWidget() : nullptr;
 	if (!Widget.IsValid())
 	{
-		return FVector2D::ZeroVector;
+		return FVector2D(-1.0, -1.0);
 	}
 	const FGeometry& G = Widget->GetTickSpaceGeometry();
 	FVector2D Pixels;
@@ -466,26 +516,22 @@ FVector2D UMCPControlSubsystem::ScreenToViewport(const FVector2D& Screen) const
 	const FVector2D Local(G.GetLocalSize());
 	if (Local.X <= 0.0 || Local.Y <= 0.0)
 	{
-		return FVector2D::ZeroVector;
+		return FVector2D(-1.0, -1.0);
 	}
 	return FVector2D(G.AbsoluteToLocal(Screen)) * (Pixels / Local);
 }
 
-void UMCPControlSubsystem::EnterCursorMode() const
+bool UMCPControlSubsystem::SendPointer(const FVector2D& Viewport, const FKey& Button, int32 Kind, bool bHeld, FString* OutHit,
+	bool* OutGameViewport, FString* OutRefusal)
 {
-	// Game and UI both get input; the mouse is never locked to the viewport and the
-	// cursor is not hidden during a press, so the user's OS cursor stays theirs.
-	if (APlayerController* PC = ResolvePC())
+	FVector2D Screen;
+	FString Why;
+	if (!FSlateApplication::IsInitialized() || !ViewportToScreen(Viewport, Screen, &Why))
 	{
-		UWidgetBlueprintLibrary::SetInputMode_GameAndUIEx(PC, nullptr, EMouseLockMode::DoNotLock, /*bHideCursorDuringCapture=*/false);
-	}
-}
-
-bool UMCPControlSubsystem::SendPointer(const FVector2D& Screen, const FKey& Button, int32 Kind, bool bHeld, FString* OutHit,
-	bool* OutGameViewport)
-{
-	if (!FSlateApplication::IsInitialized())
-	{
+		if (OutRefusal)
+		{
+			*OutRefusal = Why.IsEmpty() ? FString(TEXT("Slate is not running")) : Why;
+		}
 		return false;
 	}
 	FSlateApplication& App = FSlateApplication::Get();
@@ -494,6 +540,23 @@ bool UMCPControlSubsystem::SendPointer(const FVector2D& Screen, const FKey& Butt
 		VirtualUser = App.FindOrCreateVirtualUser(VirtualUserIndex);
 	}
 	const int32 UserIndex = VirtualUser->GetUserIndex();
+	// Route down an explicit path (as UWidgetInteractionComponent does), not through
+	// ProcessMouse*Event: input pre-processors and the real cursor's capture are bypassed,
+	// and the OS cursor is never moved or captured.
+	const FWidgetPath Path = App.LocateWindowUnderMouse(Screen, App.GetInteractiveTopLevelWindows(), false, UserIndex);
+	UWorld* World = GetWorld();
+	UGameViewportClient* GVC = World ? World->GetGameViewport() : nullptr;
+	const TSharedPtr<SViewport> GameViewport = GVC ? GVC->GetGameViewportWidget() : nullptr;
+	if (!Path.IsValid() || !GameViewport.IsValid() || !Path.ContainsWidget(GameViewport.Get()))
+	{
+		// Something that is not the game (an editor menu, a dialog) is on top there.
+		if (OutRefusal)
+		{
+			*OutRefusal = FString::Printf(TEXT("(%g, %g) is covered by %s, not the game"), Viewport.X, Viewport.Y,
+				Path.IsValid() ? *Path.Widgets.Last().Widget->GetTypeAsString() : TEXT("nothing"));
+		}
+		return false;
+	}
 	TSet<FKey> Pressed;
 	if (Kind == 1 || (Kind == 0 && bHeld))
 	{
@@ -507,10 +570,6 @@ bool UMCPControlSubsystem::SendPointer(const FVector2D& Screen, const FKey& Butt
 	// FPointerEvent holds PressedButtons by pointer: Pressed outlives the event.
 	const FPointerEvent Event(IPlatformInputDeviceMapper::Get().GetDefaultInputDevice(), /*PointerIndex=*/0, Screen, Screen,
 		Pressed, Kind == 0 ? EKeys::Invalid : Button, 0.f, FModifierKeysState(), UserIndex);
-	// Route down an explicit path (as UWidgetInteractionComponent does), not through
-	// ProcessMouse*Event: input pre-processors and the real cursor's capture are bypassed,
-	// and the OS cursor is never moved or captured.
-	const FWidgetPath Path = App.LocateWindowUnderMouse(Screen, App.GetInteractiveTopLevelWindows(), false, UserIndex);
 	// Slate grants mouse capture only while the application is active (live R2: with the
 	// editor in the background a button's press took no capture, so its release never
 	// clicked). For this synthetic event only, handle input as if it were — then restore.
@@ -522,7 +581,7 @@ bool UMCPControlSubsystem::SendPointer(const FVector2D& Screen, const FKey& Butt
 	};
 	if (OutHit)
 	{
-		*OutHit = Path.IsValid() ? Path.Widgets.Last().Widget->GetTypeAsString() : FString(TEXT("nothing"));
+		*OutHit = Path.Widgets.Last().Widget->GetTypeAsString();
 	}
 	switch (Kind)
 	{
@@ -532,10 +591,8 @@ bool UMCPControlSubsystem::SendPointer(const FVector2D& Screen, const FKey& Butt
 		if (OutGameViewport)
 		{
 			// Who took the press: the game viewport (or nobody) vs a UI widget above it.
-			UWorld* World = GetWorld();
-			UGameViewportClient* GVC = World ? World->GetGameViewport() : nullptr;
 			const TSharedPtr<SWidget> Handler = Reply.GetHandler();
-			*OutGameViewport = !Handler.IsValid() || (GVC && Handler == StaticCastSharedPtr<SWidget>(GVC->GetGameViewportWidget()));
+			*OutGameViewport = !Handler.IsValid() || Handler == StaticCastSharedPtr<SWidget>(GameViewport);
 		}
 		return Reply.IsEventHandled();
 	}
@@ -556,16 +613,16 @@ static FString CondensedJson(const TSharedRef<FJsonObject>& Object)
 	return Out;
 }
 
-FString UMCPControlSubsystem::PointerResult(const FVector2D& Screen, bool bHandled, const FString& Hit, const FString& Widget) const
+FString UMCPControlSubsystem::PointerResult(const FVector2D& Viewport, bool bHandled, const FString& Hit, const FString& Widget) const
 {
-	const FVector2D V = ScreenToViewport(Screen);
+	FVector2D Screen = FVector2D::ZeroVector;
+	ViewportToScreen(Viewport, Screen, nullptr);
 	TSharedRef<FJsonObject> O = MakeShared<FJsonObject>();
 	O->SetBoolField(TEXT("ok"), true);
-	O->SetArrayField(TEXT("viewport"), {MakeShared<FJsonValueNumber>(FMath::RoundToDouble(V.X * 10.0) / 10.0), MakeShared<FJsonValueNumber>(FMath::RoundToDouble(V.Y * 10.0) / 10.0)});
+	O->SetArrayField(TEXT("viewport"), {MakeShared<FJsonValueNumber>(Viewport.X), MakeShared<FJsonValueNumber>(Viewport.Y)});
 	O->SetArrayField(TEXT("screen"), {MakeShared<FJsonValueNumber>(FMath::RoundToDouble(Screen.X * 10.0) / 10.0), MakeShared<FJsonValueNumber>(FMath::RoundToDouble(Screen.Y * 10.0) / 10.0)});
 	O->SetBoolField(TEXT("handled"), bHandled);
 	O->SetStringField(TEXT("hit"), Hit);
-
 	if (!Widget.IsEmpty())
 	{
 		O->SetStringField(TEXT("widget"), Widget);
@@ -586,35 +643,41 @@ static FKey MouseButtonOf(const FString& Button)
 	return FKey(FName(*(Button.IsEmpty() ? FString(TEXT("LeftMouseButton")) : Button)));
 }
 
-bool UMCPControlSubsystem::Click(const FVector2D& Screen, const FKey& Button, FString& OutHit)
+bool UMCPControlSubsystem::Click(const FVector2D& Viewport, const FKey& Button, FString& OutHit, FString& OutRefusal)
 {
-	SendPointer(Screen, Button, 0, false);
+	if (!SendPointer(Viewport, Button, 0, false, nullptr, nullptr, &OutRefusal) && !OutRefusal.IsEmpty())
+	{
+		return false;
+	}
 	bool bGameViewport = true;
-	const bool bHandled = SendPointer(Screen, Button, 1, false, &OutHit, &bGameViewport);
+	const bool bHandled = SendPointer(Viewport, Button, 1, false, &OutHit, &bGameViewport, &OutRefusal);
+	if (!OutRefusal.IsEmpty())
+	{
+		return false;
+	}
 	if (bGameViewport)
 	{
-		PendingUps.Add({Screen, Button, 2});
+		PendingUps.Add({Viewport, Button, 2});
 	}
 	else
 	{
-		SendPointer(Screen, Button, 2, false);
+		SendPointer(Viewport, Button, 2, false);
 	}
-	PinnedScreen = Screen;
+	PinnedViewport = Viewport;
 	return bHandled;
 }
 
 FString UMCPControlSubsystem::MoveCursor(float X, float Y)
 {
-	FVector2D Screen;
-	if (!ViewportToScreen(FVector2D(X, Y), Screen))
+	const FVector2D At(X, Y);
+	FString Hit, Refusal;
+	const bool bHandled = SendPointer(At, EKeys::Invalid, 0, false, &Hit, nullptr, &Refusal);
+	if (!Refusal.IsEmpty())
 	{
-		return PointerError(TEXT("no game viewport"));
+		return PointerError(Refusal);
 	}
-	EnterCursorMode();
-	FString Hit;
-	const bool bHandled = SendPointer(Screen, EKeys::Invalid, 0, false, &Hit);
-	PinnedScreen = Screen;
-	return PointerResult(Screen, bHandled, Hit);
+	PinnedViewport = At;
+	return PointerResult(At, bHandled, Hit);
 }
 
 FString UMCPControlSubsystem::ClickAt(float X, float Y, const FString& Button)
@@ -624,15 +687,14 @@ FString UMCPControlSubsystem::ClickAt(float X, float Y, const FString& Button)
 	{
 		return PointerError(FString::Printf(TEXT("'%s' is not a mouse button"), *Button));
 	}
-	FVector2D Screen;
-	if (!ViewportToScreen(FVector2D(X, Y), Screen))
+	const FVector2D At(X, Y);
+	FString Hit, Refusal;
+	const bool bHandled = Click(At, Key, Hit, Refusal);
+	if (!Refusal.IsEmpty())
 	{
-		return PointerError(TEXT("no game viewport"));
+		return PointerError(Refusal);
 	}
-	EnterCursorMode();
-	FString Hit;
-	const bool bHandled = Click(Screen, Key, Hit);
-	return PointerResult(Screen, bHandled, Hit);
+	return PointerResult(At, bHandled, Hit);
 }
 
 FString UMCPControlSubsystem::DragCursor(float X0, float Y0, float X1, float Y1, float DurationSeconds, const FString& Button)
@@ -646,22 +708,27 @@ FString UMCPControlSubsystem::DragCursor(float X0, float Y0, float X1, float Y1,
 	{
 		return PointerError(TEXT("a drag is already in progress"));
 	}
-	FVector2D From, To;
-	if (!ViewportToScreen(FVector2D(X0, Y0), From) || !ViewportToScreen(FVector2D(X1, Y1), To))
+	const FVector2D From(X0, Y0), To(X1, Y1);
+	FVector2D Unused;
+	FString Why;
+	if (!ViewportToScreen(To, Unused, &Why))
 	{
-		return PointerError(TEXT("no game viewport"));
+		return PointerError(Why);
 	}
-	EnterCursorMode();
-	FString Hit;
-	SendPointer(From, Key, 0, false);
-	const bool bHandled = SendPointer(From, Key, 1, false, &Hit);
+	FString Hit, Refusal;
+	SendPointer(From, Key, 0, false, nullptr, nullptr, &Refusal);
+	const bool bHandled = Refusal.IsEmpty() && SendPointer(From, Key, 1, false, &Hit, nullptr, &Refusal);
+	if (!Refusal.IsEmpty())
+	{
+		return PointerError(Refusal);
+	}
 	FDragState D;
 	D.From = From;
 	D.To = To;
 	D.Duration = FMath::Max(DurationSeconds, 0.f);
 	D.Button = Key;
 	Drag = D;
-	PinnedScreen = From; // Tick moves it towards To
+	PinnedViewport = From; // Tick moves it towards To
 	return PointerResult(From, bHandled, Hit);
 }
 
@@ -729,24 +796,32 @@ FString UMCPControlSubsystem::ClickWidget(const FString& WidgetName, const FStri
 		}
 		return PointerError(FString::Printf(TEXT("%d visible widgets are named '%s': %s"), Matches.Num(), *WidgetName, *Names));
 	}
+	TSharedPtr<SWidget> Target = Matches[0].Key->GetCachedWidget();
+	if (!Target.IsValid() || !Target->IsEnabled())
+	{
+		return PointerError(FString::Printf(TEXT("'%s' is disabled"), *WidgetName));
+	}
 	const FGeometry& G = Matches[0].Value;
 	const FVector2D Screen(G.LocalToAbsolute(FVector2D(G.GetLocalSize()) * 0.5));
+	const FVector2D At = ScreenToViewport(Screen);
 	// Refuse rather than click whatever covers it.
 	if (!VirtualUser.IsValid())
 	{
 		VirtualUser = App.FindOrCreateVirtualUser(VirtualUserIndex);
 	}
 	const FWidgetPath Under = App.LocateWindowUnderMouse(Screen, App.GetInteractiveTopLevelWindows(), false, VirtualUser->GetUserIndex());
-	TSharedPtr<SWidget> Target = Matches[0].Key->GetCachedWidget();
 	if (!Under.IsValid() || !Under.ContainsWidget(Target.Get()))
 	{
 		const FString Top = Under.IsValid() ? Under.Widgets.Last().Widget->GetTypeAsString() : FString(TEXT("nothing"));
 		return PointerError(FString::Printf(TEXT("'%s' is covered at its centre by %s"), *WidgetName, *Top));
 	}
-	EnterCursorMode();
-	FString Hit;
-	const bool bHandled = Click(Screen, Key, Hit);
-	return PointerResult(Screen, bHandled, Hit, Matches[0].Key->GetPathName());
+	FString Hit, Refusal;
+	const bool bHandled = Click(At, Key, Hit, Refusal);
+	if (!Refusal.IsEmpty())
+	{
+		return PointerError(Refusal);
+	}
+	return PointerResult(At, bHandled, Hit, Matches[0].Key->GetPathName());
 }
 
 // --- API 5: spawn into the game world --------------------------------------------------

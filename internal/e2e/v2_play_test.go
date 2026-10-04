@@ -270,3 +270,21 @@ func TestPieAxisCursorUIClick(t *testing.T) {
 		t.Fatalf("the game received %v", in)
 	}
 }
+
+// R2 review: release_all takes no key; an axis hold reports the ticks it sent.
+func TestPieInputKeyRulesAndAxisStats(t *testing.T) {
+	h := startHarness(t, harnessOpts{})
+	h.world.StartPIE()
+	defer h.world.StopPIE()
+	h.world.PluginAPI = 5
+	if res := h.call(t, "pie", map[string]any{"op": "input", "action": "release_all"}); res.IsError {
+		t.Fatalf("release_all without a key: %s", text(res))
+	}
+	if e := errorOf(t, h.call(t, "pie", map[string]any{"op": "input"})); e["code"] != "INVALID_ARGUMENT" {
+		t.Fatalf("input without a key = %v", e)
+	}
+	out := structured(t, h.call(t, "pie", map[string]any{"op": "input", "key": "MouseX", "action": "axis", "value": 2.0, "duration_s": 0.1}))
+	if out["done"] != true || out["ticks"] != 6.0 || out["total"] != 12.0 {
+		t.Fatalf("axis result = %v", out)
+	}
+}
