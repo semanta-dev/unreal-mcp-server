@@ -10,7 +10,7 @@
         "additionalProperties": false,
         "properties": {
           "actor": {
-            "description": "a label, an object path, @gamestate or @pawn",
+            "description": "a label, an object path, @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:\u003cClass\u003e (a game subsystem)",
             "type": "string"
           },
           "args": {
@@ -25,6 +25,13 @@
           "interval_s": {
             "description": "until: seconds between polls (default 0.25)",
             "type": "number"
+          },
+          "parse": {
+            "description": "json: the function returns a JSON string; decode it (an error if it is not JSON)",
+            "enum": [
+              "json"
+            ],
+            "type": "string"
           },
           "timeout_s": {
             "description": "until: give up after this many seconds (default 20, max 27)",
@@ -140,7 +147,7 @@
         "additionalProperties": false,
         "properties": {
           "actor": {
-            "description": "get: a label, an object path, @gamestate or @pawn",
+            "description": "get: a label, an object path, or (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud; @subsystem:\u003cClass\u003e",
             "type": "string"
           },
           "class": {
@@ -1737,7 +1744,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Poll pie_observe until `predicate` holds → {met, pie_running, elapsed_s, polls, final_state}. met=false on timeout is a normal answer, not an error. Waits through PIE starting up; returns at once if PIE stops. Read-only: to poll a UFUNCTION's result use actor_call with until.",
+      "description": "Poll the running game until `predicate` holds → {met, pie_running, elapsed_s, polls, final_state}. met=false on timeout is a normal answer, not an error. Waits through PIE starting up; returns at once if PIE stops. timeout_s \u003e 25 runs as a job (wait_s, then job). Object paths need the plugin. Read-only: to poll a function with side effects use actor_call with until.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1750,7 +1757,7 @@
             "type": "boolean"
           },
           "predicate": {
-            "description": "one comparison over pie_observe output, e.g. 'gamestate.wave \u003e= 2', 'counts.Enemy \u003e= 1', 'pawn.speed \u003e 100'",
+            "description": "conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave \u003e= 2 and counts.Enemy \u003e= 1'; or an object path: '@subsystem:\u003cClass\u003e.Getter().field \u003e= 3' (BlueprintPure/const getters only)",
             "type": "string"
           },
           "properties": {
@@ -1761,7 +1768,11 @@
             "type": "array"
           },
           "timeout_s": {
-            "description": "give up after this many seconds (default 20, max 28)",
+            "description": "give up after this many seconds (default 20; up to 600 — beyond 25 the wait continues as a job)",
+            "type": "number"
+          },
+          "wait_s": {
+            "description": "a job wait (timeout_s \u003e 25): return after this many seconds (max 25), then follow it with job",
             "type": "number"
           }
         },
@@ -2083,7 +2094,7 @@
         "additionalProperties": false,
         "properties": {
           "actor": {
-            "description": "object: label, object path, or in PIE @gamestate, @pawn or @controller",
+            "description": "object: label, object path, (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:\u003cClass\u003e (editor subsystems too)",
             "type": "string"
           },
           "class": {

@@ -34,6 +34,11 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
   `PRECONDITION` (`editor_code: PLUGIN_MISSING`, `details.needed`/`have`). API 3 also adds `IsPureOrConst`,
   `PeekUndoTitle`/`PeekRedoTitle`, `UndoIfTitled`/`RedoIfTitled` and `FindGameSubsystem` (UE 5.7's Python has none of
   these — [`docs/plans/REMEDIATION_SPIKES.md`](docs/plans/REMEDIATION_SPIKES.md)).
+- **Plugin API 4**: UMG authoring works on UE 5.7 again — `asset_create kind=widget_blueprint` and `widget_edit
+  op=compose` failed there ("Failed to find property 'widget_tree'": 5.7 hides the widget tree from Python); the plugin
+  now hands the companion the tree and its root, registers each new widget (no "did not get a GUID" ensure) and sets
+  `is_variable`. Also: `UMCPHUDWidget` binding sources `GameState` and `Subsystem`, class-default read/write as JSON,
+  `MountWidget`/`UnmountWidget` and `DescribeLiveWidgets` in PIE. Text props use `unreal.Text(...)`.
 
 ## v2.0.2 — 2026-10-03
 

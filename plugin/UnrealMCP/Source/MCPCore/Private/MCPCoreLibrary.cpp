@@ -17,7 +17,9 @@
 
 // 3: GetPluginApiVersion, IsPureOrConst, Peek{Undo,Redo}Title, {Undo,Redo}IfTitled,
 //    FindGameSubsystem (remediation R0.5).
-static constexpr int32 GMCPPluginApiVersion = 3;
+// 4: UMCPHUDWidget binding sources GameState and Subsystem; MCPAuthoring Get/SetClassDefaultJson,
+//    GetWidgetTree / Get/SetRootWidget; MCPControl Mount/UnmountWidget (remediation G.5).
+static constexpr int32 GMCPPluginApiVersion = 4;
 
 int32 UMCPCoreLibrary::GetPluginApiVersion()
 {

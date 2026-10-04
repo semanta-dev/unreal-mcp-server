@@ -6,6 +6,8 @@
 #include "MCPAuthoringSubsystem.generated.h"
 
 class UWidgetBlueprint;
+class UWidgetTree;
+class UWidget;
 
 /**
  * UMCPAuthoringSubsystem — the editor-only UMG authoring surface the bridge reaches
@@ -59,4 +61,38 @@ public:
 	 *  its garbage collection after compiling. CompiledCount: Blueprints compiled. */
 	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
 	TArray<FString> PrepareBlueprintsForPIE(bool bAcknowledgeErrors, int32& CompiledCount);
+
+	/** The Blueprint's design-time widget tree (plugin API 4): UE 5.7 hides the
+	 *  WidgetTree property from Python, so the companion reaches the tree through this. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
+	UWidgetTree* GetWidgetTree(UWidgetBlueprint* WidgetBP);
+
+	/** The tree's root widget (nullptr when empty). */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
+	UWidget* GetRootWidget(UWidgetBlueprint* WidgetBP);
+
+	/** Make Widget (created in the tree, e.g. new_object(outer=GetWidgetTree)) the root. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
+	bool SetRootWidget(UWidgetBlueprint* WidgetBP, UWidget* Widget);
+
+	/** Register a widget created in the tree (Python new_object) with the Blueprint —
+	 *  its variable GUID, as the editor's palette does; without it the compiler ensures
+	 *  "Widget was added but did not get a GUID". Idempotent. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
+	bool RegisterWidget(UWidgetBlueprint* WidgetBP, UWidget* Widget);
+
+	/** Mark a design-time widget as a variable (bIsVariable is hidden from Python). */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
+	bool SetWidgetIsVariable(UWidget* Widget, bool bIsVariable);
+
+	/** Read a class-default property of a Blueprint's generated class as JSON (plugin
+	 *  API 4) — e.g. UMCPHUDWidget's FieldSourceBindings, whose struct Python cannot see.
+	 *  Returns {"ok": true, "value": ...} or {"ok": false, "error": "..."}. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
+	FString GetClassDefaultJson(UBlueprint* Blueprint, const FString& PropertyName);
+
+	/** Write a class-default property from JSON (enums by name), mark the Blueprint
+	 *  modified; the caller compiles and saves. Returns {"ok": bool, "error"?}. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
+	FString SetClassDefaultJson(UBlueprint* Blueprint, const FString& PropertyName, const FString& JsonValue);
 };

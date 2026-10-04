@@ -152,7 +152,7 @@ describe) and **`data_edit`** (Mutating: `set_properties` on any asset, `table_u
 |---|---|---|
 | R4.1 | `widget_edit op=bind` → `MCPHUDWidget` bindings incl. the G.5 `GameState`/`Subsystem` sources | live: wave number on the HUD |
 | R4.2 | `widget_query op=mount` (add to viewport in PIE) and `op=live_tree` (live tree with geometry/visibility) | live |
-| R4.3 | ~~`screenshot op=pie ui=true` routed to the plugin capture~~ — **R0.2 spike row 11: `screenshot op=pie` (HighResShot during PIE) already includes UMG.** R4.3 becomes: document it in the `screenshot` description and add the HUD-visible check to the acceptance | live screenshot shows the HUD (seen in the R0.2 spike; re-checked with the R4.1 binding) |
+| R4.3 | `screenshot op=pie ui=true` routed to the **existing** plugin capture with UI (`MCPCaptureSubsystem` `include_ui` → `FSlateApplication::TakeScreenshot`). (An R0.2 note that HighResShot already includes UMG was wrong — corrected in G.5, `REMEDIATION_SPIKES.md` row 11.) | live screenshot shows a mounted UMG HUD |
 
 ### R5 — Judge with evidence (≈ 12 d; plugin API 8; §7 rebuild gate)
 
@@ -230,10 +230,10 @@ Plugin API versions — one bump per phase that changes the plugin; each op decl
 | API | Phase | Adds |
 |---|---|---|
 | 3 | R0.5 | `GetPluginApiVersion`, R0.2 fallbacks (`IsPureOrConst`, `PeekUndoTitle`/`PeekRedoTitle`, `UndoIfTitled`/`RedoIfTitled`) if needed |
-| 4 | G.5 | `EMCPBindSource` `GameState`/`Subsystem` |
+| 4 | G.5 | `EMCPBindSource` `GameState`/`Subsystem`; widget-tree access for 5.7 (`GetWidgetTree`, `Get/SetRootWidget`, `RegisterWidget`, `SetWidgetIsVariable`), `Get/SetClassDefaultJson`; `MountWidget`/`UnmountWidget`, `DescribeLiveWidgets` (R4.2's mount and live tree, needed by G.5's acceptance) |
 | 5 | R2 | axis injection, cursor/UI click, `SpawnInGame` |
 | 6 | R3 | curve keys, Blueprint describe (R0.2 spike rows 5–6) |
-| 7 | R4 | widget mount, live tree |
+| 7 | R4 | (mount and live tree arrived in API 4) the UI-capture route, compose fixes |
 | 8 | R5 | `UMCPEventRecorder` |
 
 ## 9. Sequencing and effort

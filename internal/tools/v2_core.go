@@ -379,7 +379,7 @@ func levelSpec() *spec.Spec {
 type actorQueryIn struct {
 	Op         string         `json:"op" jsonschema:"list | get | find"`
 	World      string         `json:"world,omitempty" jsonschema:"editor (default) | pie | auto (PIE when running)"`
-	Actor      string         `json:"actor,omitempty" jsonschema:"get: a label, an object path, @gamestate or @pawn"`
+	Actor      string         `json:"actor,omitempty" jsonschema:"get: a label, an object path, or (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud; @subsystem:<Class>"`
 	Filter     string         `json:"filter,omitempty" jsonschema:"list/find: case-insensitive substring of label or class"`
 	Class      string         `json:"class,omitempty" jsonschema:"list/find: only this class and its subclasses"`
 	Where      map[string]any `json:"where,omitempty" jsonschema:"find: property -> value equality filter on reflected properties"`
@@ -488,9 +488,10 @@ func undoSpec() *spec.Spec {
 // --- actor_call ------------------------------------------------------------------
 
 type actorCallIn struct {
-	Actor     string         `json:"actor" jsonschema:"a label, an object path, @gamestate or @pawn"`
+	Actor     string         `json:"actor" jsonschema:"a label, an object path, @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:<Class> (a game subsystem)"`
 	Function  string         `json:"function" jsonschema:"the UFUNCTION name to call"`
 	Args      map[string]any `json:"args,omitempty" jsonschema:"parameter name -> value"`
+	Parse     string         `json:"parse,omitempty" jsonschema:"json: the function returns a JSON string; decode it (an error if it is not JSON)"`
 	World     string         `json:"world,omitempty" jsonschema:"pie (default). editor is UNSUPPORTED in v2.0"`
 	Until     string         `json:"until,omitempty" jsonschema:"poll until this predicate over {result} holds, e.g. 'result >= 3'; the function RE-RUNS each poll"`
 	TimeoutS  float64        `json:"timeout_s,omitempty" jsonschema:"until: give up after this many seconds (default 20, max 27)"`
@@ -504,7 +505,7 @@ func actorCallSpec() *spec.Spec {
 		Description: "Call a UFUNCTION on an actor in the running game (PIE) and return its result. With `until`, " +
 			"poll the function until a predicate over {result} holds → {met, result, elapsed_s, calls}; met=false " +
 			"on timeout is a normal outcome, not an error. The function runs again on every poll.",
-		Schema:   spec.SchemaFor[actorCallIn](map[string][]any{"world": {"pie", "editor"}}, "actor", "function"),
+		Schema:   spec.SchemaFor[actorCallIn](map[string][]any{"world": {"pie", "editor"}, "parse": {"json"}}, "actor", "function"),
 		Replaces: []string{"pie_exec", "pie_verify"},
 		Handler:  actorCall,
 	}
@@ -515,7 +516,7 @@ func actorCall(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	if err := c.Decode(&in); err != nil {
 		return nil, err
 	}
-	args := pick(c.Args, "actor", "function", "args", "world")
+	args := pick(c.Args, "actor", "function", "args", "world", "parse")
 	if in.Until == "" {
 		out, err := v2Op(ctx, c, "actor_call", args)
 		return &spec.Result{Data: out, Summary: fmt.Sprintf("%s.%s → %v", in.Actor, in.Function, out["result"])}, err

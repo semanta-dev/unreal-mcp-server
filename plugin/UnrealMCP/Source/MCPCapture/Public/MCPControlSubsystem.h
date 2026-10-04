@@ -47,6 +47,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "MCP|Control")
 	bool HoldKey(const FString& KeyName, float DurationSeconds);
 
+	/** Create a UserWidget of WidgetClass for player 0 and add it to the viewport
+	 *  (plugin API 4). Returns the live widget, or nullptr without a player controller.
+	 *  Python has no CreateWidget, so a HUD cannot otherwise be shown in PIE. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Control")
+	class UUserWidget* MountWidget(TSubclassOf<class UUserWidget> WidgetClass, int32 ZOrder);
+
+	/** The live UMG widgets on screen (all UserWidgets, or of WidgetClass) as JSON
+	 *  (plugin API 4): [{widget, class, in_viewport, nodes: [{name, class, visible,
+	 *  position, size, text?}]}] — geometry in viewport pixels, text for text widgets. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Control")
+	FString DescribeLiveWidgets(TSubclassOf<class UUserWidget> WidgetClass) const;
+
+	/** Remove every live widget of WidgetClass this subsystem mounted; returns how many. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Control")
+	int32 UnmountWidget(TSubclassOf<class UUserWidget> WidgetClass);
+
 	/** Release every key this subsystem is currently holding (safety / teardown). */
 	UFUNCTION(BlueprintCallable, Category = "MCP|Control")
 	void ReleaseAll();
@@ -55,6 +71,9 @@ public:
 	virtual void Deinitialize() override;
 
 private:
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<class UUserWidget>> Mounted;
+
 	class APlayerController* ResolvePC() const;
 	bool DispatchKey(const struct FKey& Key, bool bPressed);
 	void ScheduleRelease(const FString& KeyName, float DelaySeconds);

@@ -264,20 +264,25 @@ func pieObserveSpec() *spec.Spec {
 }
 
 type pieWaitIn struct {
-	Predicate  string   `json:"predicate" jsonschema:"one comparison over pie_observe output, e.g. 'gamestate.wave >= 2', 'counts.Enemy >= 1', 'pawn.speed > 100'"`
-	TimeoutS   float64  `json:"timeout_s,omitempty" jsonschema:"give up after this many seconds (default 20, max 28)"`
+	Predicate  string   `json:"predicate" jsonschema:"conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave >= 2 and counts.Enemy >= 1'; or an object path: '@subsystem:<Class>.Getter().field >= 3' (BlueprintPure/const getters only)"`
+	TimeoutS   float64  `json:"timeout_s,omitempty" jsonschema:"give up after this many seconds (default 20; up to 600 — beyond 25 the wait continues as a job)"`
+	WaitS      float64  `json:"wait_s,omitempty" jsonschema:"a job wait (timeout_s > 25): return after this many seconds (max 25), then follow it with job"`
 	IntervalS  float64  `json:"interval_s,omitempty" jsonschema:"seconds between observations (default 0.25)"`
 	Properties []string `json:"properties,omitempty" jsonschema:"pin exact gamestate property names so the predicate can use them verbatim"`
 	Pawn       bool     `json:"pawn,omitempty" jsonschema:"observe the pawn too (needed for pawn.* predicates)"`
 }
 
+// maxWaitS bounds a pie_wait that continues as a job.
+const maxWaitS = 600
+
 func pieWaitSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "pie_wait", Title: "Wait for a game condition", Toolset: spec.Core, Timeout: sync28, Max: sync28,
-		Ops: []spec.OpSpec{{Tier: spec.ReadOnly, Idempotent: true, Required: []string{"predicate"}, Reaches: []string{"pie_observe"}}},
-		Description: "Poll pie_observe until `predicate` holds → {met, pie_running, elapsed_s, polls, final_state}. " +
+		Ops: []spec.OpSpec{{Tier: spec.ReadOnly, Idempotent: true, Required: []string{"predicate"}, Reaches: []string{"pie_observe", "observe_paths"}}},
+		Description: "Poll the running game until `predicate` holds → {met, pie_running, elapsed_s, polls, final_state}. " +
 			"met=false on timeout is a normal answer, not an error. Waits through PIE starting up; returns at once if PIE " +
-			"stops. Read-only: to poll a UFUNCTION's result use actor_call with until.",
+			"stops. timeout_s > 25 runs as a job (wait_s, then job). Object paths need the plugin. Read-only: to poll a " +
+			"function with side effects use actor_call with until.",
 		Schema:   spec.SchemaFor[pieWaitIn](nil, "predicate"),
 		Replaces: []string{"pie_wait_until"},
 		Handler:  pieWait,
@@ -293,12 +298,64 @@ func pieWait(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	if err != nil {
 		return nil, envelope.New(envelope.InvalidArgument, "predicate: %v", err)
 	}
-	timeout := pollTimeout(ctx, in.TimeoutS, 20*time.Second)
+	if in.TimeoutS > maxWaitS {
+		return nil, envelope.New(envelope.InvalidArgument, "timeout_s is at most %d", maxWaitS)
+	}
 	interval := 250 * time.Millisecond
 	if in.IntervalS > 0 {
 		interval = time.Duration(in.IntervalS * float64(time.Second))
 	}
 	args := pick(c.Args, "properties", "pawn")
+	if in.TimeoutS > float64(spec.MaxWait/time.Second) {
+		// A long wait continues as a job, polled on its own context (the call returns
+		// after wait_s, as every async op does).
+		reg, err := jobsOf(c)
+		if err != nil {
+			return nil, err
+		}
+		timeout := time.Duration(in.TimeoutS * float64(time.Second))
+		j := reg.Start(context.Background(), func(jctx context.Context, progress func(string)) (any, error) {
+			progress(fmt.Sprintf("waiting up to %s for %s", timeout, in.Predicate))
+			res, err := waitFor(jctx, c, pred, args, timeout, interval)
+			if err != nil {
+				return nil, err
+			}
+			return res.Data, nil
+		})
+		return &spec.Result{Job: j}, nil
+	}
+	return waitFor(ctx, c, pred, args, pollTimeout(ctx, in.TimeoutS, 20*time.Second), interval)
+}
+
+// observeState reads what a predicate needs: pie_observe for state paths and
+// observe_paths for object paths (merged in under each path string).
+func observeState(ctx context.Context, c *spec.Call, pred *eval.Predicate, args map[string]any) (map[string]any, error) {
+	state := map[string]any{}
+	if pred.HasStatePaths() {
+		out, err := v2Op(ctx, c, "pie_observe", args)
+		if err != nil {
+			return nil, err
+		}
+		state = out
+	}
+	if paths := pred.ObjectPaths(); len(paths) > 0 {
+		out, err := v2Op(ctx, c, "observe_paths", map[string]any{"paths": paths, "world": "pie"})
+		if err != nil {
+			return nil, err
+		}
+		values, _ := out["values"].(map[string]any)
+		for _, p := range paths {
+			state[p] = values[p]
+		}
+		if errs, _ := out["errors"].(map[string]any); len(errs) > 0 {
+			state["object_errors"] = errs
+		}
+	}
+	return state, nil
+}
+
+// waitFor polls until the predicate holds, PIE stops after running, or timeout.
+func waitFor(ctx context.Context, c *spec.Call, pred *eval.Predicate, args map[string]any, timeout, interval time.Duration) (*spec.Result, error) {
 	start := time.Now()
 	deadline := start.Add(timeout)
 	polls := 0
@@ -309,7 +366,7 @@ func pieWait(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			"polls": polls, "final_state": last}, Summary: why}
 	}
 	for {
-		out, err := v2Op(ctx, c, "pie_observe", args)
+		out, err := observeState(ctx, c, pred, args)
 		polls++
 		running := err == nil
 		if err != nil {

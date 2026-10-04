@@ -1,5 +1,15 @@
 // Copyright unreal-mcp-server. MIT.
 #include "MCPControlSubsystem.h"
+#include "Blueprint/UserWidget.h"
+#include "Blueprint/SlateBlueprintLibrary.h"
+#include "Serialization/JsonWriter.h"
+#include "Serialization/JsonSerializer.h"
+#include "Dom/JsonObject.h"
+#include "Components/EditableTextBox.h"
+#include "Components/RichTextBlock.h"
+#include "Components/TextBlock.h"
+#include "Blueprint/WidgetTree.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 
 #include "Engine/Engine.h"        // GEngine, UEngine::GetWorldFromContextObject
 #include "Engine/GameInstance.h"  // UGameInstance::GetSubsystem<T>
@@ -149,4 +159,97 @@ void UMCPControlSubsystem::Deinitialize()
 {
 	ReleaseAll();
 	Super::Deinitialize();
+}
+
+UUserWidget* UMCPControlSubsystem::MountWidget(TSubclassOf<UUserWidget> WidgetClass, int32 ZOrder)
+{
+	APlayerController* PC = ResolvePC();
+	if (!PC || !WidgetClass)
+	{
+		return nullptr;
+	}
+	UUserWidget* W = CreateWidget<UUserWidget>(PC, WidgetClass);
+	if (!W)
+	{
+		return nullptr;
+	}
+	W->AddToViewport(ZOrder);
+	Mounted.Add(W);
+	return W;
+}
+
+int32 UMCPControlSubsystem::UnmountWidget(TSubclassOf<UUserWidget> WidgetClass)
+{
+	int32 N = 0;
+	for (int32 i = Mounted.Num() - 1; i >= 0; --i)
+	{
+		UUserWidget* W = Mounted[i];
+		if (!W || (WidgetClass && !W->IsA(WidgetClass)))
+		{
+			continue;
+		}
+		W->RemoveFromParent();
+		Mounted.RemoveAt(i);
+		++N;
+	}
+	return N;
+}
+
+FString UMCPControlSubsystem::DescribeLiveWidgets(TSubclassOf<UUserWidget> WidgetClass) const
+{
+	TArray<TSharedPtr<FJsonValue>> Out;
+	UWorld* World = GetWorld();
+	if (World)
+	{
+		TArray<UUserWidget*> Found;
+		UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, Found, WidgetClass ? WidgetClass.Get() : UUserWidget::StaticClass(), false);
+		for (UUserWidget* W : Found)
+		{
+			if (!W || !W->WidgetTree)
+			{
+				continue;
+			}
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetStringField(TEXT("widget"), W->GetName());
+			J->SetStringField(TEXT("class"), W->GetClass()->GetName());
+			J->SetBoolField(TEXT("in_viewport"), W->IsInViewport());
+			TArray<TSharedPtr<FJsonValue>> Nodes;
+			W->WidgetTree->ForEachWidget([&Nodes, W](UWidget* N)
+			{
+				if (!N)
+				{
+					return;
+				}
+				TSharedRef<FJsonObject> NJ = MakeShared<FJsonObject>();
+				NJ->SetStringField(TEXT("name"), N->GetName());
+				NJ->SetStringField(TEXT("class"), N->GetClass()->GetName());
+				NJ->SetBoolField(TEXT("visible"), N->IsVisible());
+				const FGeometry& G = N->GetCachedGeometry();
+				FVector2D Pixel, Viewport;
+				USlateBlueprintLibrary::LocalToViewport(W, G, FVector2D::ZeroVector, Pixel, Viewport);
+				const FVector2D Size = G.GetAbsoluteSize();
+				NJ->SetArrayField(TEXT("position"), {MakeShared<FJsonValueNumber>(Pixel.X), MakeShared<FJsonValueNumber>(Pixel.Y)});
+				NJ->SetArrayField(TEXT("size"), {MakeShared<FJsonValueNumber>(Size.X), MakeShared<FJsonValueNumber>(Size.Y)});
+				if (const UTextBlock* T = Cast<UTextBlock>(N))
+				{
+					NJ->SetStringField(TEXT("text"), T->GetText().ToString());
+				}
+				else if (const URichTextBlock* RT = Cast<URichTextBlock>(N))
+				{
+					NJ->SetStringField(TEXT("text"), RT->GetText().ToString());
+				}
+				else if (const UEditableTextBox* E = Cast<UEditableTextBox>(N))
+				{
+					NJ->SetStringField(TEXT("text"), E->GetText().ToString());
+				}
+				Nodes.Add(MakeShared<FJsonValueObject>(NJ));
+			});
+			J->SetArrayField(TEXT("nodes"), Nodes);
+			Out.Add(MakeShared<FJsonValueObject>(J));
+		}
+	}
+	FString S;
+	TSharedRef<TJsonWriter<>> Wr = TJsonWriterFactory<>::Create(&S);
+	FJsonSerializer::Serialize(Out, Wr);
+	return S;
 }

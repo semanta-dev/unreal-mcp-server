@@ -342,7 +342,7 @@ func assetImport(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 
 type reflectIn struct {
 	Op         string   `json:"op" jsonschema:"object | class | enum"`
-	Actor      string   `json:"actor,omitempty" jsonschema:"object: label, object path, or in PIE @gamestate, @pawn or @controller"`
+	Actor      string   `json:"actor,omitempty" jsonschema:"object: label, object path, (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:<Class> (editor subsystems too)"`
 	World      string   `json:"world,omitempty" jsonschema:"object: editor (default) | pie | auto"`
 	Class      string   `json:"class,omitempty" jsonschema:"class: /Script path, /Game Blueprint, Module.Class or short name"`
 	Enum       string   `json:"enum,omitempty" jsonschema:"enum: a UENUM(BlueprintType) name or UserDefinedEnum asset"`

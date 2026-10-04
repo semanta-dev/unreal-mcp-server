@@ -14,6 +14,9 @@ enum class EMCPBindSource : uint8
 	PlayerState,
 	WorldActor,
 	AbilitySystem,
+	// Appended (plugin API 4) — never reorder: values are serialized in widget CDOs.
+	GameState,  // the world's GameState
+	Subsystem,  // SourceLabel = a World/GameInstance/LocalPlayer subsystem class path
 };
 
 // How a read value is converted before it is applied to the target field.
@@ -38,7 +41,7 @@ struct FMCPFieldSourceBinding
 	UPROPERTY() FName TargetWidget;
 	UPROPERTY() FName TargetField;
 	UPROPERTY() EMCPBindSource Source = EMCPBindSource::OwningPawn;
-	UPROPERTY() FString SourceLabel;   // WorldActor only
+	UPROPERTY() FString SourceLabel;   // WorldActor: actor label; Subsystem: subsystem class path
 	UPROPERTY() FString Path;          // numerator/value path OR a zero-arg getter
 	UPROPERTY() FString MaxPath;       // optional denominator
 	UPROPERTY() FName Attribute;       // AbilitySystem numeric attribute

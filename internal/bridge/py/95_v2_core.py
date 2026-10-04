@@ -117,6 +117,138 @@ def _resolve_actor(world, name, ref):
     return hits[0]
 
 
+def _is_object_ref(ref):
+    return isinstance(ref, str) and (ref in ("@gameinstance", "@hud") or ref.startswith("@playerstate")
+                                     or ref.startswith("@subsystem:"))
+
+
+def _resolve_object(world, name, ref, editor_subsystems=False):
+    """Resolve an object reference — @gameinstance, @playerstate[:n], @hud (PIE) or
+    @subsystem:<Class> — or, for anything else, an actor reference (_resolve_actor).
+    World / GameInstance / LocalPlayer subsystems are found through the plugin (UE 5.7's
+    Python has no accessor for them). Editor and engine subsystems are reachable only
+    when editor_subsystems is set — the read-only reflect op; never from a call."""
+    if not _is_object_ref(ref):
+        return _resolve_actor(world, name, ref)
+    if ref.startswith("@subsystem:"):
+        return _resolve_subsystem(world, name, ref[len("@subsystem:"):], editor_subsystems)
+    if name != "pie":
+        raise _V2Error("NOT_FOUND", "%s exists only in PIE" % ref)
+    if ref == "@gameinstance":
+        obj = unreal.GameplayStatics.get_game_instance(world)
+    elif ref == "@hud":
+        pc = unreal.GameplayStatics.get_player_controller(world, 0)
+        obj = pc.get_hud() if pc else None
+    else:
+        _, _, idx = ref.partition(":")
+        try:
+            i = int(idx or 0)
+        except ValueError:
+            raise _V2Error("BAD_VALUE", "@playerstate takes an index: @playerstate or @playerstate:<n> (got %r)" % ref) from None
+        obj = unreal.GameplayStatics.get_player_state(world, i)
+    if not obj:
+        raise _V2Error("NOT_FOUND", "%s: none in the running game" % ref)
+    return obj
+
+
+def _resolve_subsystem(world, name, cls_ref, editor_subsystems):
+    if not cls_ref:
+        raise _V2Error("BAD_VALUE", "@subsystem:<Class> needs a class")
+    cls = _resolve_class_v2(cls_ref)
+    is_child = unreal.MathLibrary.class_is_child_of
+    for base in ("EditorSubsystem", "EngineSubsystem"):
+        bcls = getattr(unreal, base, None)
+        if bcls is not None and is_child(cls, bcls.static_class()):
+            if not editor_subsystems:
+                raise _V2Error("BAD_VALUE", "%s is an %s: reachable only from reflect (read-only), not from calls"
+                               % (cls.get_name(), base))
+            pytype = getattr(unreal, cls.get_name(), None)
+            getter = unreal.get_editor_subsystem if base == "EditorSubsystem" else unreal.get_engine_subsystem
+            obj = getter(pytype) if pytype is not None else None
+            if not obj:
+                raise _V2Error("NOT_FOUND", "no %s instance" % cls.get_name())
+            return obj
+    lib = _need_plugin(3, "@subsystem")
+    obj = lib.find_game_subsystem(world, cls)
+    if not obj:
+        raise _V2Error("NOT_FOUND", "no %s in the %s world (World, GameInstance and LocalPlayer subsystems are "
+                       "supported; GameInstance/LocalPlayer ones exist only in PIE)" % (cls.get_name(), name))
+    return obj
+
+
+_OBJ_SEG = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(\(\))?$|^([0-9]+)$")
+
+
+def _observe_path(world, name, path, lib):
+    """Read one object path: "@ref.prop.Getter().field". Properties are read by
+    reflection; a getter is called only if it is BlueprintPure or const (checked by the
+    plugin — Python cannot read function flags); a string a getter returns is decoded as
+    JSON when the path continues into it."""
+    head, _, rest = path.partition(".")
+    if not rest:
+        raise _V2Error("BAD_VALUE", "%s: an object path needs a property after the object" % path)
+    cur = _resolve_object(world, name, head)
+    segs = rest.split(".")
+    for k, seg in enumerate(segs):
+        m = _OBJ_SEG.match(seg)
+        if not m:
+            raise _V2Error("BAD_VALUE", "%s: bad path segment %r" % (path, seg))
+        if m.group(3) is not None:  # an index into a list
+            if not isinstance(cur, (list, tuple)):
+                raise _V2Error("BAD_VALUE", "%s: %s indexes a non-list" % (path, seg))
+            i = int(m.group(3))
+            cur = cur[i] if i < len(cur) else None
+        elif isinstance(cur, dict):
+            if m.group(2):
+                raise _V2Error("BAD_VALUE", "%s: %s() on a JSON value" % (path, m.group(1)))
+            cur = cur.get(m.group(1))
+        elif m.group(2):  # a getter
+            fn = m.group(1)
+            if not lib.is_pure_or_const(cur.get_class(), fn):
+                raise _V2Error("BAD_VALUE", "%s: %s.%s is not BlueprintPure or const — a wait may only call "
+                               "read-only getters (use actor_call for anything else)" % (path, cur.get_class().get_name(), fn))
+            cur = cur.call_method(fn)
+            if isinstance(cur, str) and k < len(segs) - 1:
+                try:
+                    cur = json.loads(cur)
+                except ValueError:
+                    raise _V2Error("BAD_VALUE", "%s: %s() returned a string that is not JSON, and the path continues "
+                                   "into it" % (path, fn)) from None
+        else:
+            try:
+                cur = cur.get_editor_property(m.group(1))
+            except Exception as e:
+                raise _V2Error("NOT_FOUND", "%s: no property %s on %s (%s)" % (path, m.group(1), cur.get_name(), e)) from None
+        if cur is None:
+            return None
+    return cur if isinstance(cur, (dict, list, str, int, float, bool)) else _coerce_prop(cur, 512)
+
+
+def _op_observe_paths(args):
+    """Read object paths for a predicate (pie_wait, actor_call until, wait_until beats):
+    {values: {path: value}, errors: {path: message}}. Read-only: getters must be pure."""
+    paths = args.get("paths") or []
+    world, name = _v2_world(args, "auto")
+    lib = _need_plugin(3, "object paths in predicates")
+    values, errors = {}, {}
+    for p in paths:
+        try:
+            values[p] = _observe_path(world, name, p, lib)
+        except _V2Error as e:
+            if e.code == "BAD_VALUE":
+                raise  # a malformed or non-pure path is the caller's error, not "not yet"
+            errors[p] = str(e)
+    return {"world": name, "values": values, "errors": errors}
+
+
+def _object_view(obj, world_name):
+    """An actor's view, or — for a non-actor object — its identity (no transform)."""
+    if hasattr(obj, "get_actor_label"):
+        return _actor_view(obj, world_name, True)
+    return {"name": obj.get_name(), "path": obj.get_path_name(), "class": obj.get_class().get_name(),
+            "kind": "object", "world": world_name}
+
+
 _CLASS_MODULES = ("Engine", "CoreUObject", "UMG", "AIModule", "NavigationSystem", "GameplayTags",
                   "EnhancedInput", "Niagara")
 
@@ -212,7 +344,7 @@ def _op_actor_query(args):
     world, name = _v2_world(args, "editor")
     op = args.get("op")
     if op == "get":
-        return {"world": name, "actor": _actor_view(_resolve_actor(world, name, args.get("actor")), name, True)}
+        return {"world": name, "actor": _object_view(_resolve_object(world, name, args.get("actor")), name)}
     if op not in ("list", "find"):
         raise _V2Error("BAD_VALUE", "actor_query op must be list, get or find")
     flt = (args.get("filter") or "").lower()
@@ -458,18 +590,31 @@ def _op_actor_call(args):
     world, name = _v2_world(args, "pie")
     if name != "pie":
         raise _V2Error("UNSUPPORTED", "actor_call runs in PIE only in v2.0 (CallInEditor functions are not supported)")
-    target = _resolve_actor(world, name, args.get("actor"))
+    target = _resolve_object(world, name, args.get("actor"))
     fn = args.get("function")
     if not fn:
         raise _V2Error("BAD_VALUE", "function is required")
     fargs = args.get("args") or {}
     if not isinstance(fargs, dict):
         raise _V2Error("BAD_VALUE", "args must be an object of parameter name -> value")
+    parse = args.get("parse") or ""
+    if parse not in ("", "json"):
+        raise _V2Error("BAD_VALUE", "parse must be json (got %r)" % (parse,))
     try:
         result = target.call_method(fn, kwargs=fargs)
     except Exception as e:
         if "find function" in str(e).lower() or "no function" in str(e).lower():
             raise _V2Error("NOT_FOUND", "%s has no callable function %r" % (target.get_name(), fn)) from e
         raise
-    return {"world": name, "actor": target.get_actor_label() if hasattr(target, "get_actor_label") else str(target),
-            "function": fn, "result": _coerce_prop(result, 2048) if result is not None else None}
+    label = target.get_actor_label() if hasattr(target, "get_actor_label") else target.get_name()
+    if parse == "json":
+        # Explicit, never guessed: a game API returning a JSON string asks for it.
+        if not isinstance(result, str):
+            raise _V2Error("BAD_VALUE", "parse=json: %s returned %s, not a string" % (fn, type(result).__name__))
+        try:
+            decoded = json.loads(result)
+        except ValueError as e:
+            raise _V2Error("BAD_VALUE", "parse=json: %s did not return JSON (%s)" % (fn, e), head=result[:200]) from None
+        return {"world": name, "actor": label, "function": fn, "result": decoded}
+    return {"world": name, "actor": label, "function": fn,
+            "result": _coerce_prop(result, 2048) if result is not None else None}

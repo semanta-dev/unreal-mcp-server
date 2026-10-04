@@ -10,6 +10,12 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
+#include "GameFramework/GameStateBase.h"
+#include "Engine/GameInstance.h"
+#include "Engine/LocalPlayer.h"
+#include "Subsystems/GameInstanceSubsystem.h"
+#include "Subsystems/LocalPlayerSubsystem.h"
+#include "Subsystems/WorldSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "EngineUtils.h" // TActorIterator
 #include "UObject/UnrealType.h"
@@ -117,6 +123,36 @@ UObject* UMCPHUDWidget::ResolveSource(const FMCPFieldSourceBinding& B) const
 					return *It;
 				}
 			}
+		}
+		return nullptr;
+	}
+	case EMCPBindSource::GameState:
+		return GetWorld() ? GetWorld()->GetGameState() : nullptr;
+	case EMCPBindSource::Subsystem:
+	{
+		UClass* Cls = FindObject<UClass>(nullptr, *B.SourceLabel);
+		if (!Cls)
+		{
+			Cls = LoadObject<UClass>(nullptr, *B.SourceLabel);
+		}
+		UWorld* World = GetWorld();
+		if (!Cls || !World)
+		{
+			return nullptr;
+		}
+		if (Cls->IsChildOf(UWorldSubsystem::StaticClass()))
+		{
+			return World->GetSubsystemBase(TSubclassOf<UWorldSubsystem>(Cls));
+		}
+		UGameInstance* GI = World->GetGameInstance();
+		if (GI && Cls->IsChildOf(UGameInstanceSubsystem::StaticClass()))
+		{
+			return GI->GetSubsystemBase(TSubclassOf<UGameInstanceSubsystem>(Cls));
+		}
+		ULocalPlayer* LP = GetOwningLocalPlayer();
+		if (LP && Cls->IsChildOf(ULocalPlayerSubsystem::StaticClass()))
+		{
+			return LP->GetSubsystemBase(TSubclassOf<ULocalPlayerSubsystem>(Cls));
 		}
 		return nullptr;
 	}

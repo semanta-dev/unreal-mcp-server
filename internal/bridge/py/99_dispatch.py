@@ -6,6 +6,7 @@ _OPS = {
     "actor_delete": _op_actor_delete,
     "editor_undo": _op_editor_undo,
     "note_edit": _op_note_edit,
+    "observe_paths": _op_observe_paths,
     "actor_transform": _op_actor_transform,
     "actor_set_properties": _op_actor_set_properties,
     "actor_call": _op_actor_call,

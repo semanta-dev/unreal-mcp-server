@@ -490,7 +490,7 @@
       "checks": [
         {
           "name": "mapped",
-          "probe": "imc = unreal.load_asset('/Game/Input/IMC_Aesir')\nkeys = [str(m.get_editor_property('key').get_editor_property('key_name')) for m in imc.get_editor_property('mappings') if m.get_editor_property('action') and m.get_editor_property('action').get_name() == 'IA_Dash'] if imc else []\nRESULT({'keys': keys})",
+          "probe": "imc = unreal.load_asset('/Game/Input/IMC_Aesir')\nkeys = [str(m.get_editor_property('key').get_editor_property('key_name')) for m in imc.get_editor_property('default_key_mappings').get_editor_property('mappings') if m.get_editor_property('action') and m.get_editor_property('action').get_name() == 'IA_Dash'] if imc else []\nRESULT({'keys': keys})",
           "expect": [
             {
               "path": "keys",

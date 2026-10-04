@@ -34,6 +34,7 @@ var PyOps = map[string]PyOp{
 	"actor_delete":         {Tier: Destructive},
 	"editor_undo":          {Tier: Destructive, Plugin: 3, Note: "undo/redo the next editor transaction, only if the server made it"},
 	"note_edit":            {Tier: Ephemeral, Note: "records an untracked server edit in the companion's undo journal"},
+	"observe_paths":        {Tier: ReadOnly, Note: "reads object paths; calls only BlueprintPure/const getters (plugin API 3, checked when called: object paths are optional in a predicate)"},
 	"actor_query":          {Tier: ReadOnly},
 	"actor_set_properties": {Tier: Mutating},
 	"actor_spawn":          {Tier: Mutating},

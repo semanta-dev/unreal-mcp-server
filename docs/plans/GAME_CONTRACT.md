@@ -1,6 +1,8 @@
 # G interface contract (REMEDIATION_PLAN.md G.6)
 
-Status: **draft** — frozen at G.7 (then only additive changes; the held-out tasks may rely on everything below).
+Status: **implemented and live-verified on the scratch copies (G.1–G.5)**; frozen at G.7 (then only additive
+changes; the held-out tasks may rely on everything below). Patches for the real repositories:
+[`game-patches/`](game-patches/) (`aesir-G.patch` + `aesir-G-assets.py`, `polyworld-G.patch`).
 
 The game-side surface the server and the game-making eval rely on. Both games expose it through one subsystem
 declared in the project's `.umcp.json` `game_api` (R1.4). Every function is a `UFUNCTION`; read-only ones are
@@ -24,7 +26,9 @@ declared in the project's `.umcp.json` `game_api` (R1.4). Every function is a `U
 - **Commands**: the request is `{"command": name, "request_id": "...", "world_epoch": "...", ...args}`.
   `request_id` is required. Repeats of a `request_id` within the same world are deduplicated: the recorded response
   is returned, nothing runs again, and at least 256 ids are remembered. A request whose `world_epoch` is not the
-  current one returns `accepted: false, error_code: "dedup_expired"` and **does not run**.
+  current one returns `accepted: false, error_code: "dedup_expired"` and **does not run**. The server's
+  `game_command` always sends the epoch; Aesir also refuses a request without one, while poly-world accepts one
+  without an epoch (its gRPC clients predate it) and dedups it within the current world only.
 - An event is `{seq, t (world seconds), kind, actor?, target?, by_player, data?}`; a `hit` carries `data.visual_t`
   (when its visual feedback was drawn), which the playtest timeline lifts to `visual_t`.
 

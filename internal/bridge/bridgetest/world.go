@@ -30,6 +30,32 @@ type World struct {
 	PluginAPI int
 	undo      []txn // the editor's transaction buffer (spawn/delete record theirs)
 	redo      []txn
+	objects   map[string]*Actor // PIE object refs (@gameinstance, @subsystem:<Class>, …) -> fake object
+}
+
+// SetObject registers a PIE object reference (e.g. "@subsystem:AesirAgentSubsystem")
+// whose "functions" are props (name -> return value), like an actor's.
+func (w *World) SetObject(ref string, props map[string]any) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.objects == nil {
+		w.objects = map[string]*Actor{}
+	}
+	w.objects[ref] = &Actor{Label: strings.TrimPrefix(ref, "@"), Class: ref, Path: "/Engine/Transient." + ref, Properties: props}
+}
+
+// resolveRef resolves an object reference (PIE only), else an actor reference.
+func (w *World) resolveRef(actors map[string]*Actor, name, ref string) (*Actor, *OpError) {
+	if o, ok := w.objects[ref]; ok {
+		if name != "pie" || w.pie == nil {
+			return nil, &OpError{Code: "NOT_FOUND", Message: ref + " exists only in PIE"}
+		}
+		return o, nil
+	}
+	if strings.HasPrefix(ref, "@subsystem:") || ref == "@gameinstance" || ref == "@hud" || strings.HasPrefix(ref, "@playerstate") {
+		return nil, &OpError{Code: "NOT_FOUND", Message: ref + ": none in the running game"}
+	}
+	return resolve(actors, ref)
 }
 
 // txn is one undoable editor transaction.
@@ -239,7 +265,7 @@ func (w *World) actorQuery(args map[string]any) (any, *OpError) {
 	}
 	if args["op"] == "get" {
 		ref, _ := args["actor"].(string)
-		a, err := resolve(actors, ref)
+		a, err := w.resolveRef(actors, name, ref)
 		if err != nil {
 			return nil, err
 		}

@@ -13,6 +13,7 @@
 #include "Kismet2/CompilerResultsLog.h"
 #include "UObject/UnrealType.h"
 #include "Serialization/JsonSerializer.h"
+#include "JsonObjectConverter.h"
 #include "Dom/JsonObject.h"
 // CaptureWidget — offscreen widget render (FWidgetRenderer)
 #include "Slate/WidgetRenderer.h"
@@ -65,6 +66,7 @@ bool UMCPAuthoringSubsystem::AddChildWidget(UWidgetBlueprint* WidgetBP, FName Pa
 		return false;
 	}
 	Child->bIsVariable = bIsVariable;
+	RegisterWidget(WidgetBP, Child);
 	return true;
 }
 
@@ -242,4 +244,122 @@ TArray<FString> UMCPAuthoringSubsystem::PrepareBlueprintsForPIE(bool bAcknowledg
 		}
 	}
 	return Errored;
+}
+
+static FString MCPJsonResult(bool bOk, const FString& Error, TSharedPtr<FJsonValue> Value = nullptr)
+{
+	TSharedRef<FJsonObject> Obj = MakeShared<FJsonObject>();
+	Obj->SetBoolField(TEXT("ok"), bOk);
+	if (!Error.IsEmpty())
+	{
+		Obj->SetStringField(TEXT("error"), Error);
+	}
+	if (Value.IsValid())
+	{
+		Obj->SetField(TEXT("value"), Value);
+	}
+	FString Out;
+	TSharedRef<TJsonWriter<>> W = TJsonWriterFactory<>::Create(&Out);
+	FJsonSerializer::Serialize(Obj, W);
+	return Out;
+}
+
+static FProperty* MCPDefaultProperty(UBlueprint* Blueprint, const FString& PropertyName, UObject*& OutCDO, FString& OutError)
+{
+	if (!Blueprint || !Blueprint->GeneratedClass)
+	{
+		OutError = TEXT("not a compiled Blueprint");
+		return nullptr;
+	}
+	OutCDO = Blueprint->GeneratedClass->GetDefaultObject();
+	FProperty* Prop = FindFProperty<FProperty>(Blueprint->GeneratedClass, FName(*PropertyName));
+	if (!Prop)
+	{
+		OutError = FString::Printf(TEXT("%s has no property %s"), *Blueprint->GeneratedClass->GetName(), *PropertyName);
+	}
+	return Prop;
+}
+
+FString UMCPAuthoringSubsystem::GetClassDefaultJson(UBlueprint* Blueprint, const FString& PropertyName)
+{
+	UObject* CDO = nullptr;
+	FString Error;
+	FProperty* Prop = MCPDefaultProperty(Blueprint, PropertyName, CDO, Error);
+	if (!Prop)
+	{
+		return MCPJsonResult(false, Error);
+	}
+	TSharedPtr<FJsonValue> Value = FJsonObjectConverter::UPropertyToJsonValue(Prop, Prop->ContainerPtrToValuePtr<void>(CDO));
+	return Value.IsValid() ? MCPJsonResult(true, FString(), Value) : MCPJsonResult(false, TEXT("could not convert the property to JSON"));
+}
+
+FString UMCPAuthoringSubsystem::SetClassDefaultJson(UBlueprint* Blueprint, const FString& PropertyName, const FString& JsonValue)
+{
+	UObject* CDO = nullptr;
+	FString Error;
+	FProperty* Prop = MCPDefaultProperty(Blueprint, PropertyName, CDO, Error);
+	if (!Prop)
+	{
+		return MCPJsonResult(false, Error);
+	}
+	// Parse the value by wrapping it: {"v": <JsonValue>}.
+	TSharedPtr<FJsonObject> Wrapper;
+	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(FString(TEXT("{\"v\":")) + JsonValue + TEXT("}")), Wrapper) || !Wrapper.IsValid())
+	{
+		return MCPJsonResult(false, TEXT("the value is not valid JSON"));
+	}
+	CDO->Modify();
+	if (!FJsonObjectConverter::JsonValueToUProperty(Wrapper->TryGetField(TEXT("v")), Prop, Prop->ContainerPtrToValuePtr<void>(CDO), 0, 0))
+	{
+		return MCPJsonResult(false, FString::Printf(TEXT("the JSON does not fit %s (%s)"), *PropertyName, *Prop->GetCPPType()));
+	}
+	FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+	return MCPJsonResult(true, FString());
+}
+
+UWidgetTree* UMCPAuthoringSubsystem::GetWidgetTree(UWidgetBlueprint* WidgetBP)
+{
+	return WidgetBP ? WidgetBP->WidgetTree.Get() : nullptr;
+}
+
+UWidget* UMCPAuthoringSubsystem::GetRootWidget(UWidgetBlueprint* WidgetBP)
+{
+	return WidgetBP && WidgetBP->WidgetTree ? WidgetBP->WidgetTree->RootWidget.Get() : nullptr;
+}
+
+bool UMCPAuthoringSubsystem::SetRootWidget(UWidgetBlueprint* WidgetBP, UWidget* Widget)
+{
+	if (!WidgetBP || !WidgetBP->WidgetTree || !Widget || Widget->GetOuter() != WidgetBP->WidgetTree)
+	{
+		return false; // the root must be a widget of this tree
+	}
+	WidgetBP->WidgetTree->Modify();
+	WidgetBP->WidgetTree->RootWidget = Widget;
+	RegisterWidget(WidgetBP, Widget);
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WidgetBP);
+	return true;
+}
+
+bool UMCPAuthoringSubsystem::RegisterWidget(UWidgetBlueprint* WidgetBP, UWidget* Widget)
+{
+	if (!WidgetBP || !Widget)
+	{
+		return false;
+	}
+	if (!WidgetBP->WidgetVariableNameToGuidMap.Contains(Widget->GetFName()))
+	{
+		WidgetBP->OnVariableAdded(Widget->GetFName());
+	}
+	return true;
+}
+
+bool UMCPAuthoringSubsystem::SetWidgetIsVariable(UWidget* Widget, bool bIsVariable)
+{
+	if (!Widget)
+	{
+		return false;
+	}
+	Widget->Modify();
+	Widget->bIsVariable = bIsVariable;
+	return true;
 }

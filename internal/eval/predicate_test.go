@@ -122,3 +122,65 @@ func TestParsePredicateIsStrict(t *testing.T) {
 		}
 	}
 }
+
+// TestCompoundPredicates (R1.3): and / or / not / parentheses, with "and" binding
+// tighter than "or"; an absent path is unmet, so "not" of it holds.
+func TestCompoundPredicates(t *testing.T) {
+	for _, c := range []struct {
+		expr string
+		want bool
+	}{
+		{"gamestate.WaveNumber >= 2 and counts.EnemyCharacter > 4", true},
+		{"gamestate.WaveNumber >= 4 and counts.EnemyCharacter > 4", false},
+		{"gamestate.WaveNumber >= 4 or counts.Serath == 1", true},
+		{"not gamestate.WaveNumber >= 4", true},
+		{"not counts.Missing >= 1", true},
+		{"gamestate.WaveNumber == 9 or gamestate.WaveNumber == 3 and counts.Serath >= 1", true},
+		{"(gamestate.WaveNumber == 9 or gamestate.WaveNumber == 3) and counts.Serath >= 5", false},
+		{"gamestate.WaveState == 'InProgress' AND NOT counts.Serath >= 2", true},
+		{"gamestate.WaveNumber>=3", true},
+	} {
+		p, err := ParsePredicate(c.expr)
+		if err != nil {
+			t.Fatalf("parse %q: %v", c.expr, err)
+		}
+		if got, _ := p.Eval(obs()); got != c.want {
+			t.Errorf("%q = %v, want %v", c.expr, got, c.want)
+		}
+	}
+	for _, bad := range []string{"", "a >= 1 and", "(a >= 1", "a >= 1)", "a >= 1 b >= 2", "and a >= 1", "a >= and", "a >>> 1"} {
+		if _, err := ParsePredicate(bad); err == nil {
+			t.Errorf("%q should not parse", bad)
+		}
+	}
+}
+
+// TestObjectPathPredicates: an object path is a flat key the caller fills; ObjectPaths
+// lists them and HasStatePaths says whether pie_observe is needed at all.
+func TestObjectPathPredicates(t *testing.T) {
+	p, err := ParsePredicate("@subsystem:AesirAgentSubsystem.PeekSnapshotJson().wave_number >= 2 and not @gamestate.enemies_remaining > 0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"@subsystem:AesirAgentSubsystem.PeekSnapshotJson().wave_number", "@gamestate.enemies_remaining"}
+	if got := p.ObjectPaths(); len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("ObjectPaths = %v", got)
+	}
+	if p.HasStatePaths() {
+		t.Fatal("no state paths in this predicate")
+	}
+	st := map[string]any{want[0]: 3.0, want[1]: 0.0}
+	if ok, _ := p.Eval(st); !ok {
+		t.Fatal("object path predicate should hold")
+	}
+	st[want[1]] = nil // unreadable yet: the comparison is unmet, so "not" holds
+	if ok, _ := p.Eval(st); !ok {
+		t.Fatal("not of an absent object path holds")
+	}
+	if q, _ := ParsePredicate("counts.Enemy >= 1 or @gamestate.wave >= 1"); !q.HasStatePaths() {
+		t.Fatal("HasStatePaths")
+	}
+	if _, err := ParsePredicate("@bad ref.x >= 1"); err == nil {
+		t.Fatal("a malformed object path must not parse")
+	}
+}

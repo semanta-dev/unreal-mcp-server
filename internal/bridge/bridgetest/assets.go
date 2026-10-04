@@ -1,6 +1,7 @@
 package bridgetest
 
 import (
+	"encoding/json"
 	"regexp"
 	"sort"
 	"strings"
@@ -138,7 +139,7 @@ func (w *World) actorCall(args map[string]any) (any, *OpError) {
 		return nil, &OpError{Code: "UNSUPPORTED", Message: "actor_call runs in PIE only in v2.0"}
 	}
 	ref, _ := args["actor"].(string)
-	a, err := resolve(actors, ref)
+	a, err := w.resolveRef(actors, name, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -146,6 +147,14 @@ func (w *World) actorCall(args map[string]any) (any, *OpError) {
 	v, ok := a.Properties[fn] // a "function" is modelled as a property holding its return value
 	if !ok {
 		return nil, &OpError{Code: "NOT_FOUND", Message: a.Label + " has no callable function " + fn}
+	}
+	if args["parse"] == "json" {
+		s, isStr := v.(string)
+		var decoded any
+		if !isStr || json.Unmarshal([]byte(s), &decoded) != nil {
+			return nil, &OpError{Code: "BAD_VALUE", Message: "parse=json: " + fn + " did not return JSON"}
+		}
+		v = decoded
 	}
 	return map[string]any{"world": name, "actor": a.Label, "function": fn, "result": v}, nil
 }

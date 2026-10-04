@@ -120,7 +120,7 @@ Read actors in the editor level (world=editor, default), the running game (pie) 
 
 | param | type | description |
 |---|---|---|
-| `actor` | string | get: a label, an object path, @gamestate or @pawn |
+| `actor` | string | get: a label, an object path, or (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud; @subsystem:<Class> |
 | `class` | string | list/find: only this class and its subclasses |
 | `filter` | string | list/find: case-insensitive substring of label or class |
 | `limit` | integer | max actors returned (default 200; count is always the full total) |
@@ -169,10 +169,11 @@ Call a UFUNCTION on an actor in the running game (PIE) and return its result. Wi
 
 | param | type | description |
 |---|---|---|
-| `actor` | string | a label, an object path, @gamestate or @pawn |
+| `actor` | string | a label, an object path, @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:<Class> (a game subsystem) |
 | `args` | object | parameter name -> value |
 | `function` | string | the UFUNCTION name to call |
 | `interval_s` | number | until: seconds between polls (default 0.25) |
+| `parse` | string | json: the function returns a JSON string; decode it (an error if it is not JSON) — one of: json |
 | `timeout_s` | number | until: give up after this many seconds (default 20, max 27) |
 | `until` | string | poll until this predicate over {result} holds, e.g. 'result >= 3'; the function RE-RUNS each poll |
 | `world` | string | pie (default). editor is UNSUPPORTED in v2.0 — one of: pie, editor |
@@ -346,7 +347,7 @@ Discover what an object exposes, without knowing the game.
 
 | param | type | description |
 |---|---|---|
-| `actor` | string | object: label, object path, or in PIE @gamestate, @pawn or @controller |
+| `actor` | string | object: label, object path, (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:<Class> (editor subsystems too) |
 | `class` | string | class: /Script path, /Game Blueprint, Module.Class or short name |
 | `enum` | string | enum: a UENUM(BlueprintType) name or UserDefinedEnum asset |
 | `exclude` | string[] | object/class: glob patterns to exclude |
@@ -477,7 +478,7 @@ Read the running game (PIE): gamestate properties (discovered by reflection), a 
 
 _tier readonly_
 
-Poll pie_observe until `predicate` holds → {met, pie_running, elapsed_s, polls, final_state}. met=false on timeout is a normal answer, not an error. Waits through PIE starting up; returns at once if PIE stops. Read-only: to poll a UFUNCTION's result use actor_call with until.
+Poll the running game until `predicate` holds → {met, pie_running, elapsed_s, polls, final_state}. met=false on timeout is a normal answer, not an error. Waits through PIE starting up; returns at once if PIE stops. timeout_s > 25 runs as a job (wait_s, then job). Object paths need the plugin. Read-only: to poll a function with side effects use actor_call with until.
 
 | tier | required | needs |
 |---|---|---|
@@ -487,9 +488,10 @@ Poll pie_observe until `predicate` holds → {met, pie_running, elapsed_s, polls
 |---|---|---|
 | `interval_s` | number | seconds between observations (default 0.25) |
 | `pawn` | boolean | observe the pawn too (needed for pawn.* predicates) |
-| `predicate` | string | one comparison over pie_observe output, e.g. 'gamestate.wave >= 2', 'counts.Enemy >= 1', 'pawn.speed > 100' |
+| `predicate` | string | conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave >= 2 and counts.Enemy >= 1'; or an object path: '@subsystem:<Class>.Getter().field >= 3' (BlueprintPure/const getters only) |
 | `properties` | string[] | pin exact gamestate property names so the predicate can use them verbatim |
-| `timeout_s` | number | give up after this many seconds (default 20, max 28) |
+| `timeout_s` | number | give up after this many seconds (default 20; up to 600 — beyond 25 the wait continues as a job) |
+| `wait_s` | number | a job wait (timeout_s > 25): return after this many seconds (max 25), then follow it with job |
 
 ### `snapshot` — Level snapshots
 

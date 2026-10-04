@@ -134,7 +134,7 @@ def _widget_apply_props(widget, props):
     for k, v in (props or {}).items():
         try:
             if k == "Text" and isinstance(v, str):
-                widget.set_editor_property("text", unreal.Text.from_string(v))
+                widget.set_editor_property("text", unreal.Text(v))  # 5.7 has no Text.from_string
             elif k == "Visibility" and isinstance(v, str):
                 widget.set_editor_property("visibility", getattr(unreal.SlateVisibility, v.upper(), unreal.SlateVisibility.VISIBLE))
             else:
@@ -154,6 +154,50 @@ def _snake(name):
     return "".join(out)
 
 
+# --- widget tree access -----------------------------------------------------------
+# UE 5.7 hides UWidgetBlueprint.WidgetTree and UWidgetTree.RootWidget from Python
+# (get_editor_property raises "Failed to find property"): the plugin (API 4) hands the
+# tree and its root over. Earlier engines expose them directly; both are tried, and a
+# 5.7 editor without the plugin fails with PLUGIN_MISSING rather than half-building.
+
+def _wtree(wbp):
+    try:
+        return wbp.get_editor_property("widget_tree")
+    except Exception:
+        pass
+    auth = _mcp_authoring()
+    if auth is None or not hasattr(auth, "get_widget_tree"):
+        raise _V2Error("PLUGIN_MISSING", "authoring a WidgetBlueprint in UE 5.7 needs the UnrealMCP plugin API 4 (the "
+                       "widget tree is hidden from Python) — copy plugin/UnrealMCP into <project>/Plugins and rebuild "
+                       "(build strategy=ubt)", needed=4, have=_plugin_api())
+    return auth.get_widget_tree(wbp)
+
+
+def _wroot(wt):
+    try:
+        return wt.get_editor_property("root_widget")
+    except Exception:
+        return _mcp_authoring().get_root_widget(wt.get_outer())
+
+
+def _wregister(wt, widget):
+    """Give a Python-created widget its variable GUID (5.7's compiler ensures without
+    one); older engines without the plugin call need nothing."""
+    auth = _mcp_authoring()
+    if auth is not None and hasattr(auth, "register_widget"):
+        auth.register_widget(wt.get_outer(), widget)
+
+
+def _wset_root(wt, widget):
+    try:
+        wt.set_editor_property("root_widget", widget)
+        return
+    except Exception:
+        pass
+    if not _mcp_authoring().set_root_widget(wt.get_outer(), widget):
+        raise _V2Error("EDITOR_ERROR", "could not make %s the root widget" % widget.get_name())
+
+
 def _op_widget_create(args):
     """Create a WidgetBlueprint shell with a chosen parent class + root panel."""
     pkg_path, name = args["dest"].rsplit("/", 1)
@@ -169,12 +213,13 @@ def _op_widget_create(args):
     if not wbp:
         return {"error": "widget create failed", "code": "SPAWN_FAILED"}
     root_panel = args.get("root_panel") or "CanvasPanel"
-    wt = wbp.get_editor_property("widget_tree")
+    wt = _wtree(wbp)
     root_cls, _ = _widget_prim_class(root_panel)
     root_name = "RootPanel"
-    if root_cls is not None and wt.get_editor_property("root_widget") is None:
+    if root_cls is not None and _wroot(wt) is None:
         root = unreal.new_object(root_cls, outer=wt, name=root_name)
-        wt.set_editor_property("root_widget", root)
+        _wregister(wt, root)
+        _wset_root(wt, root)
     unreal.BlueprintEditorLibrary.compile_blueprint(wbp)
     unreal.EditorAssetLibrary.save_asset(args["dest"])
     return {"created": args["dest"], "root": root_name, "parent_class": parent_path,
@@ -189,7 +234,7 @@ def _op_widget_compose(args):
     wbp = unreal.load_asset(bp_path)
     if not isinstance(wbp, unreal.WidgetBlueprint):
         return {"error": "not a WidgetBlueprint: " + str(bp_path), "code": "ASSET_NOT_FOUND"}
-    wt = wbp.get_editor_property("widget_tree")
+    wt = _wtree(wbp)
     spec = args.get("tree") or {}
     issues = []
     restore_token = None
@@ -200,7 +245,7 @@ def _op_widget_compose(args):
     # Index existing nodes by name (UWidgetTree.find_widget is NOT reflected in 5.7,
     # so walk root_widget explicitly). This drives adopt/patch + idempotence.
     index = {}
-    cur_root = wt.get_editor_property("root_widget")
+    cur_root = _wroot(wt)
     if cur_root is not None:
         _widget_index(cur_root, index)
 
@@ -209,8 +254,8 @@ def _op_widget_compose(args):
     root = _widget_reconcile_node(wt, None, spec, index, built, issues)
     # Repoint the root whenever the reconciled spec root differs from the current one
     # (widget_create leaves a RootPanel; a spec with its own root must be adopted).
-    if root is not None and wt.get_editor_property("root_widget") != root:
-        wt.set_editor_property("root_widget", root)
+    if root is not None and _wroot(wt) != root:
+        _wset_root(wt, root)
 
     # PASS 2 — apply slot + props to every node (after all adds mint their slots).
     _widget_apply_all(spec, built, issues)
@@ -296,16 +341,19 @@ def _widget_reconcile_node(wt, parent, node, index, built, issues):
         return widget  # composite subtree is opaque; not expanded
     else:
         widget = unreal.new_object(cls, outer=wt, name=unreal.Name(name))
+        _wregister(wt, widget)
     # Repoint the root the moment the top-level node exists — BEFORE recursing — so a
     # composite child (C++ AddChildWidget resolves its parent via root-anchored
     # FindWidget) can reach a parent that lives in the new subtree.
-    if parent is None and wt.get_editor_property("root_widget") != widget:
-        wt.set_editor_property("root_widget", widget)
+    if parent is None and _wroot(wt) != widget:
+        _wset_root(wt, widget)
     if node.get("is_variable"):
         try:
             widget.set_editor_property("is_variable", True)
         except Exception as e:
-            issues.append(_issue("IS_VARIABLE_NOT_MATERIALIZED", name, str(e)))
+            auth = _mcp_authoring()  # 5.7 hides bIsVariable from Python (plugin API 4)
+            if auth is None or not hasattr(auth, "set_widget_is_variable") or not auth.set_widget_is_variable(widget, True):
+                issues.append(_issue("IS_VARIABLE_NOT_MATERIALIZED", name, str(e)))
     built[name] = widget
     if parent is not None and existing is None:
         try:
@@ -327,7 +375,7 @@ def _mcp_authoring():
 
 def _widget_index_find(wt, name):
     idx = {}
-    root = wt.get_editor_property("root_widget")
+    root = _wroot(wt)
     if root is not None:
         _widget_index(root, idx)
     return idx.get(name)
@@ -345,7 +393,7 @@ def _widget_apply_all(node, built, issues):
 
 def _widget_canon(wt):
     """Canonical in-memory tree JSON (child order preserved) — the layer-1 oracle."""
-    root = wt.get_editor_property("root_widget")
+    root = _wroot(wt)
     return _widget_canon_node(root) if root is not None else {}
 
 
@@ -390,7 +438,7 @@ def _op_widget_compile(args):
         return {"error": "not a WidgetBlueprint", "code": "ASSET_NOT_FOUND"}
     unreal.BlueprintEditorLibrary.compile_blueprint(wbp)
     unreal.EditorAssetLibrary.save_asset(bp_path)
-    tree = _widget_canon(wbp.get_editor_property("widget_tree"))
+    tree = _widget_canon(_wtree(wbp))
     return {"compiled": True, "digest": _widget_digest(tree),
             "compile_log": {"structured": False, "note": "structured log is Phase 0b"}}
 
@@ -404,7 +452,7 @@ def _op_widget_tree(args):
     if mode == "restore":
         return {"error": "restore is not yet implemented in Phase 0a", "code": "NOT_IMPLEMENTED",
                 "restore_token": args.get("restore_token")}
-    tree = _widget_canon(wbp.get_editor_property("widget_tree"))
+    tree = _widget_canon(_wtree(wbp))
     return {"blueprint": bp_path, "tree": tree, "digest": _widget_digest(tree)}
 
 

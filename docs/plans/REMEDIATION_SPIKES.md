@@ -13,13 +13,13 @@ fallback.
 | 2 | A function's `FUNC_BlueprintPure` / `FUNC_Const` | the `Function` object loads (`load_object(None, "/Script/Engine.GameplayStatics:GetPlayerPawn")`) but exposes no flags | **plugin** `IsPureOrConst(Class, Name)` (API 3) | verified: `GetPlayerPawn` → true (pure), `K2_GetActorLocation` → true (const), `K2_DestroyActor` → false, unknown name → false |
 | 3 | World / GameInstance / LocalPlayer **subsystem** lookup | none: no `SubsystemBlueprintLibrary`; `GameInstance`/`World` expose no `get_subsystem` (only `get_editor_subsystem`, `get_engine_subsystem`) | **plugin** `FindGameSubsystem(WorldContext, Class)` (API 3) | verified in PIE: `MCPControlSubsystem` (GameInstance) and `EnhancedInputLocalPlayerSubsystem` (LocalPlayer) found; an editor subsystem → None (by design: R1.1 keeps editor subsystems to `reflect`) |
 | 4 | `BlueprintCallable` UFUNCTION with `int64` / `FString` | works: `MathLibrary.add_int64_int64(2**40, 5)` = 1099511627781; non-ASCII `FString` round-trips | **Python** | spike1/2 |
-| 5 | Curve keys (`UCurveFloat::FloatCurve`) | none: `float_curve` is not an exposed property; `CurveFloat` offers only `get_float_value`, `get_time_range`, `get_value_range`; `RichCurve` struct has no key API | **plugin** (R3: `SetCurveKeys` / `GetCurveKeys`) | spike2 |
+| 5 | Curve keys (`UCurveFloat::FloatCurve`) | no key read/edit: `float_curve` is not an exposed property; `CurveFloat` offers only `get_float_value`, `get_time_range`, `get_value_range`. **Writing** all keys works through a CSV re-import (`CSVImportFactory`, `ECSV_CURVE_FLOAT`, `replace_existing`; rows are `time,value`, **no header** — a header row becomes a key) | **plugin** for reading keys (R3 `GetCurveKeys`); writing may use the CSV re-import | spike2; G.3 (`C_DamageFalloff`) |
 | 6 | Blueprint **describe** (`NewVariables`, components, graphs, parent, status) | none: `new_variables`, `simple_construction_script`, `function_graphs`, `ubergraph_pages`, `parent_class`, `generated_class` not found; `status` protected | **plugin** (R3: `DescribeBlueprint`) | spike2 on `BP_UndeadDraugrGameMode` |
 | 7 | Blueprint **add variable** | `BlueprintEditorLibrary.add_member_variable` (+ `set_blueprint_variable_instance_editable`, `…expose_on_spawn`) | **Python** | spike1 |
 | 8 | `InputMappingContext` edit | `map_key`, `unmap_key`, `unmap_all_keys_from_action`, `mappings` exist; `InputAction` class exposed | **Python** (R3.6) | spike1 |
 | 9 | DataTable row add / remove | `DataTableFunctionLibrary.remove_data_table_row`, `get_data_table_row_names`, `export_data_table_to_json_string`, `fill_data_table_from_json_string`; no single-row add | **Python**: keyed upsert = export JSON → change one row → fill (all other rows re-written unchanged); delete = `remove_data_table_row` | spike1 |
 | 10 | Actor spawn into the **PIE** world | none: only `EditorActorSubsystem.spawn_actor_from_class` (editor world); `GameplayStatics` has no actor spawn; `World` exposes none | **plugin** (R2.5: `UMCPControlSubsystem::SpawnInGame`, API 5) | spike1 |
-| 11 | HighResShot vs UMG | `AutomationLibrary.take_high_res_screenshot` during PIE **includes the UMG HUD** (Aesir's wave banner, ammo and integrity widgets visible) | **existing** `screenshot op=pie` already shows UI → R4.3 reduces to documenting it and an acceptance check | `img/003_screenshot_1.png` (local run) |
+| 11 | HighResShot vs UMG | **corrected in G.5**: HighResShot during PIE does **not** include UMG viewport widgets. The R0.2 screenshot showed Aesir's HUD, but that HUD is canvas-drawn (`AAesirHUD::DrawHUD`); a UMG widget mounted in PIE (live tree: visible, text `1`) is absent from the same HighResShot | **plugin**: R4.3 stands as first planned — `screenshot op=pie ui=true` through `MCPCaptureSubsystem` `include_ui` (`FSlateApplication::TakeScreenshot`) | G.5 live run (`WBP_WaveReadout3`) |
 
 ## R0.3 — gameplay event sources (Aesir)
 
@@ -33,3 +33,15 @@ fallback.
 
 Consequence for the plan: unchanged in shape. R5.1's recorder is a plugin C++ component (as planned); the plugin API
 for R3 needs its own bump (curve keys, Blueprint describe) — the §8 table gains an R3 row.
+
+## Found during phase G (live, scratch copies)
+
+| Finding | Consequence |
+|---|---|
+| UE 5.7 hides `UWidgetBlueprint.WidgetTree`, `UWidgetTree.RootWidget` and `UWidget.bIsVariable` from Python; `asset_create kind=widget_blueprint` and `widget_edit op=compose` failed ("Failed to find property 'widget_tree'") | plugin API 4: `GetWidgetTree`, `Get/SetRootWidget`, `SetWidgetIsVariable`; the companion uses them when the property is hidden |
+| A widget made with `unreal.new_object` is not registered with its Blueprint: the compiler ensures "Widget was added but did not get a GUID" | plugin `RegisterWidget` (`UWidgetBlueprint::OnVariableAdded`), called for every created widget |
+| `CreateWidget` / `WidgetBlueprintLibrary.create` is not exposed (Python's `WidgetLibrary` has no `create`); `UUserWidget.get_widget_from_name` is not exposed | plugin `UMCPControlSubsystem::MountWidget` / `UnmountWidget`, `DescribeLiveWidgets` (the R4.2 live tree, early) |
+| `UMCPHUDWidget` bindings (`FieldSourceBindings`) are invisible to Python (plain `UPROPERTY()`) | plugin `Get/SetClassDefaultJson` (generic, `FJsonObjectConverter`) |
+| `unreal.Text.from_string` does not exist in 5.7 | `unreal.Text(str)` |
+| `InputMappingContext.mappings` is deprecated; mappings live in `default_key_mappings.mappings` | R3.6 reads and writes there |
+| A compose `slot.position` is not applied (the text sat at 0,0) | R4 fix |

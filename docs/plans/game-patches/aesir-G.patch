@@ -1,0 +1,951 @@
+diff --git a/Source/AesirWaveDefense/AesirAgentSubsystem.cpp b/Source/AesirWaveDefense/AesirAgentSubsystem.cpp
+new file mode 100644
+index 0000000..8323309
+--- /dev/null
++++ b/Source/AesirWaveDefense/AesirAgentSubsystem.cpp
+@@ -0,0 +1,324 @@
++#include "AesirAgentSubsystem.h"
++
++#include "AesirCharacter.h"
++#include "AesirGameState.h"
++#include "AesirPlayerState.h"
++#include "AesirWaveDefenseGameMode.h"
++#include "AesirWeapon.h"
++#include "Dom/JsonObject.h"
++#include "EnemyCharacter.h"
++#include "Engine/GameInstance.h"
++#include "Engine/World.h"
++#include "EngineUtils.h"
++#include "GameFramework/PlayerController.h"
++#include "Kismet/GameplayStatics.h"
++#include "Serialization/JsonReader.h"
++#include "Serialization/JsonSerializer.h"
++#include "Serialization/JsonWriter.h"
++
++namespace
++{
++FString ToJson(const TSharedRef<FJsonObject>& Obj)
++{
++	FString Out;
++	TSharedRef<TJsonWriter<>> W = TJsonWriterFactory<>::Create(&Out);
++	FJsonSerializer::Serialize(Obj, W);
++	return Out;
++}
++
++FString WaveStateName(EWaveState S)
++{
++	switch (S)
++	{
++	case EWaveState::WaitingToStart: return TEXT("waiting");
++	case EWaveState::Intermission: return TEXT("intermission");
++	case EWaveState::InProgress: return TEXT("in_progress");
++	case EWaveState::Defeat: return TEXT("defeat");
++	case EWaveState::Victory: return TEXT("victory");
++	}
++	return TEXT("unknown");
++}
++} // namespace
++
++void UAesirAgentSubsystem::Initialize(FSubsystemCollectionBase& Collection)
++{
++	Super::Initialize(Collection);
++	WorldEpoch = FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphensLower);
++}
++
++UAesirAgentSubsystem* UAesirAgentSubsystem::Get(const UObject* WorldContext)
++{
++	const UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
++	UGameInstance* GI = World ? World->GetGameInstance() : nullptr;
++	return GI ? GI->GetSubsystem<UAesirAgentSubsystem>() : nullptr;
++}
++
++FString UAesirAgentSubsystem::GetCapabilitiesJson() const
++{
++	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
++	Root->SetStringField(TEXT("api_version"), TEXT("aesir.agent.v1"));
++	Root->SetStringField(TEXT("world_epoch"), WorldEpoch);
++	TArray<TSharedPtr<FJsonValue>> Commands;
++	auto AddCommand = [&Commands](const TCHAR* Name, const TCHAR* Tier, const TCHAR* Args)
++	{
++		TSharedRef<FJsonObject> C = MakeShared<FJsonObject>();
++		C->SetStringField(TEXT("name"), Name);
++		C->SetStringField(TEXT("tier"), Tier); // informational: the server gates game_command as exec
++		C->SetStringField(TEXT("args"), Args);
++		Commands.Add(MakeShared<FJsonValueObject>(C));
++	};
++	AddCommand(TEXT("start_wave"), TEXT("ephemeral"), TEXT("{} — from an intermission"));
++	AddCommand(TEXT("set_difficulty"), TEXT("ephemeral"), TEXT("{level: easy|normal|hard} — enemy health x0.75/x1/x1.5, this world only"));
++	Root->SetArrayField(TEXT("commands"), Commands);
++	TArray<TSharedPtr<FJsonValue>> Kinds;
++	for (const TCHAR* K : {TEXT("weapon_fire"), TEXT("hit"), TEXT("kill"), TEXT("death"), TEXT("dash"), TEXT("vfx"),
++		TEXT("sfx"), TEXT("camera_shake"), TEXT("wave_start"), TEXT("wave_end")})
++	{
++		Kinds.Add(MakeShared<FJsonValueString>(K));
++	}
++	Root->SetArrayField(TEXT("event_kinds"), Kinds);
++	return ToJson(Root);
++}
++
++FString UAesirAgentSubsystem::PeekSnapshotJson() const
++{
++	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
++	Root->SetStringField(TEXT("api_version"), TEXT("aesir.agent.v1"));
++	Root->SetStringField(TEXT("world_epoch"), WorldEpoch);
++	Root->SetStringField(TEXT("events_cursor"), FString::Printf(TEXT("%s:%lld"), *WorldEpoch, NextSeq - 1));
++	Root->SetStringField(TEXT("difficulty"), Difficulty);
++	const UWorld* World = GetWorld();
++	if (const AAesirGameState* GS = World ? World->GetGameState<AAesirGameState>() : nullptr)
++	{
++		Root->SetNumberField(TEXT("wave_number"), GS->WaveNumber);
++		Root->SetStringField(TEXT("wave_state"), WaveStateName(GS->WaveState));
++		Root->SetNumberField(TEXT("enemies_remaining"), GS->EnemiesRemaining);
++		Root->SetNumberField(TEXT("intermission_remaining_s"), GS->GetIntermissionTimeRemaining());
++		Root->SetStringField(TEXT("mission"), GS->MissionType);
++	}
++	int32 OnField = 0;
++	if (World)
++	{
++		for (TActorIterator<AEnemyCharacter> It(const_cast<UWorld*>(World)); It; ++It)
++		{
++			OnField += It->IsAlive() ? 1 : 0;
++		}
++	}
++	Root->SetNumberField(TEXT("enemies_on_field"), OnField);
++	const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
++	TSharedRef<FJsonObject> Player = MakeShared<FJsonObject>();
++	if (const AAesirCharacter* Ch = PC ? Cast<AAesirCharacter>(PC->GetPawn()) : nullptr)
++	{
++		Player->SetBoolField(TEXT("alive"), Ch->IsAlive());
++		Player->SetNumberField(TEXT("health"), Ch->GetHealth());
++		Player->SetNumberField(TEXT("max_health"), Ch->GetMaxHealth());
++		if (const AAesirWeapon* W = Ch->GetCurrentWeapon())
++		{
++			Player->SetStringField(TEXT("weapon"), W->GetDisplayName());
++			Player->SetNumberField(TEXT("ammo"), W->GetCurrentAmmo());
++			Player->SetNumberField(TEXT("max_ammo"), W->GetMagazineSize());
++		}
++		const FVector L = Ch->GetActorLocation();
++		Player->SetArrayField(TEXT("location"), {MakeShared<FJsonValueNumber>(L.X), MakeShared<FJsonValueNumber>(L.Y),
++			MakeShared<FJsonValueNumber>(L.Z)});
++	}
++	else
++	{
++		Player->SetBoolField(TEXT("alive"), false);
++	}
++	Root->SetObjectField(TEXT("player"), Player);
++	if (const AAesirPlayerState* PS = PC ? PC->GetPlayerState<AAesirPlayerState>() : nullptr)
++	{
++		Root->SetNumberField(TEXT("kills"), PS->GetKills());
++		Root->SetNumberField(TEXT("score"), PS->GetScore());
++	}
++	return ToJson(Root);
++}
++
++FString UAesirAgentSubsystem::GetEventsSince(const FString& Cursor) const
++{
++	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
++	Root->SetStringField(TEXT("world_epoch"), WorldEpoch);
++	int64 After = 0;
++	bool bGap = false;
++	int64 Dropped = 0;
++	FString Epoch, SeqStr;
++	if (!Cursor.IsEmpty())
++	{
++		if (!Cursor.Split(TEXT(":"), &Epoch, &SeqStr) || Epoch != WorldEpoch)
++		{
++			// A cursor from another world (an earlier PIE session): everything since this
++			// world began, flagged as a gap.
++			bGap = true;
++			Root->SetStringField(TEXT("reason"), TEXT("world_changed"));
++		}
++		else
++		{
++			After = FCString::Atoi64(*SeqStr);
++		}
++	}
++	const int64 Oldest = Events.Num() > 0 ? Events[0].Seq : NextSeq;
++	if (!bGap && After + 1 < Oldest)
++	{
++		bGap = true;
++		Dropped = Oldest - (After + 1);
++		Root->SetStringField(TEXT("reason"), TEXT("journal_overrun"));
++	}
++	TArray<TSharedPtr<FJsonValue>> Out;
++	int64 Last = After;
++	for (const FEvent& E : Events)
++	{
++		if (E.Seq <= After)
++		{
++			continue;
++		}
++		if (Out.Num() >= 500)
++		{
++			break; // the rest come with the next cursor
++		}
++		TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
++		J->SetNumberField(TEXT("seq"), (double)E.Seq);
++		J->SetNumberField(TEXT("t"), E.T);
++		J->SetStringField(TEXT("kind"), E.Kind);
++		if (!E.Actor.IsEmpty())
++		{
++			J->SetStringField(TEXT("actor"), E.Actor);
++		}
++		if (!E.Target.IsEmpty())
++		{
++			J->SetStringField(TEXT("target"), E.Target);
++		}
++		J->SetBoolField(TEXT("by_player"), E.bByPlayer);
++		if (E.Data.IsValid())
++		{
++			J->SetObjectField(TEXT("data"), E.Data);
++		}
++		Out.Add(MakeShared<FJsonValueObject>(J));
++		Last = E.Seq;
++	}
++	Root->SetArrayField(TEXT("events"), Out);
++	Root->SetBoolField(TEXT("gap"), bGap);
++	Root->SetNumberField(TEXT("dropped"), (double)Dropped);
++	Root->SetStringField(TEXT("next_cursor"), FString::Printf(TEXT("%s:%lld"), *WorldEpoch, Last));
++	return ToJson(Root);
++}
++
++void UAesirAgentSubsystem::Record(const UObject* WorldContext, const FString& Kind, const AActor* Actor,
++	const AActor* Target, bool bByPlayer, TSharedPtr<FJsonObject> Data)
++{
++	UAesirAgentSubsystem* Self = Get(WorldContext);
++	const UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
++	if (!Self || !World)
++	{
++		return;
++	}
++	FEvent E;
++	E.Seq = Self->NextSeq++;
++	E.T = World->GetTimeSeconds();
++	E.Kind = Kind;
++	E.Actor = Actor ? Actor->GetName() : FString();
++	E.Target = Target ? Target->GetName() : FString();
++	E.bByPlayer = bByPlayer;
++	E.Data = Data;
++	if (Self->Events.Num() >= MaxEvents)
++	{
++		Self->Events.RemoveAt(0, Self->Events.Num() - MaxEvents + 1, EAllowShrinking::No);
++	}
++	Self->Events.Add(MoveTemp(E));
++}
++
++FString UAesirAgentSubsystem::Result(const FString& RequestId, bool bAccepted, const FString& ErrorCode,
++	const FString& Message, TSharedPtr<FJsonObject> ResultObj) const
++{
++	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
++	Root->SetBoolField(TEXT("accepted"), bAccepted);
++	Root->SetStringField(TEXT("request_id"), RequestId);
++	Root->SetStringField(TEXT("world_epoch"), WorldEpoch);
++	if (!ErrorCode.IsEmpty())
++	{
++		Root->SetStringField(TEXT("error_code"), ErrorCode);
++		Root->SetStringField(TEXT("message"), Message);
++	}
++	if (ResultObj.IsValid())
++	{
++		Root->SetObjectField(TEXT("result"), ResultObj);
++	}
++	return ToJson(Root);
++}
++
++FString UAesirAgentSubsystem::ExecuteCommandJson(const FString& RequestJson)
++{
++	TSharedPtr<FJsonObject> Req;
++	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(RequestJson), Req) || !Req.IsValid())
++	{
++		return Result(FString(), false, TEXT("invalid_argument"), TEXT("the request is not a JSON object"), nullptr);
++	}
++	const FString RequestId = Req->GetStringField(TEXT("request_id"));
++	if (RequestId.IsEmpty())
++	{
++		return Result(RequestId, false, TEXT("invalid_argument"), TEXT("request_id is required"), nullptr);
++	}
++	FString Epoch;
++	if (!Req->TryGetStringField(TEXT("world_epoch"), Epoch) || Epoch != WorldEpoch)
++	{
++		// A request for another world (or none named): this world cannot know whether it
++		// already ran, so it does not run it.
++		return Result(RequestId, false, TEXT("dedup_expired"),
++			TEXT("world_epoch does not match this world (the game restarted?): read the game again"), nullptr);
++	}
++	if (const FString* Done = Responses.Find(RequestId))
++	{
++		return *Done; // a repeat: the recorded response, nothing runs again
++	}
++
++	const FString Command = Req->GetStringField(TEXT("command"));
++	FString Response;
++	AAesirWaveDefenseGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<AAesirWaveDefenseGameMode>() : nullptr;
++	if (Command == TEXT("start_wave"))
++	{
++		if (!GM)
++		{
++			Response = Result(RequestId, false, TEXT("precondition_failed"), TEXT("no wave game mode in this world"), nullptr);
++		}
++		else if (!GM->StartWaveNow())
++		{
++			Response = Result(RequestId, false, TEXT("wave_in_progress"), TEXT("a wave is already running (or this mission has no waves)"), nullptr);
++		}
++		else
++		{
++			TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
++			const AAesirGameState* GS = GetWorld()->GetGameState<AAesirGameState>();
++			R->SetNumberField(TEXT("wave_number"), GS ? GS->WaveNumber : 0);
++			Response = Result(RequestId, true, FString(), FString(), R);
++		}
++	}
++	else if (Command == TEXT("set_difficulty"))
++	{
++		const FString Level = Req->GetStringField(TEXT("level"));
++		const float Scale = Level == TEXT("easy") ? 0.75f : Level == TEXT("normal") ? 1.f : Level == TEXT("hard") ? 1.5f : -1.f;
++		if (Scale < 0.f)
++		{
++			Response = Result(RequestId, false, TEXT("invalid_argument"), TEXT("level must be easy, normal or hard"), nullptr);
++		}
++		else
++		{
++			DifficultyHealthScale = Scale;
++			Difficulty = Level;
++			TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
++			R->SetStringField(TEXT("difficulty"), Level);
++			Response = Result(RequestId, true, FString(), FString(), R);
++		}
++	}
++	else
++	{
++		Response = Result(RequestId, false, TEXT("unknown_command"), FString::Printf(TEXT("no command %s"), *Command), nullptr);
++	}
++	Responses.Add(RequestId, Response);
++	ResponseOrder.Add(RequestId);
++	if (ResponseOrder.Num() > MaxRemembered)
++	{
++		Responses.Remove(ResponseOrder[0]);
++		ResponseOrder.RemoveAt(0);
++	}
++	return Response;
++}
+diff --git a/Source/AesirWaveDefense/AesirAgentSubsystem.h b/Source/AesirWaveDefense/AesirAgentSubsystem.h
+new file mode 100644
+index 0000000..354c801
+--- /dev/null
++++ b/Source/AesirWaveDefense/AesirAgentSubsystem.h
+@@ -0,0 +1,74 @@
++#pragma once
++
++#include "CoreMinimal.h"
++#include "Subsystems/GameInstanceSubsystem.h"
++#include "AesirAgentSubsystem.generated.h"
++
++class FJsonObject;
++
++/**
++ * The game's agent interface (unreal-mcp game_api, docs/plans/GAME_CONTRACT.md in the
++ * server repo): capabilities, a side-effect-free snapshot, an event journal and
++ * idempotent commands, all as JSON strings. One per game instance — a new world_epoch
++ * every PIE session. Game code reports events with Record().
++ */
++UCLASS()
++class AESIRWAVEDEFENSE_API UAesirAgentSubsystem : public UGameInstanceSubsystem
++{
++	GENERATED_BODY()
++
++public:
++	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
++
++	/** {api_version, world_epoch, commands: [{name, tier, args}], event_kinds}. */
++	UFUNCTION(BlueprintPure, Category = "Aesir|Agent")
++	FString GetCapabilitiesJson() const;
++
++	/** The game state, read-only: wave, enemies, player, score, difficulty, world_epoch, events_cursor. */
++	UFUNCTION(BlueprintPure, Category = "Aesir|Agent")
++	FString PeekSnapshotJson() const;
++
++	/** Events after Cursor ("" = from the start; "<epoch>:<seq>" as returned in next_cursor):
++	 *  {events, next_cursor, gap, dropped, world_epoch, reason?}. A cursor from another
++	 *  world is a gap (reason world_changed); one older than the journal reports dropped. */
++	UFUNCTION(BlueprintPure, Category = "Aesir|Agent")
++	FString GetEventsSince(const FString& Cursor) const;
++
++	/** Run {"command", "request_id", "world_epoch", ...args} once: a repeated request_id
++	 *  returns the recorded response; another world's epoch is dedup_expired, not run. */
++	UFUNCTION(BlueprintCallable, Category = "Aesir|Agent")
++	FString ExecuteCommandJson(const FString& RequestJson);
++
++	/** Report a gameplay event (server side). Data may be null. */
++	static void Record(const UObject* WorldContext, const FString& Kind, const AActor* Actor = nullptr,
++		const AActor* Target = nullptr, bool bByPlayer = false, TSharedPtr<FJsonObject> Data = nullptr);
++
++	static UAesirAgentSubsystem* Get(const UObject* WorldContext);
++
++	/** Enemy health multiplier from set_difficulty (1 = normal). */
++	float GetDifficultyHealthScale() const { return DifficultyHealthScale; }
++
++private:
++	struct FEvent
++	{
++		int64 Seq = 0;
++		double T = 0.0;
++		FString Kind, Actor, Target;
++		bool bByPlayer = false;
++		TSharedPtr<FJsonObject> Data;
++	};
++
++	FString Result(const FString& RequestId, bool bAccepted, const FString& ErrorCode, const FString& Message,
++		TSharedPtr<FJsonObject> ResultObj) const;
++
++	static constexpr int32 MaxEvents = 1024;
++	static constexpr int32 MaxRemembered = 256;
++
++	FString WorldEpoch;
++	TArray<FEvent> Events; // ring: the newest MaxEvents
++	int64 NextSeq = 1;
++	TMap<FString, FString> Responses; // request_id -> response
++	TArray<FString> ResponseOrder;
++	float DifficultyHealthScale = 1.f;
++	FString Difficulty = TEXT("normal");
++};
+diff --git a/Source/AesirWaveDefense/AesirCharacter.cpp b/Source/AesirWaveDefense/AesirCharacter.cpp
+index a31a334..183a5e3 100644
+--- a/Source/AesirWaveDefense/AesirCharacter.cpp
++++ b/Source/AesirWaveDefense/AesirCharacter.cpp
+@@ -1,5 +1,11 @@
+ #include "AesirCharacter.h"
+ 
++#include "AesirAgentSubsystem.h"
++#include "EnhancedInputComponent.h"
++#include "EnhancedInputSubsystems.h"
++#include "InputAction.h"
++#include "InputMappingContext.h"
++
+ #include "AesirGameInstance.h"
+ 
+ #include "AesirAssets.h"
+@@ -24,6 +30,8 @@
+ 
+ AAesirCharacter::AAesirCharacter()
+ {
++	DashAction = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/IA_Dash.IA_Dash")));
++	AesirMappingContext = TSoftObjectPtr<UInputMappingContext>(FSoftObjectPath(TEXT("/Game/Input/IMC_Aesir.IMC_Aesir")));
+ 	PrimaryActorTick.bCanEverTick = true;
+ 
+ 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.f);
+@@ -195,6 +203,43 @@ void AAesirCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
+ 	PlayerInputComponent->BindAction("BuildMode", IE_Pressed, this, &AAesirCharacter::ToggleBuildMode);
+ 	PlayerInputComponent->BindAction("CycleBuildable", IE_Pressed, this, &AAesirCharacter::CycleBuildable);
+ 	PlayerInputComponent->BindAction("ToggleCamera", IE_Pressed, this, &AAesirCharacter::ToggleCameraView);
++
++	// Enhanced Input (IA_Dash in IMC_Aesir): bound when the assets exist.
++	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
++	{
++		if (UInputAction* IA = DashAction.LoadSynchronous())
++		{
++			EIC->BindAction(IA, ETriggerEvent::Started, this, &AAesirCharacter::Dash);
++		}
++	}
++	if (const APlayerController* PC = Cast<APlayerController>(GetController()))
++	{
++		UInputMappingContext* IMC = AesirMappingContext.LoadSynchronous();
++		ULocalPlayer* LP = PC->GetLocalPlayer();
++		UEnhancedInputLocalPlayerSubsystem* Sub = LP ? LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>() : nullptr;
++		if (IMC && Sub && !Sub->HasMappingContext(IMC))
++		{
++			Sub->AddMappingContext(IMC, 1);
++		}
++	}
++}
++
++void AAesirCharacter::Dash()
++{
++	const float Now = GetWorld()->GetTimeSeconds();
++	if (!IsAlive() || Now - LastDashTime < DashCooldown)
++	{
++		return;
++	}
++	LastDashTime = Now;
++	FVector Dir = GetLastMovementInputVector();
++	if (Dir.IsNearlyZero())
++	{
++		Dir = GetActorForwardVector();
++	}
++	Dir.Z = 0.f;
++	LaunchCharacter(Dir.GetSafeNormal() * DashImpulse, true, false);
++	UAesirAgentSubsystem::Record(this, TEXT("dash"), this, nullptr, true, nullptr);
+ }
+ 
+ void AAesirCharacter::MoveForward(float Value)
+@@ -391,6 +436,7 @@ void AAesirCharacter::NotifyWeaponFired(AAesirWeapon* Weapon)
+ 			if (Weapon->GetFireShakeClass())
+ 			{
+ 				PC->ClientStartCameraShake(Weapon->GetFireShakeClass());
++				UAesirAgentSubsystem::Record(this, TEXT("camera_shake"), this, nullptr, true, nullptr);
+ 			}
+ 		}
+ 	}
+@@ -671,6 +717,7 @@ void AAesirCharacter::RestoreFullHealth()
+ 
+ void AAesirCharacter::Die(AController* EventInstigator)
+ {
++	UAesirAgentSubsystem::Record(this, TEXT("death"), this, EventInstigator ? EventInstigator->GetPawn() : nullptr, false);
+ 	for (AAesirWeapon* Weapon : Weapons)
+ 	{
+ 		if (Weapon)
+diff --git a/Source/AesirWaveDefense/AesirCharacter.h b/Source/AesirWaveDefense/AesirCharacter.h
+index 76972dd..9254009 100644
+--- a/Source/AesirWaveDefense/AesirCharacter.h
++++ b/Source/AesirWaveDefense/AesirCharacter.h
+@@ -9,6 +9,8 @@ class USpringArmComponent;
+ class UStaticMeshComponent;
+ class UBuildComponent;
+ class AAesirWeapon;
++class UInputAction;
++class UInputMappingContext;
+ 
+ UENUM(BlueprintType)
+ enum class ECameraMode : uint8
+@@ -107,6 +109,8 @@ protected:
+ 	void ToggleBuildMode();
+ 	void CycleBuildable();
+ 	void ToggleCameraView();
++	/** Enhanced Input IA_Dash: a short forward burst (cooldown DashCooldown). */
++	void Dash();
+ 
+ 	void RequestEquipWeapon(int32 Index);
+ 	void SetCameraMode(ECameraMode NewMode);
+@@ -163,6 +167,22 @@ protected:
+ 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Build")
+ 	TObjectPtr<UBuildComponent> BuildComponent;
+ 
++	/** Enhanced Input: the dash action and the game's mapping context (added for the
++	 *  local player; the legacy action/axis mappings stay as they are). */
++	UPROPERTY(EditDefaultsOnly, Category = "Input")
++	TSoftObjectPtr<UInputAction> DashAction;
++
++	UPROPERTY(EditDefaultsOnly, Category = "Input")
++	TSoftObjectPtr<UInputMappingContext> AesirMappingContext;
++
++	UPROPERTY(EditDefaultsOnly, Category = "Input")
++	float DashImpulse = 1800.f;
++
++	UPROPERTY(EditDefaultsOnly, Category = "Input")
++	float DashCooldown = 0.8f;
++
++	float LastDashTime = -1000.f;
++
+ 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
+ 	float ThirdPersonArmLength = 300.f;
+ 
+diff --git a/Source/AesirWaveDefense/AesirTuning.cpp b/Source/AesirWaveDefense/AesirTuning.cpp
+new file mode 100644
+index 0000000..f8d6371
+--- /dev/null
++++ b/Source/AesirWaveDefense/AesirTuning.cpp
+@@ -0,0 +1,42 @@
++#include "AesirTuning.h"
++
++#include "AesirWaveDefenseGameMode.h"
++#include "Curves/CurveFloat.h"
++#include "Engine/World.h"
++
++const FAesirWaveRow* UAesirTuning::FindWave(int32 WaveNumber) const
++{
++	if (!Waves)
++	{
++		return nullptr;
++	}
++	const FName Row(*FString::Printf(TEXT("Wave_%02d"), WaveNumber));
++	if (const FAesirWaveRow* Found = Waves->FindRow<FAesirWaveRow>(Row, TEXT("AesirTuning"), false))
++	{
++		return Found;
++	}
++	// Past the table: the last row (the highest-numbered Wave_NN).
++	const FAesirWaveRow* Last = nullptr;
++	FName LastName;
++	for (const TPair<FName, uint8*>& It : Waves->GetRowMap())
++	{
++		if (LastName.IsNone() || It.Key.ToString() > LastName.ToString())
++		{
++			LastName = It.Key;
++			Last = reinterpret_cast<const FAesirWaveRow*>(It.Value);
++		}
++	}
++	return Last;
++}
++
++float UAesirTuning::FalloffAt(float Distance) const
++{
++	return DamageFalloff ? DamageFalloff->GetFloatValue(Distance) : 1.f;
++}
++
++const UAesirTuning* UAesirTuning::Get(const UObject* WorldContext)
++{
++	const UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
++	const AAesirWaveDefenseGameMode* GM = World ? World->GetAuthGameMode<AAesirWaveDefenseGameMode>() : nullptr;
++	return GM ? GM->GetTuning() : nullptr;
++}
+diff --git a/Source/AesirWaveDefense/AesirTuning.h b/Source/AesirWaveDefense/AesirTuning.h
+new file mode 100644
+index 0000000..a173042
+--- /dev/null
++++ b/Source/AesirWaveDefense/AesirTuning.h
+@@ -0,0 +1,68 @@
++#pragma once
++
++#include "CoreMinimal.h"
++#include "Engine/DataAsset.h"
++#include "Engine/DataTable.h"
++#include "AesirTuning.generated.h"
++
++class UCurveFloat;
++
++/** One wave of the wave table (/Game/Data/DT_Waves, rows Wave_01..). */
++USTRUCT(BlueprintType)
++struct FAesirWaveRow : public FTableRowBase
++{
++	GENERATED_BODY()
++
++	/** Enemies the wave spawns (a boss wave adds its boss on top). */
++	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wave")
++	int32 EnemyCount = 5;
++
++	/** Seconds between spawns. */
++	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wave")
++	float SpawnInterval = 0.8f;
++
++	/** Chance a spawn is a brute (from the game mode's first brute wave on). */
++	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wave")
++	float BruteChance = 0.2f;
++
++	/** Chance a spawn is a sprinter (from wave 2 on). */
++	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wave")
++	float SprinterChance = 0.25f;
++};
++
++/**
++ * The game's tuning, in data the agent can read and edit (/Game/Data/DA_AesirTuning).
++ * Read by the wave game mode at BeginPlay; when the asset is absent the game uses its
++ * built-in defaults.
++ */
++UCLASS(BlueprintType)
++class AESIRWAVEDEFENSE_API UAesirTuning : public UPrimaryDataAsset
++{
++	GENERATED_BODY()
++
++public:
++	/** Multiplies the damage of the player's weapons. */
++	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
++	float PlayerDamageMultiplier = 1.f;
++
++	/** Multiplies every enemy's health at spawn. */
++	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
++	float EnemyHealthMultiplier = 1.f;
++
++	/** Player weapon damage multiplier by hit distance (units). None = no falloff. */
++	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
++	TObjectPtr<UCurveFloat> DamageFalloff;
++
++	/** The wave table (FAesirWaveRow rows Wave_01..; waves past the last row use it). */
++	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Waves")
++	TObjectPtr<UDataTable> Waves;
++
++	/** The wave row for a wave number (1-based), or nullptr without a table. */
++	const FAesirWaveRow* FindWave(int32 WaveNumber) const;
++
++	/** Damage multiplier at a distance (1 without a curve). */
++	float FalloffAt(float Distance) const;
++
++	/** The tuning the running game uses (the wave game mode's), or nullptr. */
++	static const UAesirTuning* Get(const UObject* WorldContext);
++};
+diff --git a/Source/AesirWaveDefense/AesirWaveDefense.Build.cs b/Source/AesirWaveDefense/AesirWaveDefense.Build.cs
+index 8067d9f..66b0235 100644
+--- a/Source/AesirWaveDefense/AesirWaveDefense.Build.cs
++++ b/Source/AesirWaveDefense/AesirWaveDefense.Build.cs
+@@ -14,7 +14,9 @@ public class AesirWaveDefense : ModuleRules
+ 			"Engine",
+ 			"InputCore",
+ 			"Slate",
+-			"SlateCore"
++			"SlateCore",
++			"EnhancedInput",
++			"Json"
+ 		});
+ 	}
+ }
+diff --git a/Source/AesirWaveDefense/AesirWaveDefenseGameMode.cpp b/Source/AesirWaveDefense/AesirWaveDefenseGameMode.cpp
+index 8d10dd9..f4cdd02 100644
+--- a/Source/AesirWaveDefense/AesirWaveDefenseGameMode.cpp
++++ b/Source/AesirWaveDefense/AesirWaveDefenseGameMode.cpp
+@@ -1,6 +1,9 @@
+ #include "AesirWaveDefenseGameMode.h"
+ 
++#include "AesirAgentSubsystem.h"
+ #include "AesirCharacter.h"
++#include "AesirTuning.h"
++#include "Dom/JsonObject.h"
+ #include "AesirGameInstance.h"
+ #include "AesirGameState.h"
+ #include "AesirHUD.h"
+@@ -23,6 +26,7 @@ AAesirWaveDefenseGameMode::AAesirWaveDefenseGameMode()
+ 	PlayerControllerClass = AAesirPlayerController::StaticClass();
+ 	HUDClass = AAesirHUD::StaticClass();
+ 	EnemyClass = AEnemyCharacter::StaticClass();
++	TuningAsset = TSoftObjectPtr<UAesirTuning>(FSoftObjectPath(TEXT("/Game/Data/DA_AesirTuning.DA_AesirTuning")));
+ }
+ 
+ void AAesirWaveDefenseGameMode::DebugPoseScene(const FString& Scene)
+@@ -141,6 +145,9 @@ void AAesirWaveDefenseGameMode::BeginPlay()
+ {
+ 	Super::BeginPlay();
+ 
++	Tuning = TuningAsset.IsNull() ? nullptr : TuningAsset.LoadSynchronous();
++	UE_LOG(LogAesir, Log, TEXT("Tuning: %s"), Tuning ? *Tuning->GetPathName() : TEXT("built-in defaults"));
++
+ 	for (TActorIterator<AEnemySpawnPoint> It(GetWorld()); It; ++It)
+ 	{
+ 		SpawnPoints.Add(*It);
+@@ -214,7 +221,20 @@ void AAesirWaveDefenseGameMode::StartNextWave()
+ 	GS->WaveNumber++;
+ 	GS->WaveState = EWaveState::InProgress;
+ 
+-	EnemiesLeftToSpawn = FMath::Min(BaseEnemiesPerWave + (GS->WaveNumber - 1) * EnemiesAddedPerWave, 40);
++	float Interval = SpawnInterval;
++	WaveBruteChance = BruteChance;
++	WaveSprinterChance = SprinterChance;
++	if (const FAesirWaveRow* Row = Tuning ? Tuning->FindWave(GS->WaveNumber) : nullptr)
++	{
++		EnemiesLeftToSpawn = FMath::Max(0, Row->EnemyCount);
++		Interval = FMath::Max(0.05f, Row->SpawnInterval);
++		WaveBruteChance = Row->BruteChance;
++		WaveSprinterChance = Row->SprinterChance;
++	}
++	else
++	{
++		EnemiesLeftToSpawn = FMath::Min(BaseEnemiesPerWave + (GS->WaveNumber - 1) * EnemiesAddedPerWave, 40);
++	}
+ 	bBossPendingThisWave = GS->WaveNumber % 5 == 0; // every 5th wave opens with a boss
+ 	if (bBossPendingThisWave)
+ 	{
+@@ -224,8 +244,26 @@ void AAesirWaveDefenseGameMode::StartNextWave()
+ 	GS->EnemiesRemaining = EnemiesLeftToSpawn;
+ 
+ 	UE_LOG(LogAesir, Log, TEXT("Wave %d starting: %d enemies"), GS->WaveNumber, EnemiesLeftToSpawn);
++	WaveStartTime = GetWorld()->GetTimeSeconds();
++	TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
++	Data->SetNumberField(TEXT("wave"), GS->WaveNumber);
++	Data->SetNumberField(TEXT("enemies"), EnemiesLeftToSpawn);
++	UAesirAgentSubsystem::Record(this, TEXT("wave_start"), nullptr, nullptr, false, Data);
+ 
+-	GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &AAesirWaveDefenseGameMode::SpawnTick, SpawnInterval, true, 0.f);
++	GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &AAesirWaveDefenseGameMode::SpawnTick, Interval, true, 0.f);
++}
++
++bool AAesirWaveDefenseGameMode::StartWaveNow()
++{
++	AAesirGameState* GS = GetGameState<AAesirGameState>();
++	if (!GS || MissionType == EMissionType::Assault
++		|| (GS->WaveState != EWaveState::Intermission && GS->WaveState != EWaveState::WaitingToStart))
++	{
++		return false;
++	}
++	GetWorldTimerManager().ClearTimer(WaveTimerHandle);
++	StartNextWave();
++	return true;
+ }
+ 
+ void AAesirWaveDefenseGameMode::SpawnTick()
+@@ -255,17 +293,26 @@ void AAesirWaveDefenseGameMode::SpawnTick()
+ 		else
+ 		{
+ 			const float Roll = FMath::FRand();
+-			if (Wave >= FirstBruteWave && Roll < BruteChance)
++			if (Wave >= FirstBruteWave && Roll < WaveBruteChance)
+ 			{
+ 				Archetype = EEnemyArchetype::Brute;
+ 			}
+-			else if (Wave >= 2 && Roll > 1.f - SprinterChance)
++			else if (Wave >= 2 && Roll > 1.f - WaveSprinterChance)
+ 			{
+ 				Archetype = EEnemyArchetype::Sprinter;
+ 			}
+ 		}
+ 
+ 		Enemy->ConfigureForWave(Wave, Archetype);
++		float HealthScale = Tuning ? Tuning->EnemyHealthMultiplier : 1.f;
++		if (const UAesirAgentSubsystem* Agent = UAesirAgentSubsystem::Get(this))
++		{
++			HealthScale *= Agent->GetDifficultyHealthScale();
++		}
++		if (!FMath::IsNearlyEqual(HealthScale, 1.f))
++		{
++			Enemy->ScaleHealth(HealthScale);
++		}
+ 		EnemiesLeftToSpawn--;
+ 		EnemiesAlive++;
+ 	}
+@@ -310,6 +357,12 @@ void AAesirWaveDefenseGameMode::EndWave()
+ {
+ 	AAesirGameState* GS = GetGameState<AAesirGameState>();
+ 	UE_LOG(LogAesir, Log, TEXT("Wave %d cleared"), GS->WaveNumber);
++	{
++		TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
++		Data->SetNumberField(TEXT("wave"), GS->WaveNumber);
++		Data->SetNumberField(TEXT("clear_s"), GetWorld()->GetTimeSeconds() - WaveStartTime);
++		UAesirAgentSubsystem::Record(this, TEXT("wave_end"), nullptr, nullptr, false, Data);
++	}
+ 
+ 	// Heal survivors and respawn the fallen before the next assault.
+ 	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+diff --git a/Source/AesirWaveDefense/AesirWaveDefenseGameMode.h b/Source/AesirWaveDefense/AesirWaveDefenseGameMode.h
+index 4fa115d..9e65962 100644
+--- a/Source/AesirWaveDefense/AesirWaveDefenseGameMode.h
++++ b/Source/AesirWaveDefense/AesirWaveDefenseGameMode.h
+@@ -7,6 +7,8 @@
+ class AEnemyCharacter;
+ class AEnemySpawnPoint;
+ class AEnemyNest;
++class UAesirTuning;
++struct FAesirWaveRow;
+ 
+ UENUM()
+ enum class EMissionType : uint8
+@@ -47,6 +49,13 @@ public:
+ 
+ 	EMissionType GetMissionType() const { return MissionType; }
+ 
++	/** The tuning asset in use (nullptr: the built-in defaults). */
++	const UAesirTuning* GetTuning() const { return Tuning; }
++
++	/** Start the next wave now, skipping the intermission timer (agent start_wave).
++	 *  False when a wave is running, the run is over, or the mission has no waves. */
++	bool StartWaveNow();
++
+ 	/** Dev-only: freeze the wave director and pose a named HUD-validation scene. */
+ 	UFUNCTION(BlueprintCallable, Category = "Debug")
+ 	void DebugPoseScene(const FString& Scene);
+@@ -62,6 +71,14 @@ protected:
+ 	UPROPERTY(EditDefaultsOnly, Category = "Waves")
+ 	TSubclassOf<AEnemyCharacter> EnemyClass;
+ 
++	/** Wave table, damage and health tuning (/Game/Data/DA_AesirTuning). When the asset is
++	 *  missing the fields below are the defaults. */
++	UPROPERTY(EditDefaultsOnly, Category = "Tuning")
++	TSoftObjectPtr<UAesirTuning> TuningAsset;
++
++	UPROPERTY(Transient)
++	TObjectPtr<UAesirTuning> Tuning;
++
+ 	/** Enemies in wave N = BaseEnemiesPerWave + (N - 1) * EnemiesAddedPerWave (capped). */
+ 	UPROPERTY(EditDefaultsOnly, Category = "Waves")
+ 	int32 BaseEnemiesPerWave = 5;
+@@ -112,6 +129,9 @@ protected:
+ 	int32 NestsAlive = 0;
+ 	int32 MissionExtractorsAlive = 0;
+ 	bool bBossPendingThisWave = false;
++	float WaveStartTime = 0.f;
++	float WaveBruteChance = 0.f;
++	float WaveSprinterChance = 0.f;
+ 
+ 	FTimerHandle WaveTimerHandle;
+ 	FTimerHandle SpawnTimerHandle;
+diff --git a/Source/AesirWaveDefense/AesirWeapon.cpp b/Source/AesirWaveDefense/AesirWeapon.cpp
+index 86c14f0..f39077b 100644
+--- a/Source/AesirWaveDefense/AesirWeapon.cpp
++++ b/Source/AesirWaveDefense/AesirWeapon.cpp
+@@ -1,5 +1,9 @@
+ #include "AesirWeapon.h"
+ 
++#include "AesirAgentSubsystem.h"
++#include "AesirTuning.h"
++#include "Dom/JsonObject.h"
++
+ #include "AesirCharacter.h"
+ #include "AesirWaveDefense.h"
+ #include "Animation/AnimSequence.h"
+@@ -202,11 +206,23 @@ void AAesirWeapon::FireShot()
+ 
+ 		if (bHit && Hit.GetActor())
+ 		{
+-			const float Applied = UGameplayStatics::ApplyPointDamage(Hit.GetActor(), Damage, ShotDir, Hit,
++			float Dealt = Damage;
++			if (const UAesirTuning* Tuning = UAesirTuning::Get(this))
++			{
++				Dealt *= Tuning->PlayerDamageMultiplier * Tuning->FalloffAt(Hit.Distance);
++			}
++			const float Applied = UGameplayStatics::ApplyPointDamage(Hit.GetActor(), Dealt, ShotDir, Hit,
+ 				OwningCharacter->GetController(), OwningCharacter, UDamageType::StaticClass());
+ 			if (Applied > 0.f)
+ 			{
+ 				OwningCharacter->ClientHitConfirmed();
++				// The hit's visual feedback (tracer, impact, hit marker) is drawn this frame.
++				TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
++				Data->SetStringField(TEXT("weapon"), DisplayName);
++				Data->SetNumberField(TEXT("damage"), Applied);
++				Data->SetNumberField(TEXT("distance"), Hit.Distance);
++				Data->SetNumberField(TEXT("visual_t"), GetWorld()->GetTimeSeconds());
++				UAesirAgentSubsystem::Record(this, TEXT("hit"), OwningCharacter, Hit.GetActor(), true, Data);
+ 			}
+ 		}
+ 
+@@ -245,9 +261,20 @@ void AAesirWeapon::MulticastShotEffects_Implementation(FVector_NetQuantize Trace
+ {
+ 	const FVector MuzzleLocation = WeaponMesh->GetComponentLocation() + GetActorForwardVector() * 40.f;
+ 
++	if (HasAuthority())
++	{
++		TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
++		Data->SetStringField(TEXT("weapon"), DisplayName);
++		UAesirAgentSubsystem::Record(this, TEXT("weapon_fire"), OwningCharacter, nullptr, true, Data);
++		UAesirAgentSubsystem::Record(this, TEXT("vfx"), this, nullptr, true, Data);
++	}
+ 	if (FireSound)
+ 	{
+ 		UGameplayStatics::PlaySoundAtLocation(this, FireSound, MuzzleLocation, 0.8f);
++		if (HasAuthority())
++		{
++			UAesirAgentSubsystem::Record(this, TEXT("sfx"), this, nullptr, true, nullptr);
++		}
+ 	}
+ 
+ 	// Placeholder plasma tracer: SYNC-WHITE core in a PHOSPHOR-AMBER sheath (GJALLARHORN firewall) until Niagara VFX come in.
+diff --git a/Source/AesirWaveDefense/EnemyCharacter.cpp b/Source/AesirWaveDefense/EnemyCharacter.cpp
+index 2e5f32b..39055d3 100644
+--- a/Source/AesirWaveDefense/EnemyCharacter.cpp
++++ b/Source/AesirWaveDefense/EnemyCharacter.cpp
+@@ -1,5 +1,7 @@
+ #include "EnemyCharacter.h"
+ 
++#include "AesirAgentSubsystem.h"
++
+ #include "AesirAssets.h"
+ #include "AesirCharacter.h"
+ #include "AesirGameState.h"
+@@ -375,6 +377,11 @@ void AEnemyCharacter::Die(AController* EventInstigator)
+ 	SetActorEnableCollision(false);
+ 
+ 	MulticastDeathFX();
++	{
++		const bool bByPlayer = EventInstigator && EventInstigator->IsPlayerController();
++		UAesirAgentSubsystem::Record(this, TEXT("kill"), EventInstigator ? EventInstigator->GetPawn() : nullptr, this, bByPlayer);
++		UAesirAgentSubsystem::Record(this, TEXT("vfx"), this, nullptr, false, nullptr);
++	}
+ 
+ 	if (AAesirWaveDefenseGameMode* GameMode = GetWorld()->GetAuthGameMode<AAesirWaveDefenseGameMode>())
+ 	{
+diff --git a/Source/AesirWaveDefense/EnemyCharacter.h b/Source/AesirWaveDefense/EnemyCharacter.h
+index 1eeccf5..ed9c4b4 100644
+--- a/Source/AesirWaveDefense/EnemyCharacter.h
++++ b/Source/AesirWaveDefense/EnemyCharacter.h
+@@ -43,6 +43,9 @@ public:
+ 	/** Server-only: scale stats for the given wave before gameplay starts. */
+ 	void ConfigureForWave(int32 WaveNumber, EEnemyArchetype InArchetype);
+ 
++	/** Multiply max health (tuning / difficulty) and refill. */
++	void ScaleHealth(float Multiplier) { MaxHealth *= Multiplier; Health = MaxHealth; }
++
+ protected:
+ 	virtual void BeginPlay() override;
+ 

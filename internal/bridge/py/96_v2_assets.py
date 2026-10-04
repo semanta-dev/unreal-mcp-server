@@ -129,7 +129,7 @@ def _op_reflect(args):
     shape = {k: args[k] for k in ("include", "exclude", "properties") if args.get(k)}
     if op == "object":
         world, name = _v2_world(args, "editor")
-        obj = _resolve_actor(world, name, args.get("actor"))
+        obj = _resolve_object(world, name, args.get("actor"), editor_subsystems=True)
         out = _reflect_observe(obj, max_props=int(args.get("max_props", 64)),
                                max_str=int(args.get("max_str", 512)), **shape)
         out["world"] = name
@@ -176,7 +176,7 @@ def _op_widget_compose_v2(args):
         wbp = unreal.load_asset(args.get("blueprint") or "")
         spec_root = (args.get("tree") or {}).get("name")
         if isinstance(wbp, unreal.WidgetBlueprint) and spec_root:
-            cur = _widget_canon(wbp.get_editor_property("widget_tree"))
+            cur = _widget_canon(_wtree(wbp))
             if cur.get("children") and cur.get("name") != spec_root:
                 raise _V2Error("CONFLICT", "the tree's root %r differs from the existing root %r, which has children; "
                                "use op=prune to replace the whole tree" % (spec_root, cur.get("name")),
