@@ -88,7 +88,7 @@ var PyOps = map[string]PyOp{
 	"pie_observe":         {Tier: ReadOnly},
 	"pie_time":            {Tier: ReadOnly},
 	"pie_axis_stats":      {Tier: ReadOnly, Plugin: 5},
-	"widget_bind":         {Tier: Mutating, Plugin: 4, Note: "MCPHUDWidget FieldSourceBindings; each binding checked, written all or nothing"},
+	"widget_bind":         {Tier: Mutating, Plugin: 6, Note: "MCPHUDWidget FieldSourceBindings; each binding checked, written all or nothing"},
 	"widget_mount":        {Tier: Ephemeral, Plugin: 4},
 	"widget_unmount":      {Tier: Ephemeral, Plugin: 4},
 	"widget_live_tree":    {Tier: ReadOnly, Plugin: 4},

@@ -252,3 +252,46 @@ def test_ui_shot_takes_one_frame_now(v2, hud):
     finally:
         for k in ("_mcp_capture_subsystem", "_pie_running", "_saved_mcp_dir"):
             delattr(m, k)
+
+
+def test_bind_repairs_a_field_stored_twice(v2, hud):
+    # An older build could store two bindings on one field: bind / remove on it keeps one.
+    hud.store["value"].append(dict(hud.store["value"][2], Path="Stale"))  # WaveText.Text twice
+    env = call(v2, "widget_bind", {"blueprint": "/Game/UI/WBP_Hud", "bindings": [
+        {"widget": "AmmoText", "field": "Text", "source": "pawn", "path": "Ammo2", "conversion": "int_to_text"}]})
+    assert env["ok"] and "two or more bindings" in env["result"]["warnings"][0], env  # untouched: kept, reported
+    env = call(v2, "widget_bind", {"blueprint": "/Game/UI/WBP_Hud", "bindings": [
+        {"widget": "WaveText", "field": "Text", "source": "game_state", "path": "WaveNumber", "conversion": "int_to_text"}]})
+    assert env["ok"] and env["result"]["replaced_duplicates"] == [{"widget": "WaveText", "field": "Text", "stored": 2}], env
+    assert [b["Path"] for b in hud.store["value"] if b["TargetWidget"] == "WaveText"] == ["WaveNumber"]
+    assert "warnings" not in env["result"]
+    hud.store["value"].append(dict(hud.store["value"][0]))  # HealthBar.Percent twice
+    env = call(v2, "widget_bind", {"blueprint": "/Game/UI/WBP_Hud", "bindings": [{"widget": "HealthBar", "field": "Percent", "remove": True}]})
+    assert env["ok"] and ("HealthBar", "Percent") not in _keys(hud) and env["result"]["removed"][0]["removed"] is True, env
+
+
+def test_bind_needs_plugin_6_and_warns_on_an_unknown_world_actor(v2, hud):
+    hud.MCPCoreLibrary = _NS(get_plugin_api_version=lambda: 5)
+    b = {"widget": "WaveText", "field": "Text", "source": "world_actor", "label": "Core", "path": "Health", "conversion": "int_to_text"}
+    assert call(v2, "widget_bind", {"blueprint": "/Game/UI/WBP_Hud", "bindings": [b]})["code"] == "PLUGIN_MISSING"
+    hud.MCPCoreLibrary = _NS(get_plugin_api_version=lambda: 7)
+    hud.auth.get_all_level_actors = lambda: [_NS(get_actor_label=lambda: "Core")]
+    env = call(v2, "widget_bind", {"blueprint": "/Game/UI/WBP_Hud", "bindings": [b]})
+    assert env["ok"] and "warnings" not in env["result"], env
+    env = call(v2, "widget_bind", {"blueprint": "/Game/UI/WBP_Hud", "bindings": [dict(b, label="Cor")]})
+    assert env["ok"] and "no actor labelled 'Cor'" in env["result"]["warnings"][0], env
+
+
+def test_bind_reports_a_failed_restore(v2, hud):
+    hud.status["status"] = "error"
+    real = hud.auth.set_class_default_json
+    calls = []
+
+    def flaky(bp, prop, raw):
+        calls.append(raw)
+        return real(bp, prop, raw) if len(calls) == 1 else json.dumps({"ok": False, "error": "locked"})
+
+    hud.auth.set_class_default_json = flaky
+    env = call(v2, "widget_bind", {"blueprint": "/Game/UI/WBP_Hud", "bindings": [
+        {"widget": "WaveText", "field": "Text", "source": "pawn", "path": "Kills", "conversion": "int_to_text"}]})
+    assert env["code"] == "EDITOR_ERROR" and "putting its old bindings back failed (locked)" in env["error"], env

@@ -280,11 +280,14 @@ bool UMCPCaptureSubsystem::CaptureViewportUI(const FString& AbsPath, FIntVector*
 		}
 		return false;
 	};
-	if (!FSlateApplication::IsInitialized() || !GEngine || !GEngine->GameViewport)
+	// This game instance's own viewport (with several PIE clients, GEngine->GameViewport
+	// may be another one's).
+	UGameViewportClient* ViewportClient = GetGameInstance() ? GetGameInstance()->GetGameViewportClient() : nullptr;
+	if (!FSlateApplication::IsInitialized() || !ViewportClient)
 	{
 		return Fail(TEXT("no game viewport"));
 	}
-	TSharedPtr<SWidget> ViewportWidget = GEngine->GameViewport->GetGameViewportWidget();
+	TSharedPtr<SWidget> ViewportWidget = ViewportClient->GetGameViewportWidget();
 	if (!ViewportWidget.IsValid())
 	{
 		return Fail(TEXT("no game viewport widget"));

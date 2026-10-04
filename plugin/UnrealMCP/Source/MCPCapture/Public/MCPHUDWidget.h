@@ -86,6 +86,13 @@ public:
 	UPROPERTY(EditAnywhere, Category = "MCP") TArray<FMCPFieldSourceBinding> FieldSourceBindings;
 	UPROPERTY(EditAnywhere, Category = "MCP") TArray<FMCPWorldTrackBinding> WorldTrackBindings;
 
+	/** Each value binding's state on the last tick (plugin API 7), JSON [{widget, field, path,
+	 *  state}]: ok | source_null (the source does not exist now, e.g. before possession) |
+	 *  path_unreadable (no numeric/bool property or zero-arg getter at path — a typo) |
+	 *  max_unreadable | widget_missing | pending (not ticked yet). A binding fails silently
+	 *  in the HUD; this is how it shows. */
+	UFUNCTION(BlueprintCallable, Category = "MCP") FString GetBindingStatesJson() const;
+
 	// Menu command dispatch. Default handles Resume/Quit; override for project commands.
 	UFUNCTION(BlueprintCallable, Category = "MCP") virtual void RunNamedCommand(FName Command);
 
@@ -104,6 +111,9 @@ private:
 
 	// one-shot issue de-dup (SOURCE_NULL / RATIO_DENOM_ZERO hold-last-good)
 	TSet<FName> IssuedOnce;
+
+	// FieldSourceBindings[i]'s state on the last tick (GetBindingStatesJson).
+	TArray<FName> BindingStates;
 
 	// Subsystem bind source: class path -> class, resolved once (a miss stays a miss:
 	// never a load per frame).

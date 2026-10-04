@@ -416,7 +416,7 @@ Inspect UMG widgets.
 - tree: a WidgetBlueprint's tree + digest.
 - describe: the palette, or one class's props and slot type.
 - render: a UserWidget class as a PNG (MCPAuthoring module).
-In PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text).
+In PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text; a HUD's bindings with their state — path_unreadable is a typo).
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -425,7 +425,7 @@ In PIE: mount `class` on the game's screen / unmount; live_tree: the live widget
 | `render` | ephemeral | render a widget class offscreen to a PNG | class | editor, plugin |
 | `mount` | ephemeral | show a widget on the running game's screen | class | editor, pie, plugin>=4 |
 | `unmount` | ephemeral | remove widgets mounted with mount |  | editor, pie, plugin>=4 |
-| `live_tree` | readonly | the game's live widgets: geometry, visibility, text |  | editor, pie, plugin>=4 |
+| `live_tree` | readonly | the game's live widgets: geometry, visibility, text |  | editor, pie, plugin>=4, plugin>=7 for binding states |
 
 | param | type | description |
 |---|---|---|
@@ -980,7 +980,7 @@ Check the result with widget_query op=tree / op=render.
 | `compose` | mutating | add/update nodes from a declarative tree (additive), then compile | asset, tree | editor |
 | `prune` | destructive | converge on the tree, DELETING nodes absent from it (+ remove) | asset, tree | editor |
 | `compile` | mutating | compile and save; ends a deferred compose | asset | editor |
-| `bind` | mutating | HUD value bindings (MCPHUDWidget): a child's field follows a game value | asset, bindings | editor, plugin>=4, plugin>=7 for float_to_text/float_to_percent/bool_to_visibility |
+| `bind` | mutating | HUD value bindings (MCPHUDWidget): a child's field follows a game value | asset, bindings | editor, plugin>=6, plugin>=7 for float_to_text/float_to_percent/bool_to_visibility |
 
 | param | type | description |
 |---|---|---|

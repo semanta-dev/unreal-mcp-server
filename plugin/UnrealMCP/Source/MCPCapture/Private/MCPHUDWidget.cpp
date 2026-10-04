@@ -20,6 +20,10 @@
 #include "EngineUtils.h" // TActorIterator
 #include "UObject/UnrealType.h"
 #include "UObject/TextProperty.h"
+#include "Dom/JsonObject.h"
+#include "Dom/JsonValue.h"
+#include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonWriter.h"
 
 // ---------------------------------------------------------------------------
 // The LIVE-SLATE apply contract: a reflected write to a live sub-widget updates the
@@ -91,6 +95,25 @@ void UMCPHUDWidget::SetFieldBool(FName Widget, FName Field, bool Value)
 			ApplyFloat(W, Field, Value ? 1.f : 0.f);
 		}
 	}
+}
+
+FString UMCPHUDWidget::GetBindingStatesJson() const
+{
+	TArray<TSharedPtr<FJsonValue>> Out;
+	for (int32 i = 0; i < FieldSourceBindings.Num(); ++i)
+	{
+		const FMCPFieldSourceBinding& B = FieldSourceBindings[i];
+		TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+		J->SetStringField(TEXT("widget"), B.TargetWidget.ToString());
+		J->SetStringField(TEXT("field"), B.TargetField.ToString());
+		J->SetStringField(TEXT("path"), B.Path);
+		J->SetStringField(TEXT("state"), BindingStates.IsValidIndex(i) ? BindingStates[i].ToString() : TEXT("pending"));
+		Out.Add(MakeShared<FJsonValueObject>(J));
+	}
+	FString S;
+	TSharedRef<TJsonWriter<>> W = TJsonWriterFactory<>::Create(&S);
+	FJsonSerializer::Serialize(Out, W);
+	return S;
 }
 
 UWidget* UMCPHUDWidget::ResolveWidget(FName Name) const
@@ -283,23 +306,31 @@ void UMCPHUDWidget::NativeTick(const FGeometry& MyGeometry, float DeltaTime)
 	Super::NativeTick(MyGeometry, DeltaTime);
 
 	// --- value pulls (health/ammo) ---
-	for (const FMCPFieldSourceBinding& B : FieldSourceBindings)
+	static const FName StOk(TEXT("ok")), StSourceNull(TEXT("source_null")), StPath(TEXT("path_unreadable")),
+		StMax(TEXT("max_unreadable")), StWidget(TEXT("widget_missing"));
+	BindingStates.SetNum(FieldSourceBindings.Num());
+	for (int32 Bi = 0; Bi < FieldSourceBindings.Num(); ++Bi)
 	{
+		const FMCPFieldSourceBinding& B = FieldSourceBindings[Bi];
 		UObject* Src = ResolveSource(B);
 		if (!Src)
 		{
+			BindingStates[Bi] = StSourceNull;
 			continue; // owning pawn often null before possession — hold last-good
 		}
 		double Val = 0.0;
 		if (!ReadNumericPath(Src, B.Path, Val))
 		{
+			BindingStates[Bi] = StPath;
 			continue;
 		}
 		UWidget* Target = ResolveWidget(B.TargetWidget);
 		if (!Target)
 		{
+			BindingStates[Bi] = StWidget;
 			continue;
 		}
+		BindingStates[Bi] = StOk;
 		// A ratio by name, or an unconverted value with a denominator. (Not any binding with a
 		// MaxPath: FormatText reads one for {max} and writes text — as a "ratio" it wrote a
 		// float into a text field, i.e. nothing.)
@@ -308,7 +339,12 @@ void UMCPHUDWidget::NativeTick(const FGeometry& MyGeometry, float DeltaTime)
 		if (bRatio)
 		{
 			double MaxVal = 0.0;
-			if (ReadNumericPath(Src, B.MaxPath, MaxVal) && MaxVal != 0.0)
+			const bool bMaxRead = ReadNumericPath(Src, B.MaxPath, MaxVal);
+			if (!bMaxRead)
+			{
+				BindingStates[Bi] = StMax;
+			}
+			if (bMaxRead && MaxVal != 0.0)
 			{
 				ApplyFloat(Target, B.TargetField, (float)(Val / MaxVal));
 			}
@@ -320,7 +356,10 @@ void UMCPHUDWidget::NativeTick(const FGeometry& MyGeometry, float DeltaTime)
 		else if (B.Conversion == EMCPFieldConversion::FormatText)
 		{
 			double MaxVal = 0.0;
-			ReadNumericPath(Src, B.MaxPath, MaxVal);
+			if (!B.MaxPath.IsEmpty() && !ReadNumericPath(Src, B.MaxPath, MaxVal))
+			{
+				BindingStates[Bi] = StMax;
+			}
 			// Whole numbers print as such, fractions keep up to 2 digits (they were truncated to int).
 			FNumberFormattingOptions Fmt;
 			Fmt.MinimumFractionalDigits = 0;

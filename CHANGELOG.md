@@ -112,7 +112,9 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
   the widget's designed visibility) and a `format_text` binding with a `max_path` (it was read as a ratio and wrote
   nothing; values keep up to 2 decimals). `widget_query op=mount` / `unmount` put a widget on the running game's
   screen, `op=live_tree` lists the live widgets with parent, geometry (viewport pixels), effective visibility (a child
-  of a collapsed panel is not visible; `own_visible` is the node's own) and text, at most 2000 nodes (`truncated`).
+  of a collapsed panel is not visible; `own_visible` is the node's own) and text, at most 2000 nodes (`truncated`),
+  and each HUD's bindings with their state (`ok`, `source_null`, `path_unreadable` — a mistyped path —,
+  `max_unreadable`, `widget_missing`).
   `screenshot op=pie ui=true` is the screen as the player sees it, UMG/Slate UI included — one frame taken by the
   plugin at the viewport's size, paused or not (HighResShot leaves the UI out).
 

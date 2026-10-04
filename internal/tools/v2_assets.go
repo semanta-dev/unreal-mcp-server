@@ -512,12 +512,12 @@ func widgetQuerySpec() *spec.Spec {
 		{Name: "render", Summary: "render a widget class offscreen to a PNG", Tier: spec.Ephemeral, Idempotent: true, Required: []string{"class"}, Rejects: []string{"z_order"}, Reaches: []string{"widget_render"}, Needs: []string{"plugin"}},
 		{Name: "mount", Summary: "show a widget on the running game's screen", Tier: spec.Ephemeral, Required: []string{"class"}, Rejects: []string{"asset", "width", "height"}, Reaches: []string{"widget_mount"}, Needs: []string{"pie", "plugin>=4"}},
 		{Name: "unmount", Summary: "remove widgets mounted with mount", Tier: spec.Ephemeral, Idempotent: true, Rejects: []string{"asset", "width", "height", "z_order"}, Reaches: []string{"widget_unmount"}, Needs: []string{"pie", "plugin>=4"}},
-		{Name: "live_tree", Summary: "the game's live widgets: geometry, visibility, text", Tier: spec.ReadOnly, Idempotent: true, Rejects: []string{"asset", "width", "height", "z_order"}, Reaches: []string{"widget_live_tree"}, Needs: []string{"pie", "plugin>=4"}},
+		{Name: "live_tree", Summary: "the game's live widgets: geometry, visibility, text", Tier: spec.ReadOnly, Idempotent: true, Rejects: []string{"asset", "width", "height", "z_order"}, Reaches: []string{"widget_live_tree"}, Needs: []string{"pie", "plugin>=4", "plugin>=7 for binding states"}},
 	}
 	return &spec.Spec{
 		Name: "widget_query", Title: "Inspect UMG widgets", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
 		Description: "Inspect UMG widgets.\n- tree: a WidgetBlueprint's tree + digest.\n- describe: the palette, or one class's props and slot type.\n- render: a UserWidget class as a PNG (MCPAuthoring module).\n" +
-			"In PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text).",
+			"In PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text; a HUD's bindings with their state — path_unreadable is a typo).",
 		Schema:   spec.SchemaFor[widgetQueryIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces: []string{"widget_tree", "widget_describe", "widget_render"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
@@ -572,7 +572,7 @@ func widgetEditSpec() *spec.Spec {
 		{Name: "compile", Summary: "compile and save; ends a deferred compose", Tier: spec.Mutating, Idempotent: true,
 			Required: []string{"asset"}, Rejects: []string{"tree", "remove", "mode", "defer", "bindings"}, Reaches: []string{"widget_compile"}},
 		{Name: "bind", Summary: "HUD value bindings (MCPHUDWidget): a child's field follows a game value", Tier: spec.Mutating, Idempotent: true,
-			Required: []string{"asset", "bindings"}, Rejects: []string{"tree", "remove", "mode", "defer"}, Reaches: []string{"widget_bind"}, Needs: []string{"plugin>=4", "plugin>=7 for float_to_text/float_to_percent/bool_to_visibility"}},
+			Required: []string{"asset", "bindings"}, Rejects: []string{"tree", "remove", "mode", "defer"}, Reaches: []string{"widget_bind"}, Needs: []string{"plugin>=6", "plugin>=7 for float_to_text/float_to_percent/bool_to_visibility"}},
 	}
 	return &spec.Spec{
 		Name: "widget_edit", Title: "Author UMG widgets", Toolset: spec.UI, Timeout: sync25, Max: sync28, Ops: ops,

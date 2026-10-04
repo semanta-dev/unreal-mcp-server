@@ -659,7 +659,7 @@ def _op_widget_bind(args):
     """Set UMCPHUDWidget value bindings on a WidgetBlueprint: keyed by (widget, field) -
     a binding replaces the one on the same field, {remove: true} drops it, the others
     stay. All checked first, written all or nothing, then compiled and saved."""
-    _need_plugin(4, "HUD bindings")
+    _need_plugin(6, "HUD bindings (a bind is checked by compiling the Blueprint)")
     bp_path = args.get("blueprint") or ""
     wbp = unreal.load_asset(bp_path)
     if not isinstance(wbp, unreal.WidgetBlueprint):
@@ -678,40 +678,67 @@ def _op_widget_bind(args):
     if root is not None:
         _widget_index(root, index)
     stored = [_stored_binding(b) for b in cur.get("value") or []]
-    merged = {}
-    for b in stored:
-        if _bind_key(b) in merged:
-            raise _V2Error("CONFLICT", "%s already has two bindings on %s.%s: remove it and bind again" % (
-                bp_path, b["TargetWidget"], b["TargetField"]))
-        merged[_bind_key(b)] = b
-    seen, removed = set(), []
+    merged = list(stored)  # in order; a key normally holds one binding
+
+    def take(key):
+        """Remove every binding on key (an older build could store two); return where the
+        first was and how many there were."""
+        at = [j for j, x in enumerate(merged) if _bind_key(x) == key]
+        for j in reversed(at):
+            del merged[j]
+        return (at[0] if at else len(merged)), len(at)
+
+    seen, removed, replaced, warnings = set(), [], [], []
+    labels = None
     for i, b in enumerate(bindings):
         entry, remove = _check_binding(i, b, index)
         key = _bind_key(entry)
         if key in seen:
             raise _V2Error("BAD_VALUE", "bindings[%d]: %s.%s appears twice in this call" % (i, entry["TargetWidget"], entry["TargetField"]))
         seen.add(key)
+        pos, n = take(key)
+        if n > 1:
+            replaced.append({"widget": entry["TargetWidget"], "field": entry["TargetField"], "stored": n})
         if remove:
             # Removing what is not there succeeds (a retried remove), and says so.
-            removed.append({"widget": entry["TargetWidget"], "field": entry["TargetField"],
-                            "removed": merged.pop(key, None) is not None})
+            removed.append({"widget": entry["TargetWidget"], "field": entry["TargetField"], "removed": n > 0})
         else:
-            merged[key] = entry
-    res = json.loads(auth.set_class_default_json(wbp, "FieldSourceBindings", json.dumps(list(merged.values()))))
+            merged.insert(pos, entry)
+            if entry["Source"] == "WorldActor":
+                if labels is None:
+                    labels = {a.get_actor_label() for a in
+                              unreal.get_editor_subsystem(unreal.EditorActorSubsystem).get_all_level_actors()}
+                if entry["SourceLabel"] not in labels:
+                    warnings.append("bindings[%d]: no actor labelled %r in the open level (fine if the game spawns it; "
+                                    "widget_query op=live_tree shows the binding's state in PIE)" % (i, entry["SourceLabel"]))
+    res = json.loads(auth.set_class_default_json(wbp, "FieldSourceBindings", json.dumps(merged)))
     if not res.get("ok"):
         raise _V2Error("BAD_VALUE", "%s: %s" % (bp_path, res.get("error")))
     unreal.BlueprintEditorLibrary.compile_blueprint(wbp)
-    status = json.loads(auth.describe_blueprint_json(wbp, False)).get("status") if _plugin_api() >= 6 else None
-    if status == "error":
+    if json.loads(auth.describe_blueprint_json(wbp, False)).get("status") == "error":
         # Back to the bindings it had (the Blueprint's own graph does not compile).
-        auth.set_class_default_json(wbp, "FieldSourceBindings", json.dumps(stored))
+        back = json.loads(auth.set_class_default_json(wbp, "FieldSourceBindings", json.dumps(stored)))
         unreal.BlueprintEditorLibrary.compile_blueprint(wbp)
+        if not back.get("ok"):
+            raise _V2Error("EDITOR_ERROR", "%s does not compile, and putting its old bindings back failed (%s): "
+                           "nothing is saved; reload the asset to discard the change" % (bp_path, back.get("error")))
         raise _V2Error("EDITOR_ERROR", "%s does not compile (nothing changed): data_query op=blueprint shows its messages" % bp_path)
     _save(bp_path)
-    after = json.loads(auth.get_class_default_json(wbp, "FieldSourceBindings"))
-    out = {"blueprint": bp_path, "bindings": [_agent_binding(_stored_binding(b)) for b in after.get("value") or []]}
+    after = [_stored_binding(x) for x in json.loads(auth.get_class_default_json(wbp, "FieldSourceBindings")).get("value") or []]
+    out = {"blueprint": bp_path, "bindings": [_agent_binding(x) for x in after]}
     if removed:
         out["removed"] = removed
+    if replaced:
+        out["replaced_duplicates"] = replaced
+    counts = {}
+    for x in after:
+        counts[_bind_key(x)] = counts.get(_bind_key(x), 0) + 1
+    dup = [{"widget": k[0], "field": k[1], "stored": n} for k, n in counts.items() if n > 1]
+    if dup:
+        warnings.append("two or more bindings on one field (written by an older build): bind or remove that field "
+                        "to keep one — %s" % dup)
+    if warnings:
+        out["warnings"] = warnings
     return out
 
 

@@ -8,6 +8,7 @@
 #include "Dom/JsonObject.h"
 #include "Components/EditableTextBox.h"
 #include "Components/PanelWidget.h"
+#include "MCPHUDWidget.h"
 #include "Components/RichTextBlock.h"
 #include "Components/TextBlock.h"
 #include "Blueprint/WidgetTree.h"
@@ -292,11 +293,31 @@ FString UMCPControlSubsystem::DescribeLiveWidgets(TSubclassOf<UUserWidget> Widge
 				const UPanelWidget* Parent = N->GetParent();
 				NJ->SetStringField(TEXT("parent"), Parent ? Parent->GetName() : FString());
 				// visible: on screen as far as visibility goes — the node, every ancestor
-				// panel and the user widget itself (a child of a collapsed panel is hidden).
-				bool bShown = N->IsVisible() && W->IsVisible();
-				for (const UWidget* A = Parent; A && bShown; A = A->GetParent())
+				// panel, its user widget and (a nested user widget) the panels and user
+				// widgets around it, up to one that is in the viewport.
+				bool bShown = true;
+				const UWidget* Cur = N;
+				for (int32 Depth = 0; Cur && bShown && Depth < 256; ++Depth)
 				{
-					bShown = A->IsVisible();
+					bShown = Cur->IsVisible();
+					if (const UWidget* Up = Cur->GetParent())
+					{
+						Cur = Up;
+						continue;
+					}
+					// The root of a tree: up to the user widget that owns the tree.
+					const UUserWidget* Owner = Cur->GetTypedOuter<UUserWidget>();
+					if (Owner && Owner != Cur)
+					{
+						Cur = Owner;
+						continue;
+					}
+					// A top-level user widget: shown only if it is on the viewport.
+					if (const UUserWidget* Top = Cast<UUserWidget>(Cur))
+					{
+						bShown = bShown && Top->IsInViewport();
+					}
+					break;
 				}
 				NJ->SetBoolField(TEXT("visible"), bShown);
 				NJ->SetBoolField(TEXT("own_visible"), N->IsVisible());
@@ -321,6 +342,12 @@ FString UMCPControlSubsystem::DescribeLiveWidgets(TSubclassOf<UUserWidget> Widge
 				Nodes.Add(MakeShared<FJsonValueObject>(NJ));
 			});
 			J->SetArrayField(TEXT("nodes"), Nodes);
+			if (const UMCPHUDWidget* Hud = Cast<UMCPHUDWidget>(W))
+			{
+				TArray<TSharedPtr<FJsonValue>> States;
+				FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Hud->GetBindingStatesJson()), States);
+				J->SetArrayField(TEXT("bindings"), States);
+			}
 			if (bTruncated)
 			{
 				J->SetBoolField(TEXT("truncated"), true);
