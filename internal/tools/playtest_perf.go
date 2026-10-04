@@ -21,6 +21,9 @@ import (
 // errUnseeded: a pass of a seeded run whose seed could not be applied (it FAILs the run).
 var errUnseeded = errors.New("the pass was not seeded")
 
+// errStuckPIE: the pass's PIE would not stop — nothing more may play (it would play in it).
+var errStuckPIE = errors.New("PIE would not stop")
+
 // perfPass is one CsvProfiler run of the scenario's beats. It returns the perf_csv
 // values, the CSV's path, and the pass's beat errors (prefixed with the pass's name).
 // withEvents runs the event recorder through the pass (to measure its overhead).
@@ -35,20 +38,29 @@ func perfPass(ctx context.Context, c *spec.Call, sc *eval.Scenario, duration flo
 	}
 	csvDir := filepath.Join(pd, "Saved", "Profiling", "CSV")
 	before := csvFiles(csvDir)
-	stopPIE := func() error { return stopPIEAndWait(ctx, c) }
+	stopPIE := func() error {
+		if err := stopPIEAndWait(ctx, c); err != nil {
+			return fmt.Errorf("%w: %s: %v", errStuckPIE, name, err)
+		}
+		return nil
+	}
 	progress(name + ": starting " + orStr(sc.Mode, "pie"))
 	forgetGameWorld(c)
 	if _, err := v2Op(ctx, c, "pie_start", map[string]any{"simulate": sc.Mode == "simulate"}); err != nil {
 		return nil, "", nil, err
 	}
 	if err := waitPIE(ctx, c, true, 20*time.Second); err != nil {
-		stopPIE()
+		if serr := stopPIE(); serr != nil {
+			return nil, "", nil, serr
+		}
 		return nil, "", nil, err
 	}
 	var errs []string
 	if seed != nil {
 		if serrs := applySeed(ctx, c, sc, *seed); len(serrs) > 0 {
-			_ = stopPIE()
+			if serr := stopPIE(); serr != nil {
+				return nil, "", nil, serr
+			}
 			return nil, "", nil, fmt.Errorf("%w: %s: %s", errUnseeded, name, strings.Join(serrs, "; "))
 		}
 	}
@@ -61,7 +73,9 @@ func perfPass(ctx context.Context, c *spec.Call, sc *eval.Scenario, duration flo
 		}
 	}
 	if _, err := v2Op(ctx, c, "console", map[string]any{"command": "csvprofile start", "world": "pie"}); err != nil {
-		stopPIE()
+		if serr := stopPIE(); serr != nil {
+			return nil, "", errs, serr
+		}
 		return nil, "", errs, fmt.Errorf("csvprofile start: %w", err)
 	}
 	var timeline *eventTimeline
@@ -87,7 +101,7 @@ func perfPass(ctx context.Context, c *spec.Call, sc *eval.Scenario, duration flo
 	// whose size has settled, while PIE still runs.
 	path, err := waitNewCSV(cctx, csvDir, before)
 	if serr := stopPIE(); serr != nil {
-		errs = append(errs, name+": "+serr.Error())
+		return nil, "", errs, serr
 	}
 	if stopErr != nil {
 		return nil, "", errs, fmt.Errorf("csvprofile stop: %w", stopErr)

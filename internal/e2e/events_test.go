@@ -367,3 +367,26 @@ func TestPlaytestBatchStopsWhenPIEWillNotStop(t *testing.T) {
 		t.Fatalf("a sticky PIE batch = %v (seeds %v)", out, h.world.Events.Seeds)
 	}
 }
+
+// R5 review round 4: no perf pass after a PIE that would not stop.
+func TestPlaytestPerfSkippedWhenPIEWillNotStop(t *testing.T) {
+	h := startHarness(t, harnessOpts{project: t.TempDir()})
+	h.world.PluginAPI = 8
+	rec := &bridgetest.Recorder{Dir: t.TempDir(), Frames: 3, State: func(i int) map[string]any {
+		return map[string]any{"gamestate": map[string]any{"wave": float64(i)}}
+	}}
+	rec.Install(h.emu)
+	var consoles []string
+	h.emu.Handle("console", func(args map[string]any) (any, *bridgetest.OpError) {
+		consoles = append(consoles, fmt.Sprint(args["command"]))
+		return map[string]any{"output": []any{}}, nil
+	})
+	h.world.StickyPIE = true
+	sc := `{"schema":"scenario/v1","name":"sticky","mode":"pie","duration_s":0.2,"interval_s":0.1,
+	 "rubric":[{"id":"waves","kind":"reached","path":"gamestate.wave","params":{"value":2}}]}`
+	out := structured(t, h.call(t, "playtest", map[string]any{"op": "run", "json": sc, "perf": true, "wait_s": 25}))
+	r, _ := out["result"].(map[string]any)
+	if r == nil || r["verdict"] != "FAIL" || r["teardown_error"] == nil || len(consoles) != 0 || r["perf_csv"] != nil {
+		t.Fatalf("perf after a stuck PIE = %v (console %v)", out, consoles)
+	}
+}

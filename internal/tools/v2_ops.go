@@ -796,9 +796,13 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 	}
 	enrichVisual(cr.Dir, cr.Frames)
 	var perfCSV map[string]float64
-	if in.Perf && playing {
+	if in.Perf && playing && teardownErr == nil { // never profile in a PIE that would not stop
 		values, csvPath, perrs, perr := perfPass(ctx, c, sc, duration, progress, false, seed)
 		beatErrs = append(beatErrs, perrs...)
+		if errors.Is(perr, errStuckPIE) {
+			beatErrs = append(beatErrs, "teardown: "+perr.Error())
+			result["teardown_error"] = perr.Error()
+		}
 		if errors.Is(perr, errUnseeded) {
 			seedErrs = append(seedErrs, perr.Error())
 		}
@@ -811,6 +815,10 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 				// The event recorder's cost: the same run profiled with it on (R5.4).
 				with, withCSV, werrs, werr := perfPass(ctx, c, sc, duration, progress, true, seed)
 				beatErrs = append(beatErrs, werrs...)
+				if errors.Is(werr, errStuckPIE) {
+					beatErrs = append(beatErrs, "teardown: "+werr.Error())
+					result["teardown_error"] = werr.Error()
+				}
 				if errors.Is(werr, errUnseeded) {
 					seedErrs = append(seedErrs, werr.Error())
 				}
