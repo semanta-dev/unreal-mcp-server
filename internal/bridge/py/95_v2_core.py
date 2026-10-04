@@ -449,7 +449,7 @@ def _set_props(obj, props):
     errors = []
     for k, v in (props or {}).items():
         try:
-            obj.set_editor_property(k, _maybe_asset(v))
+            _set_prop_merged(obj, k, v)
         except Exception as e:
             errors.append({"property": k, "error": str(e)})
     return errors

@@ -145,10 +145,34 @@ def _widget_apply_props(widget, props):
             elif k == "Visibility" and isinstance(v, str):
                 widget.set_editor_property("visibility", getattr(unreal.SlateVisibility, v.upper(), unreal.SlateVisibility.VISIBLE))
             else:
-                widget.set_editor_property(_snake(k), _maybe_asset(v))
+                _set_prop_merged(widget, _snake(k), v)
         except Exception as e:
             issues.append(_issue("PROPERTY_SET_FAILED", k, str(e)))
     return issues
+
+
+def _set_prop_merged(obj, key, v):
+    """Set one property; a dict for a struct property updates its current value field by
+    field (nested dicts too). Assigning the dict whole builds a fresh struct whose unnamed
+    fields reset to defaults: font {size} dropped the font object (text drew as boxes)."""
+    if isinstance(v, dict):
+        cur = obj.get_editor_property(key)
+        if isinstance(cur, unreal.StructBase):
+            obj.set_editor_property(key, _merge_struct(cur, v))
+            return
+    obj.set_editor_property(key, _maybe_asset(v))
+
+
+def _merge_struct(cur, v):
+    for k, sub in v.items():
+        key = _snake(k)
+        if isinstance(sub, dict):
+            inner = cur.get_editor_property(key)
+            if isinstance(inner, unreal.StructBase):
+                cur.set_editor_property(key, _merge_struct(inner, sub))
+                continue
+        cur.set_editor_property(key, _maybe_asset(sub))
+    return cur
 
 
 def _snake(name):

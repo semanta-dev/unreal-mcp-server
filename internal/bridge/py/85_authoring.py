@@ -54,7 +54,7 @@ def _op_blueprint_set_defaults(args):
     defaults = args.get("defaults") or {}
     for k, v in defaults.items():
         try:
-            cdo.set_editor_property(k, _maybe_asset(v))
+            _set_prop_merged(cdo, k, v)
         except Exception as e:
             errors.append(_issue("PROPERTY_SET_FAILED", k, str(e)))
     unreal.BlueprintEditorLibrary.compile_blueprint(bp)

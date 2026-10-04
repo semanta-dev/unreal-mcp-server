@@ -19,6 +19,23 @@ class Object:
     pass
 
 
+class StructBase:
+    """A struct value: fields set by keyword; get/set_editor_property raise on a field the
+    struct does not have, like the engine."""
+
+    def __init__(self, **fields):
+        self.__dict__["_f"] = dict(fields)
+
+    def get_editor_property(self, k):
+        if k not in self._f:
+            raise Exception("Failed to find property '%s' for attribute '%s' on '%s'" % (k, k, type(self).__name__))
+        return self._f[k]
+
+    def set_editor_property(self, k, v):
+        self.get_editor_property(k)
+        self._f[k] = v
+
+
 class Class(Object):
     def __init__(self, name, path, parent=None):
         self._name, self._path, self.parent = name, path, parent
@@ -242,6 +259,7 @@ class Fake:
         self.Actor, self.Blueprint, self.WidgetBlueprint = Actor, Blueprint, WidgetBlueprint
         self.ActorComponent, self.StaticMeshComponent = ActorComponent, StaticMeshComponent
         self.SceneComponent, self.ComponentMobility = SceneComponent, ComponentMobility
+        self.StructBase = StructBase
         self.ScopedEditorTransaction = _Tx
         _Tx.log = []
         _Tx.kept = []
