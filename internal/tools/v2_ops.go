@@ -576,7 +576,7 @@ type playtestIn struct {
 
 var playtestReaches = []string{"open_level", "pie_start", "pie_stop", "console", "actor_set_properties",
 	"capture_start", "capture_stop", "actor_call", "pie_observe", "observe_paths", "editor_ping",
-	"pie_input", "pie_cursor", "pie_ui_click", "pie_time", "game_read", "game_command", "events_start", "events_stop", "seed_random"}
+	"pie_input", "pie_cursor", "pie_ui_click", "pie_aim_state", "pie_axis_stats", "pie_time", "game_read", "game_command", "events_start", "events_stop", "seed_random"}
 
 func playtestSpec() *spec.Spec {
 	ops := []spec.OpSpec{
@@ -1011,7 +1011,7 @@ func runBeatsV2(ctx context.Context, c *spec.Call, beats []eval.Beat, duration f
 			}
 		}
 		if bt.Input != nil {
-			err := runInputBeat(ctx, c, bt.Input)
+			err := runInputBeat(ctx, c, bt.Input, end)
 			if err != nil {
 				fail(i, "input "+bt.Input.Kind(), err)
 			}
@@ -1055,8 +1055,15 @@ func beatData(d map[string]any, err error) map[string]any {
 }
 
 // runInputBeat plays one input step through the same companion ops as pie op=input /
-// cursor / ui_click.
-func runInputBeat(ctx context.Context, c *spec.Call, in *eval.InputStep) error {
+// cursor / ui_click / aim; an aim step with duration_s tracks until then (or the run's end).
+func runInputBeat(ctx context.Context, c *spec.Call, in *eval.InputStep, end time.Time) error {
+	if in.Kind() == "aim" {
+		target := map[string]any{"class": in.Class}
+		if in.Actor != "" {
+			target = map[string]any{"actor": in.Actor}
+		}
+		return trackAim(ctx, c, target, in.DurationS, end)
+	}
 	args := map[string]any{}
 	set := func(k string, v any, ok bool) {
 		if ok {
@@ -1085,7 +1092,7 @@ func runInputBeat(ctx context.Context, c *spec.Call, in *eval.InputStep) error {
 		op = "pie_ui_click"
 		args["widget"] = in.Widget
 	default:
-		return envelope.New(envelope.InvalidArgument, "input needs exactly one of key, position, widget")
+		return envelope.New(envelope.InvalidArgument, "input needs exactly one of key, position, widget, actor/class")
 	}
 	_, err := v2Op(ctx, c, op, args)
 	return err

@@ -434,3 +434,33 @@ func TestPieAimRefusesWhenTheMouseDoesNotTurnTheView(t *testing.T) {
 		t.Fatalf("aim with look ignored = %v", e)
 	}
 }
+
+// A playtest aim step turns the view onto the nearest target with mouse input and keeps
+// on it for duration_s (aesir_ttk: kills inside a recorded playtest need aiming).
+func TestPlaytestAimBeat(t *testing.T) {
+	h := startHarness(t, harnessOpts{project: t.TempDir()})
+	h.world.PluginAPI = 5
+	h.world.AddActor("Enemy_1", "/Script/Game.EnemyCharacter", [3]float64{1000, 600, 300}, nil)
+	rec := &bridgetest.Recorder{Dir: t.TempDir(), Frames: 3, State: func(i int) map[string]any {
+		return map[string]any{"gamestate": map[string]any{"wave": float64(i)}}
+	}}
+	rec.Install(h.emu)
+	scenario := `{"schema":"scenario/v1","name":"aim","mode":"pie","duration_s":1.5,"interval_s":0.1,
+	 "beats":[{"at_s":0.1,"input":{"key":"LeftMouseButton","action":"hold","duration_s":1}},
+	          {"at_s":0.2,"input":{"class":"EnemyCharacter","duration_s":0.6}}],
+	 "rubric":[{"id":"waves","kind":"reached","path":"gamestate.wave","params":{"value":2}}]}`
+	out := structured(t, h.call(t, "playtest", map[string]any{"op": "run", "json": scenario, "wait_s": 20}))
+	if r, _ := out["result"].(map[string]any); out["state"] != "succeeded" || r == nil || r["verdict"] != "PASS" {
+		t.Fatalf("playtest with an aim beat = %v", out)
+	}
+	axes := 0
+	for _, in := range h.world.RecordedInputs() {
+		if in["action"] == "axis" {
+			axes++
+		}
+	}
+	yaw := math.Atan2(600, 1000) * 180 / math.Pi
+	if axes == 0 || math.Abs(h.world.ViewYaw-yaw) > 1 {
+		t.Fatalf("aim beat: %d axis inputs, view yaw %.2f (want %.2f)", axes, h.world.ViewYaw, yaw)
+	}
+}

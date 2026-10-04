@@ -44,7 +44,50 @@ func pieAim(ctx context.Context, c *spec.Call, in pieIn) (*spec.Result, error) {
 	if (in.Actor == "") == (in.Class == "") {
 		return nil, envelope.New(envelope.InvalidArgument, "aim needs actor or class (one of them)")
 	}
-	target := pick(c.Args, "actor", "class")
+	out, err := aimOnce(ctx, c, pick(c.Args, "actor", "class"))
+	if err != nil {
+		return nil, err
+	}
+	errs := [2]float64{out["yaw_error"].(float64), out["pitch_error"].(float64)}
+	summary := fmt.Sprintf("aimed at %v (%.1f°, %.1f° off) in %d steps", out["target"], errs[0], errs[1], out["steps"])
+	if out["aimed"] != true {
+		summary = fmt.Sprintf("not on %v after %d steps: %.1f° yaw, %.1f° pitch off (a moving target: aim again)", out["target"], out["steps"], errs[0], errs[1])
+	}
+	return &spec.Result{Data: out, Summary: summary}, nil
+}
+
+// trackAim keeps aiming at the target (the nearest of a class: whichever is nearest
+// now) until durationS has passed or the run ends; with no target in play it waits for
+// one. A zero duration aims once.
+func trackAim(ctx context.Context, c *spec.Call, target map[string]any, durationS float64, end time.Time) error {
+	deadline := time.Now().Add(secs(durationS))
+	if deadline.After(end) {
+		deadline = end
+	}
+	for {
+		_, err := aimOnce(ctx, c, target)
+		if err != nil && envelope.Classify(err, false).Code != envelope.NotFound {
+			return err
+		}
+		if durationS <= 0 {
+			return err
+		}
+		if !time.Now().Before(deadline) {
+			return nil
+		}
+		pause := 60 * time.Millisecond // on target: re-check soon (it moves)
+		if err != nil {
+			pause = 300 * time.Millisecond // none in play yet
+		}
+		if sleepCtx(ctx, pause) != nil {
+			return ctx.Err()
+		}
+	}
+}
+
+// aimOnce runs the loop once: {target, path, distance, aimed, yaw_error, pitch_error,
+// steps, gain[, note]}.
+func aimOnce(ctx context.Context, c *spec.Call, target map[string]any) (map[string]any, error) {
 	aimGains.Lock()
 	cal, ok := aimGains.m[c.Deps.ProjectDir]
 	aimGains.Unlock()
@@ -134,11 +177,7 @@ func pieAim(ctx context.Context, c *spec.Call, in pieIn) (*spec.Result, error) {
 	if stuck[1] && !aimed {
 		out["note"] = "pitch stopped turning (at its limit?): the target may be out of the view's pitch range"
 	}
-	summary := fmt.Sprintf("aimed at %v (%.1f°, %.1f° off) in %d steps", st["target"], errs[0], errs[1], step)
-	if !aimed {
-		summary = fmt.Sprintf("not on %v after %d steps: %.1f° yaw, %.1f° pitch off (a moving target: aim again)", st["target"], step, errs[0], errs[1])
-	}
-	return &spec.Result{Data: out, Summary: summary}, nil
+	return out, nil
 }
 
 // aimDone: every axis is within tolerance or cannot turn further.

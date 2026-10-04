@@ -61,9 +61,11 @@ type Beat struct {
 	GameCommand *GameCommandStep `json:"game_command,omitempty"`
 }
 
-// InputStep plays input like a player (pie op=input / cursor / ui_click): a key or
-// axis (key), a cursor action at a viewport position (position), or a click on a
-// visible widget (widget) — exactly one of the three.
+// InputStep plays input like a player (pie op=input / cursor / ui_click / aim): a key
+// or axis (key), a cursor action at a viewport position (position), a click on a
+// visible widget (widget), or aiming the view at an actor or the nearest of a class
+// (actor / class; with duration_s it keeps re-aiming that long, later beats waiting) —
+// exactly one of them.
 type InputStep struct {
 	Key       string    `json:"key,omitempty"`
 	Action    string    `json:"action,omitempty"`
@@ -73,6 +75,8 @@ type InputStep struct {
 	To        []float64 `json:"to,omitempty"`
 	Button    string    `json:"button,omitempty"`
 	Widget    string    `json:"widget,omitempty"`
+	Actor     string    `json:"actor,omitempty"`
+	Class     string    `json:"class,omitempty"`
 }
 
 // Kind is the pie op the step maps to: input, cursor or ui_click ("" when malformed).
@@ -86,6 +90,9 @@ func (s *InputStep) Kind() string {
 	}
 	if s.Widget != "" {
 		n, kind = n+1, "ui_click"
+	}
+	if s.Actor != "" || s.Class != "" {
+		n, kind = n+1, "aim"
 	}
 	if n != 1 {
 		return ""
@@ -105,7 +112,11 @@ func (s *InputStep) check() string {
 	kind := s.Kind()
 	switch {
 	case kind == "":
-		return "input needs exactly one of key, position, widget"
+		return "input needs exactly one of key, position, widget, actor/class"
+	case kind == "aim" && (s.Actor != "" && s.Class != "" || s.Action != "" || s.Button != ""):
+		return "an aim step takes actor or class (not both), and duration_s; no action or button"
+	case kind == "aim":
+		return ""
 	case kind != "ui_click" && !inputActions[kind][s.Action]:
 		return fmt.Sprintf("a %s step takes no action %q", kind, s.Action)
 	case kind == "ui_click" && s.Action != "":

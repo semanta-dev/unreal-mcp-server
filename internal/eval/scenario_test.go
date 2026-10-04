@@ -114,6 +114,9 @@ func TestInputStepsAreChecked(t *testing.T) {
 		`{"key":"W","action":"click"}`:                   "no action",
 		`{"widget":"B","action":"tap"}`:                  "no action",
 		`{"key":"W","widget":"B"}`:                       "exactly one",
+		`{"key":"W","class":"Enemy"}`:                    "exactly one",
+		`{"actor":"E","class":"Enemy"}`:                  "not both",
+		`{"class":"Enemy","action":"hold"}`:              "no action",
 	} {
 		_, diags, err := ParseScenario([]byte(`{"schema":"scenario/v1","name":"x","beats":[{"input":` + step + `}]}`))
 		if err != nil {
@@ -127,6 +130,19 @@ func TestInputStepsAreChecked(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("input %s: want an error containing %q, got %+v", step, want, diags)
+		}
+	}
+}
+
+// An aim step (actor or class, optional duration_s) parses clean.
+func TestAimInputStepParses(t *testing.T) {
+	_, diags, err := ParseScenario([]byte(`{"schema":"scenario/v1","name":"x","beats":[{"input":{"class":"Enemy","duration_s":20}},{"input":{"actor":"Boss"}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range diags {
+		if d.Severity == "error" {
+			t.Fatalf("aim step: %+v", d)
 		}
 	}
 }
