@@ -813,7 +813,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Edit game data; each op saves. set_properties (any non-Blueprint asset), table_upsert / table_delete (keyed, never replace-all), curve_keys (all-or-nothing): one undo step each. add_variable (Blueprint graphs are not edited — logic goes in C++ via build) and input_mapping (InputAction + mapping context, created if missing) say undoable:false.",
+      "description": "Edit game data; each op saves. set_properties (any non-Blueprint asset), settings (a settings class, written to its Default*.ini), table_upsert / table_delete (keyed, never replace-all), curve_keys (all-or-nothing): one undo step each. add_variable (Blueprint graphs are not edited — logic goes in C++ via build), input_mapping (InputAction + mapping context, created if missing) and settings say undoable:false.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -822,7 +822,11 @@
             "type": "string"
           },
           "asset": {
-            "description": "the asset (not input_mapping)",
+            "description": "the asset (not settings / input_mapping)",
+            "type": "string"
+          },
+          "class": {
+            "description": "settings: the settings class, e.g. /Script/Engine.RendererSettings",
             "type": "string"
           },
           "context": {
@@ -854,6 +858,7 @@
           "op": {
             "enum": [
               "set_properties",
+              "settings",
               "table_upsert",
               "table_delete",
               "curve_keys",
@@ -869,7 +874,7 @@
           },
           "properties": {
             "additionalProperties": true,
-            "description": "set_properties: {property: value} on a non-Blueprint asset (Blueprints: asset_edit)",
+            "description": "set_properties: {property: value} on a non-Blueprint asset (Blueprints: asset_edit); settings: on the class default",
             "type": "object"
           },
           "row_names": {
@@ -933,7 +938,7 @@
             ],
             "type": "string"
           },
-          "rows": {
+          "row_names": {
             "description": "table: only these rows (default all)",
             "items": {
               "type": "string"

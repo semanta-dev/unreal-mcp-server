@@ -13,7 +13,7 @@ import (
 func TestDataToolsArgsAndUndoable(t *testing.T) {
 	h := startHarness(t, harnessOpts{toolsets: []spec.Toolset{spec.Data}})
 	got := map[string]map[string]any{}
-	for _, op := range []string{"data_table_delete", "data_curve_keys", "data_input_mapping", "data_table_read"} {
+	for _, op := range []string{"data_table_delete", "data_curve_keys", "data_input_mapping", "data_table_read", "data_set_settings"} {
 		op := op
 		h.emu.Handle(op, func(args map[string]any) (any, *bridgetest.OpError) {
 			got[op] = args
@@ -32,6 +32,11 @@ func TestDataToolsArgsAndUndoable(t *testing.T) {
 	if out["undoable"] != false || got["data_input_mapping"]["keys"] == nil {
 		t.Fatalf("input_mapping = %v (args %v)", out, got["data_input_mapping"])
 	}
+	out = structured(t, h.call(t, "data_edit", map[string]any{"op": "settings", "class": "/Script/EngineSettings.GeneralProjectSettings",
+		"properties": map[string]any{"ProjectVersion": "1.2"}}))
+	if out["undoable"] != false || got["data_set_settings"]["class"] != "/Script/EngineSettings.GeneralProjectSettings" {
+		t.Fatalf("settings = %v (args %v)", out, got["data_set_settings"])
+	}
 	// Each op takes only its own parameters; the required ones are required.
 	for _, bad := range []map[string]any{
 		{"op": "set_properties", "asset": "/Game/X", "properties": map[string]any{"a": 1}, "rows": map[string]any{}},
@@ -42,11 +47,11 @@ func TestDataToolsArgsAndUndoable(t *testing.T) {
 			t.Fatalf("data_edit %v = %v", bad, e)
 		}
 	}
-	if e := errorOf(t, h.call(t, "data_query", map[string]any{"op": "curve", "asset": "/Game/Data/C", "rows": []any{"x"}})); e["code"] != "INVALID_ARGUMENT" {
+	if e := errorOf(t, h.call(t, "data_query", map[string]any{"op": "curve", "asset": "/Game/Data/C", "row_names": []any{"x"}})); e["code"] != "INVALID_ARGUMENT" {
 		t.Fatalf("data_query curve with rows = %v", e)
 	}
-	structured(t, h.call(t, "data_query", map[string]any{"op": "table", "asset": "/Game/Data/DT", "rows": []any{"Wave_01"}, "limit": 5}))
-	if got["data_table_read"]["limit"] != 5.0 {
+	structured(t, h.call(t, "data_query", map[string]any{"op": "table", "asset": "/Game/Data/DT", "row_names": []any{"Wave_01"}, "limit": 5}))
+	if got["data_table_read"]["limit"] != 5.0 || len(asAny(got["data_table_read"]["rows"])) != 1 {
 		t.Fatalf("table read args = %v", got["data_table_read"])
 	}
 }
@@ -62,4 +67,9 @@ func TestDataTableDeleteIsGated(t *testing.T) {
 	if res := h.call(t, "data_edit", map[string]any{"op": "table_delete", "asset": "/Game/Data/DT", "row_names": []any{"Wave_01"}}); !res.IsError {
 		t.Fatalf("table_delete under require: %s", text(res))
 	}
+}
+
+func asAny(v any) []any {
+	s, _ := v.([]any)
+	return s
 }

@@ -118,4 +118,20 @@ public:
 	 *  and adds that compile's messages. Refused while PIE runs. */
 	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
 	FString DescribeBlueprintJson(UBlueprint* Blueprint, bool bCompile);
+
+	/** Whether Name can be a new member of the Blueprint — Kismet's own validator, which
+	 *  sees inherited properties, functions and components too (UE renames a clash
+	 *  silently: Tags -> Tags_0). Returns "" or why not. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
+	FString CheckMemberName(UBlueprint* Blueprint, FName Name);
+
+	/** Remove a member variable (undoing a half-applied add). True if it existed. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
+	bool RemoveMemberVariable(UBlueprint* Blueprint, FName Name);
+
+	/** Write a config object's (a settings class default's) config properties to its
+	 *  default config file (Config/Default*.ini) — UObject::TryUpdateDefaultConfigFile,
+	 *  which Python cannot reach. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
+	bool UpdateDefaultConfig(UObject* ConfigObject);
 };

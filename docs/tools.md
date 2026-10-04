@@ -1234,17 +1234,18 @@ Read game data. table: rows of a DataTable {row: {field: value}}. curve: a float
 | `asset` | string | the DataTable, CurveFloat or Blueprint asset path |
 | `limit` | integer | table: max rows returned (default 200) |
 | `op` | string | one of: table, curve, blueprint |
-| `rows` | string[] | table: only these rows (default all) |
+| `row_names` | string[] | table: only these rows (default all) |
 
 ### `data_edit` — Edit game data
 
 _tier destructive_
 
-Edit game data; each op saves. set_properties (any non-Blueprint asset), table_upsert / table_delete (keyed, never replace-all), curve_keys (all-or-nothing): one undo step each. add_variable (Blueprint graphs are not edited — logic goes in C++ via build) and input_mapping (InputAction + mapping context, created if missing) say undoable:false.
+Edit game data; each op saves. set_properties (any non-Blueprint asset), settings (a settings class, written to its Default*.ini), table_upsert / table_delete (keyed, never replace-all), curve_keys (all-or-nothing): one undo step each. add_variable (Blueprint graphs are not edited — logic goes in C++ via build), input_mapping (InputAction + mapping context, created if missing) and settings say undoable:false.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
 | `set_properties` | mutating | set properties on an asset (per-property errors) | asset, properties | editor |
+| `settings` | mutating | set a settings class's defaults and write its Default*.ini | class, properties | editor, plugin>=6 |
 | `table_upsert` | mutating | insert or update DataTable rows by name (others untouched) | asset, rows | editor |
 | `table_delete` | destructive | delete DataTable rows by name | asset, row_names | editor |
 | `curve_keys` | mutating | replace a float curve's keys | asset, points | editor, plugin>=6 |
@@ -1254,16 +1255,17 @@ Edit game data; each op saves. set_properties (any non-Blueprint asset), table_u
 | param | type | description |
 |---|---|---|
 | `action` | string | input_mapping: the InputAction asset, e.g. /Game/Input/IA_Dash (created if missing) |
-| `asset` | string | the asset (not input_mapping) |
+| `asset` | string | the asset (not settings / input_mapping) |
+| `class` | string | settings: the settings class, e.g. /Script/Engine.RendererSettings |
 | `context` | string | input_mapping: the InputMappingContext asset (created if missing) |
 | `default` |  | add_variable: the default value |
 | `expose_on_spawn` | boolean | add_variable: a spawn parameter |
 | `instance_editable` | boolean | add_variable: editable per instance |
 | `keys` | string[] | input_mapping: the action's keys in that context, exactly (e.g. [LeftShift]; [] unmaps) |
 | `name` | string | add_variable: the variable's name |
-| `op` | string | one of: set_properties, table_upsert, table_delete, curve_keys, add_variable, input_mapping |
+| `op` | string | one of: set_properties, settings, table_upsert, table_delete, curve_keys, add_variable, input_mapping |
 | `points` | [] | curve_keys: the new keys, [[time, value], ...] or [{time, value, interp: linear\|constant\|cubic}] |
-| `properties` | object | set_properties: {property: value} on a non-Blueprint asset (Blueprints: asset_edit) |
+| `properties` | object | set_properties: {property: value} on a non-Blueprint asset (Blueprints: asset_edit); settings: on the class default |
 | `row_names` | string[] | table_delete: the rows to delete (all exist, or nothing is deleted) |
 | `rows` | object | table_upsert: {row name: {field: value}}; fields not given keep their values |
 | `type` | string | add_variable: bool\|byte\|int\|int64\|float\|double\|name\|string\|text, object:<Class>, class:<Class>, struct:<Struct>, array:<type>, set:<type> |

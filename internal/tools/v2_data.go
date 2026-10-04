@@ -15,17 +15,17 @@ import (
 func dataSpecs() []*spec.Spec { return []*spec.Spec{dataQuerySpec(), dataEditSpec()} }
 
 type dataQueryIn struct {
-	Op    string   `json:"op" jsonschema:"table | curve | blueprint"`
-	Asset string   `json:"asset" jsonschema:"the DataTable, CurveFloat or Blueprint asset path"`
-	Rows  []string `json:"rows,omitempty" jsonschema:"table: only these rows (default all)"`
-	Limit int      `json:"limit,omitempty" jsonschema:"table: max rows returned (default 200)"`
+	Op       string   `json:"op" jsonschema:"table | curve | blueprint"`
+	Asset    string   `json:"asset" jsonschema:"the DataTable, CurveFloat or Blueprint asset path"`
+	RowNames []string `json:"row_names,omitempty" jsonschema:"table: only these rows (default all)"`
+	Limit    int      `json:"limit,omitempty" jsonschema:"table: max rows returned (default 200)"`
 }
 
 func dataQuerySpec() *spec.Spec {
 	ops := []spec.OpSpec{
 		{Name: "table", Summary: "a DataTable's rows, typed (the engine's JSON forms)", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"asset"}, Reaches: []string{"data_table_read"}},
-		{Name: "curve", Summary: "a float curve's keys", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"asset"}, Rejects: []string{"rows", "limit"}, Reaches: []string{"data_curve_read"}, Needs: []string{"plugin>=6"}},
-		{Name: "blueprint", Summary: "a Blueprint's components, variables, functions, events, compile status + messages", Tier: spec.Ephemeral, Idempotent: true, Required: []string{"asset"}, Rejects: []string{"rows", "limit"}, Reaches: []string{"data_blueprint"}, Needs: []string{"plugin>=6"}},
+		{Name: "curve", Summary: "a float curve's keys", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"asset"}, Rejects: []string{"row_names", "limit"}, Reaches: []string{"data_curve_read"}, Needs: []string{"plugin>=6"}},
+		{Name: "blueprint", Summary: "a Blueprint's components, variables, functions, events, compile status + messages", Tier: spec.Ephemeral, Idempotent: true, Required: []string{"asset"}, Rejects: []string{"row_names", "limit"}, Reaches: []string{"data_blueprint"}, Needs: []string{"plugin>=6"}},
 	}
 	return &spec.Spec{
 		Name: "data_query", Title: "Read game data", Toolset: spec.Data, Timeout: sync15, Max: sync28, Ops: ops,
@@ -43,7 +43,7 @@ func dataQueryHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		return nil, err
 	}
 	py := map[string]string{"table": "data_table_read", "curve": "data_curve_read", "blueprint": "data_blueprint"}[c.Op.Name]
-	out, err := v2Op(ctx, c, py, pick(c.Args, "asset", "rows", "limit"))
+	out, err := v2Op(ctx, c, py, rename(map[string]any{}, c.Args, "asset", "asset", "row_names", "rows", "limit", "limit"))
 	if err != nil {
 		return nil, err
 	}
@@ -58,9 +58,10 @@ func dataQueryHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 }
 
 type dataEditIn struct {
-	Op               string         `json:"op" jsonschema:"set_properties | table_upsert | table_delete | curve_keys | add_variable | input_mapping"`
-	Asset            string         `json:"asset,omitempty" jsonschema:"the asset (not input_mapping)"`
-	Properties       map[string]any `json:"properties,omitempty" jsonschema:"set_properties: {property: value} on a non-Blueprint asset (Blueprints: asset_edit)"`
+	Op               string         `json:"op" jsonschema:"set_properties | settings | table_upsert | table_delete | curve_keys | add_variable | input_mapping"`
+	Asset            string         `json:"asset,omitempty" jsonschema:"the asset (not settings / input_mapping)"`
+	Class            string         `json:"class,omitempty" jsonschema:"settings: the settings class, e.g. /Script/Engine.RendererSettings"`
+	Properties       map[string]any `json:"properties,omitempty" jsonschema:"set_properties: {property: value} on a non-Blueprint asset (Blueprints: asset_edit); settings: on the class default"`
 	Rows             map[string]any `json:"rows,omitempty" jsonschema:"table_upsert: {row name: {field: value}}; fields not given keep their values"`
 	RowNames         []string       `json:"row_names,omitempty" jsonschema:"table_delete: the rows to delete (all exist, or nothing is deleted)"`
 	Points           []any          `json:"points,omitempty" jsonschema:"curve_keys: the new keys, [[time, value], ...] or [{time, value, interp: linear|constant|cubic}]"`
@@ -75,7 +76,7 @@ type dataEditIn struct {
 	ValueType        string         `json:"value_type,omitempty" jsonschema:"input_mapping: digital | axis1d | axis2d | axis3d"`
 }
 
-var dataEditParams = []string{"asset", "properties", "rows", "row_names", "points", "name", "type", "default",
+var dataEditParams = []string{"asset", "class", "properties", "rows", "row_names", "points", "name", "type", "default",
 	"instance_editable", "expose_on_spawn", "action", "context", "keys", "value_type"}
 
 // dataRejects is every dataEdit param except keep (each op takes only its own).
@@ -96,6 +97,7 @@ func dataRejects(keep ...string) []string {
 func dataEditSpec() *spec.Spec {
 	ops := []spec.OpSpec{
 		{Name: "set_properties", Summary: "set properties on an asset (per-property errors)", Tier: spec.Mutating, Required: []string{"asset", "properties"}, Rejects: dataRejects("asset", "properties"), Reaches: []string{"data_set_properties"}},
+		{Name: "settings", Summary: "set a settings class's defaults and write its Default*.ini", Tier: spec.Mutating, Required: []string{"class", "properties"}, Rejects: dataRejects("class", "properties"), Reaches: []string{"data_set_settings"}, Needs: []string{"plugin>=6"}},
 		{Name: "table_upsert", Summary: "insert or update DataTable rows by name (others untouched)", Tier: spec.Mutating, Required: []string{"asset", "rows"}, Rejects: dataRejects("asset", "rows"), Reaches: []string{"data_table_upsert"}},
 		{Name: "table_delete", Summary: "delete DataTable rows by name", Tier: spec.Destructive, Required: []string{"asset", "row_names"}, Rejects: dataRejects("asset", "row_names"), Reaches: []string{"data_table_delete"}},
 		{Name: "curve_keys", Summary: "replace a float curve's keys", Tier: spec.Mutating, Required: []string{"asset", "points"}, Rejects: dataRejects("asset", "points"), Reaches: []string{"data_curve_keys"}, Needs: []string{"plugin>=6"}},
@@ -104,10 +106,10 @@ func dataEditSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "data_edit", Title: "Edit game data", Toolset: spec.Data, Timeout: sync15, Max: sync28, Ops: ops,
-		Description: "Edit game data; each op saves. set_properties (any non-Blueprint asset), table_upsert / table_delete " +
+		Description: "Edit game data; each op saves. set_properties (any non-Blueprint asset), settings (a settings class, written to its Default*.ini), table_upsert / table_delete " +
 			"(keyed, never replace-all), curve_keys (all-or-nothing): one undo step each. add_variable (Blueprint graphs are " +
-			"not edited — logic goes in C++ via build) and input_mapping (InputAction + mapping context, created if missing) " +
-			"say undoable:false.",
+			"not edited — logic goes in C++ via build), input_mapping (InputAction + mapping context, created if missing) and " +
+			"settings say undoable:false.",
 		Schema: spec.SchemaFor[dataEditIn](map[string][]any{"op": spec.OpEnum(ops...),
 			"value_type": {"digital", "axis1d", "axis2d", "axis3d"}}, "op"),
 		Handler: dataEditHandler,
@@ -124,6 +126,9 @@ func dataEditHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	switch c.Op.Name {
 	case "set_properties":
 		args = pick(c.Args, "asset", "properties")
+	case "settings":
+		py = "data_set_settings"
+		args = pick(c.Args, "class", "properties")
 	case "table_upsert":
 		args = pick(c.Args, "asset", "rows")
 	case "table_delete":
@@ -142,7 +147,7 @@ func dataEditHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if c.Op.Name == "add_variable" || c.Op.Name == "input_mapping" {
+	if c.Op.Name == "add_variable" || c.Op.Name == "input_mapping" || c.Op.Name == "settings" {
 		out["undoable"] = false // no editor transaction: roll back with git_revert
 	}
 	return &spec.Result{Data: out, Summary: c.Op.Name + " done"}, nil

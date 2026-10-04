@@ -97,6 +97,7 @@ _OPS = {
     "data_curve_keys": _op_data_curve_keys,
     "data_blueprint": _op_data_blueprint,
     "data_set_properties": _op_data_set_properties,
+    "data_set_settings": _op_data_set_settings,
     "data_add_variable": _op_data_add_variable,
     "data_input_mapping": _op_data_input_mapping,
 }

@@ -1,7 +1,8 @@
 # --- R3: data and logic authoring (toolset `data`) ---------------------------------------
 # DataTables (typed rows, keyed upsert/delete — never replace-all), float curves (plugin
 # API 6: Python cannot read FRichCurve keys), Blueprint describe (plugin API 6) and
-# add_variable, property edits on any asset, Enhanced Input actions and mapping contexts.
+# add_variable, property edits on any asset or settings class, Enhanced Input actions and
+# mapping contexts.
 
 
 def _data_asset(args, kind=None):
@@ -16,13 +17,28 @@ def _data_asset(args, kind=None):
     return path, obj
 
 
+def _save(path):
+    """Save an asset whether or not the editor thinks it is dirty (some edits — mapping
+    contexts, filled tables — do not mark the package) and fail when it does not save."""
+    if not unreal.EditorAssetLibrary.save_asset(path, only_if_is_dirty=False):
+        raise _V2Error("EDITOR_ERROR", "%s did not save (read-only, or checked out elsewhere?)" % path)
+
+
 def _norm(name):
     return str(name).lower().replace("_", "")
 
 
+def _data_table(args):
+    path, dt = _data_asset(args, unreal.DataTable)
+    composite = getattr(unreal, "CompositeDataTable", None)
+    if composite is not None and isinstance(dt, composite):
+        raise _V2Error("BAD_VALUE", "%s is a composite DataTable: edit the tables it is made of" % path)
+    return path, dt
+
+
 def _table_rows(dt):
-    """The table's rows as {row name: {field: value}} (the engine's own JSON export, so
-    field names are the struct's C++ names and values its JSON forms)."""
+    """The table's rows as {row name: {column: value}} (the engine's own JSON export, so
+    the columns are the struct's export names and the values its JSON forms)."""
     raw = unreal.DataTableFunctionLibrary.export_data_table_to_json_string(dt)
     rows = {}
     for r in json.loads(raw or "[]"):
@@ -32,107 +48,56 @@ def _table_rows(dt):
     return rows
 
 
-def _row_fields(dt):
-    """{normalized field name: C++ field name} of the table's row struct, from its
-    UE-generated docstring (Python names are snake_case; the JSON uses the C++ names)."""
-    st = dt.get_editor_property("row_struct")
-    pytype = getattr(unreal, st.get_name(), None) if st is not None else None
-    fields = {}
-    for name, _type in _FIELD_DOC.findall(getattr(pytype, "__doc__", None) or ""):
-        fields[_norm(name)] = name
-    return st, fields
+def _columns(dt):
+    """{normalized column: export name} — the names the JSON import matches, for a C++
+    struct and a Blueprint (user-defined) struct alike."""
+    return {_norm(c): str(c) for c in unreal.DataTableFunctionLibrary.get_data_table_column_export_names(dt)}
+
+
+def _row_name(rows, name):
+    """The existing row a name means: row names are FNames, matched without regard to case."""
+    for n in rows:
+        if n.lower() == str(name).lower():
+            return n
+    return None
 
 
 def _op_data_table_read(args):
-    path, dt = _data_asset(args, unreal.DataTable)
+    path, dt = _data_table(args)
     rows = _table_rows(dt)
     want = args.get("rows")
     if want:
-        missing = [r for r in want if r not in rows]
+        found = {w: _row_name(rows, w) for w in want}
+        missing = [w for w, n in found.items() if n is None]
         if missing:
             raise _V2Error("NOT_FOUND", "%s has no rows %s" % (path, ", ".join(missing)), rows=sorted(rows)[:50])
-        rows = {r: rows[r] for r in want}
-    limit = int(args.get("limit") or 200)
+        rows = {n: rows[n] for n in found.values()}
+    limit = max(1, int(args.get("limit") or 200))
     names = list(rows)[:limit]
     st = dt.get_editor_property("row_struct")
-    return {"asset": path, "row_struct": st.get_path_name() if st else None, "total": len(rows),
-            "truncated": len(rows) > limit, "rows": {n: rows[n] for n in names}}
+    return {"asset": path, "row_struct": st.get_path_name() if st else None, "columns": sorted(_columns(dt).values()),
+            "total": len(rows), "truncated": len(rows) > limit, "rows": {n: rows[n] for n in names}}
 
 
 def _check_row_fields(path, dt, rows):
-    """Every field named in rows exists on the row struct (UE's JSON import ignores an
-    unknown field: a typo would silently keep the old value). Returns the rows with
-    field names normalized to the struct's JSON names."""
-    st, fields = _row_fields(dt)
-    if not fields:
-        raise _V2Error("BAD_VALUE", "%s: the row struct %s documents no fields, so a row cannot be checked"
-                       % (path, st.get_name() if st else "?"))
+    """Every field named in rows is a column of the row struct (UE's JSON import ignores
+    an unknown one: a typo would silently keep the old value). Returns the rows keyed by
+    the columns' export names."""
+    columns = _columns(dt)
+    if not columns:
+        raise _V2Error("BAD_VALUE", "%s: the row struct has no columns" % path)
     out = {}
     for name, row in rows.items():
         if not isinstance(row, dict):
             raise _V2Error("BAD_VALUE", "row %s must be an object of field -> value" % name)
         fixed = {}
         for k, v in row.items():
-            if _norm(k) not in fields:
-                raise _V2Error("BAD_VALUE", "row %s: %s has no field %r" % (name, st.get_name(), k),
-                               fields=sorted(fields.values()))
-            fixed[k] = v
+            col = columns.get(_norm(k))
+            if col is None:
+                raise _V2Error("BAD_VALUE", "row %s: the row struct has no column %r" % (name, k), columns=sorted(columns.values()))
+            fixed[col] = v
         out[str(name)] = fixed
     return out
-
-
-def _json_field(existing, key):
-    """The existing row's key for a field given in any spelling (the export uses the
-    C++ name: EnemyCount; a caller may write enemy_count)."""
-    for k in existing:
-        if _norm(k) == _norm(key):
-            return k
-    return key
-
-
-def _op_data_table_upsert(args):
-    """Insert or update the named rows; every other row is written back unchanged (the
-    engine has no single-row add, so the table is re-filled from its own export with
-    only these rows changed). Fields not given keep their values (new rows: the
-    struct's defaults). One undo step."""
-    path, dt = _data_asset(args, unreal.DataTable)
-    rows = args.get("rows") or {}
-    if not isinstance(rows, dict) or not rows:
-        raise _V2Error("BAD_VALUE", "rows must be {row name: {field: value}}")
-    rows = _check_row_fields(path, dt, rows)
-    current = _table_rows(dt)
-    created, updated = [], []
-    for name, fields in rows.items():
-        base = current.get(name)
-        if base is None:
-            created.append(name)
-            base = {}
-        else:
-            updated.append(name)
-        for k, v in fields.items():
-            base[_json_field(base, k)] = v
-        current[name] = base
-    original = unreal.DataTableFunctionLibrary.export_data_table_to_json_string(dt)
-    payload = [dict({"Name": n}, **r) for n, r in current.items()]
-    fill = unreal.DataTableFunctionLibrary.fill_data_table_from_json_string
-    with _transaction("MCP: upsert rows in " + path.rsplit("/", 1)[-1]):
-        dt.modify()
-        # The engine empties the table before filling it: any failure restores the
-        # original rows inside this same transaction — never an emptied table.
-        problem = None if fill(dt, json.dumps(payload)) else "%s rejected the rows (the editor log names the field)" % path
-        if problem is None:
-            after = _table_rows(dt)
-            for name, fields in rows.items():  # read back: the import must have kept every value
-                got = after.get(name) or {}
-                for k, v in fields.items():
-                    have = got.get(_json_field(got, k))
-                    if have != v and not _same_json(have, v):
-                        problem = "row %s: %s did not take the value %r (read back %r)" % (name, k, v, have)
-        if problem is not None:
-            fill(dt, original)
-            raise _V2Error("BAD_VALUE", problem + "; the table is unchanged")
-    unreal.EditorAssetLibrary.save_asset(path)
-    return {"asset": path, "created": created, "updated": updated, "total": len(after)}
 
 
 def _same_json(a, b):
@@ -142,28 +107,71 @@ def _same_json(a, b):
     return a == b
 
 
+def _op_data_table_upsert(args):
+    """Insert or update the named rows; every other row is written back unchanged (the
+    engine has no single-row add, so the table is re-filled from its own export with
+    only these rows changed). Fields not given keep their values (new rows: the
+    struct's defaults). One undo step — none when it fails."""
+    path, dt = _data_table(args)
+    rows = args.get("rows") or {}
+    if not isinstance(rows, dict) or not rows:
+        raise _V2Error("BAD_VALUE", "rows must be {row name: {field: value}}")
+    rows = _check_row_fields(path, dt, rows)
+    current = _table_rows(dt)
+    created, updated, targets = [], [], {}
+    for name, fields in rows.items():
+        existing = _row_name(current, name)
+        if existing is None:
+            created.append(name)
+            existing = name
+            current[existing] = {}
+        else:
+            updated.append(existing)
+        current[existing].update(fields)
+        targets[existing] = fields
+    original = unreal.DataTableFunctionLibrary.export_data_table_to_json_string(dt)
+    payload = [dict({"Name": n}, **r) for n, r in current.items()]
+    fill = unreal.DataTableFunctionLibrary.fill_data_table_from_json_string
+    with _transaction("MCP: upsert rows in " + path.rsplit("/", 1)[-1]) as t:
+        dt.modify()
+        # The engine empties the table before filling it: any failure restores the
+        # original rows, and cancels the transaction (no undo step for a failed edit).
+        problem = None if fill(dt, json.dumps(payload)) else "%s rejected the rows (the editor log names the field)" % path
+        if problem is None:
+            after = _table_rows(dt)
+            for name, fields in targets.items():  # read back: the import must have kept every value
+                got = after.get(name) or {}
+                for col, v in fields.items():
+                    if not _same_json(got.get(col), v):
+                        problem = "row %s: %s did not take the value %r (read back %r)" % (name, col, v, got.get(col))
+        if problem is not None:
+            restored = fill(dt, original)
+            if t is not None:
+                t.cancel()
+            raise _V2Error("BAD_VALUE" if restored else "EDITOR_ERROR",
+                           problem + ("; the table is unchanged" if restored else
+                                      "; RESTORING THE TABLE FAILED — reload it from disk (it was not saved)"))
+    _save(path)
+    return {"asset": path, "created": created, "updated": updated, "total": len(_table_rows(dt))}
+
+
 def _op_data_table_delete(args):
     """Delete the named rows — all of them or none (a missing name is NOT_FOUND)."""
-    path, dt = _data_asset(args, unreal.DataTable)
+    path, dt = _data_table(args)
     names = [str(n) for n in (args.get("rows") or [])]
     if not names:
         raise _V2Error("BAD_VALUE", "rows must name the rows to delete")
     current = _table_rows(dt)
-    missing = [n for n in names if n not in current]
+    found = {n: _row_name(current, n) for n in names}
+    missing = [n for n, r in found.items() if r is None]
     if missing:
         raise _V2Error("NOT_FOUND", "%s has no rows %s (nothing deleted)" % (path, ", ".join(missing)))
     with _transaction("MCP: delete rows from " + path.rsplit("/", 1)[-1]):
         dt.modify()
-        for n in names:
+        for n in found.values():
             unreal.DataTableFunctionLibrary.remove_data_table_row(dt, unreal.Name(n))
-    unreal.EditorAssetLibrary.save_asset(path)
-    return {"asset": path, "deleted": names, "total": len(_table_rows(dt))}
-
-
-def _op_data_curve_read(args):
-    path, curve = _data_asset(args, unreal.CurveFloat)
-    _need_plugin(6, "curve keys")
-    return {"asset": path, "keys": json.loads(_authoring().get_curve_keys_json(curve) or "[]")}
+    _save(path)
+    return {"asset": path, "deleted": list(found.values()), "total": len(_table_rows(dt))}
 
 
 def _authoring():
@@ -173,20 +181,28 @@ def _authoring():
     return auth
 
 
+def _op_data_curve_read(args):
+    path, curve = _data_asset(args, unreal.CurveFloat)
+    _need_plugin(6, "curve keys")
+    return {"asset": path, "keys": json.loads(_authoring().get_curve_keys_json(curve) or "[]")}
+
+
 def _op_data_curve_keys(args):
     """Replace a float curve's keys (all or nothing: the plugin validates them first).
-    One undo step."""
+    One undo step — none when refused."""
     path, curve = _data_asset(args, unreal.CurveFloat)
     _need_plugin(6, "curve keys")
     keys = args.get("keys")
     if not isinstance(keys, list) or not keys:
-        raise _V2Error("BAD_VALUE", "keys must be [{time, value, interp?}, ...]")
+        raise _V2Error("BAD_VALUE", "keys must be [{time, value, interp?}, ...] or [[time, value], ...]")
     keys = [{"time": k[0], "value": k[1]} if isinstance(k, (list, tuple)) and len(k) == 2 else k for k in keys]
-    with _transaction("MCP: set keys of " + path.rsplit("/", 1)[-1]):
+    with _transaction("MCP: set keys of " + path.rsplit("/", 1)[-1]) as t:
         why = _authoring().set_curve_keys_json(curve, json.dumps(keys))
         if why:
+            if t is not None:
+                t.cancel()  # validated before anything changed: no undo step
             raise _V2Error("BAD_VALUE", "%s: %s" % (path, why))
-    unreal.EditorAssetLibrary.save_asset(path)
+    _save(path)
     return {"asset": path, "keys": json.loads(_authoring().get_curve_keys_json(curve) or "[]")}
 
 
@@ -203,6 +219,27 @@ def _op_data_blueprint(args):
     return out
 
 
+def _known_props(obj, props):
+    """[{property, error}] for the names obj does not have (checked before any change)."""
+    unknown = []
+    for k in props:
+        try:
+            obj.get_editor_property(k)
+        except Exception as e:
+            unknown.append({"property": k, "error": str(e)})
+    return unknown
+
+
+def _read_back(obj, props):
+    values = {}
+    for k in props:
+        try:
+            values[k] = _coerce_prop(obj.get_editor_property(k), 512)
+        except Exception:
+            pass
+    return values
+
+
 def _op_data_set_properties(args):
     """Set properties on any asset (DataAsset, PrimaryDataAsset, curve, sound class…),
     per-property errors; one undo step; saved."""
@@ -212,25 +249,34 @@ def _op_data_set_properties(args):
     props = args.get("properties") or {}
     if not isinstance(props, dict) or not props:
         raise _V2Error("BAD_VALUE", "properties must be {property: value}")
-    unknown = []
-    for k in props:
-        try:
-            obj.get_editor_property(k)
-        except Exception as e:
-            unknown.append({"property": k, "error": str(e)})
+    unknown = _known_props(obj, props)
     if len(unknown) == len(props):  # before any transaction: nothing would change
         raise _V2Error("BAD_VALUE", "%s has none of these properties" % path, property_errors=unknown)
     with _transaction("MCP: set properties on " + path.rsplit("/", 1)[-1]):
         obj.modify()
         errors = _set_props(obj, {k: v for k, v in props.items() if k not in {u["property"] for u in unknown}}) + unknown
-    unreal.EditorAssetLibrary.save_asset(path)
-    values = {}
-    for k in props:
-        try:
-            values[k] = _coerce_prop(obj.get_editor_property(k), 512)
-        except Exception:
-            pass
-    return {"asset": path, "values": values, "property_errors": errors}
+    _save(path)
+    return {"asset": path, "values": _read_back(obj, props), "property_errors": errors}
+
+
+def _op_data_set_settings(args):
+    """Set a settings class's defaults (a UDeveloperSettings / config class, e.g.
+    /Script/Engine.RendererSettings) and write them to its Default*.ini (plugin API 6:
+    Python cannot write config). Not an undo step: the file is written."""
+    _need_plugin(6, "settings")
+    cls = _resolve_class_v2(args.get("class") or "")
+    props = args.get("properties") or {}
+    if not isinstance(props, dict) or not props:
+        raise _V2Error("BAD_VALUE", "properties must be {property: value}")
+    cdo = unreal.get_default_object(cls)
+    unknown = _known_props(cdo, props)
+    if len(unknown) == len(props):
+        raise _V2Error("BAD_VALUE", "%s has none of these properties" % cls.get_name(), property_errors=unknown)
+    errors = _set_props(cdo, {k: v for k, v in props.items() if k not in {u["property"] for u in unknown}}) + unknown
+    if len(errors) < len(props) and not _authoring().update_default_config(cdo):
+        raise _V2Error("EDITOR_ERROR", "%s is not a config class, or its default config file could not be written" % cls.get_name(),
+                       property_errors=errors)
+    return {"class": cls.get_path_name(), "values": _read_back(cdo, props), "property_errors": errors}
 
 
 # Variable types for add_variable: (pin category, sub-category). UE 5.7's
@@ -247,6 +293,11 @@ def _checked_pin(t, category, container=None, what=""):
     if 'PinCategory="%s"' % category not in txt or (container and "ContainerType=%s" % container not in txt):
         raise _V2Error("EDITOR_ERROR", "the engine built a different pin type for %s: %s" % (what, txt[:160]))
     return t
+
+
+def _pin_category(t):
+    m = re.search(r'PinCategory="(\w+)"', t.export_text())
+    return m.group(1) if m else ""
 
 
 def _pin_type(spec):
@@ -277,11 +328,6 @@ def _pin_type(spec):
                    "array:<type> or set:<type> (got %r)" % (", ".join(_BASIC_PIN_TYPES), spec))
 
 
-def _pin_category(t):
-    m = re.search(r'PinCategory="(\w+)"', t.export_text())
-    return m.group(1) if m else ""
-
-
 def _op_data_add_variable(args):
     """Add a member variable to a Blueprint (graph editing stays a non-goal), compile and
     save. instance_editable / expose_on_spawn as given. Not an undo step (it recompiles)."""
@@ -289,23 +335,25 @@ def _op_data_add_variable(args):
     name = str(args.get("name") or "")
     if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
         raise _V2Error("BAD_VALUE", "name must be an identifier (got %r)" % name)
-    L = unreal.BlueprintEditorLibrary
     _need_plugin(6, "add_variable")
+    if _pie_running():
+        raise _V2Error("PRECONDITION", "adding a variable recompiles the Blueprint, which would change the running game: stop PIE first")
+    L = unreal.BlueprintEditorLibrary
     pin = _pin_type(args.get("type"))
-    # The engine renames a clash silently (a second Health became Health_0, live R3):
-    # refuse a name any variable, component or function already has.
-    before = json.loads(_authoring().describe_blueprint_json(bp, False))
-    taken = {str(v.get("name")).lower() for v in before.get("variables") or []}
-    taken |= {str(c.get("name")).lower() for c in before.get("components") or []}
-    taken |= {str(f).lower() for f in (before.get("functions") or []) + (before.get("events") or [])}
-    if name.lower() in taken:
-        raise _V2Error("CONFLICT", "%s already has a variable, component or function named %s" % (path, name))
+    auth = _authoring()
+    # Kismet's own validator sees inherited members too: UE would rename a clash
+    # silently (a second Health became Health_0, live R3; an Actor's Tags -> Tags_0).
+    taken = auth.check_member_name(bp, unreal.Name(name))
+    if taken:
+        raise _V2Error("CONFLICT", "%s: %s" % (path, taken))
     if not L.add_member_variable(bp, unreal.Name(name), pin):
         raise _V2Error("EDITOR_ERROR", "%s could not add %s" % (path, name))
-    after = json.loads(_authoring().describe_blueprint_json(bp, False))
-    if name not in [v.get("name") for v in after.get("variables") or []]:
-        raise _V2Error("EDITOR_ERROR", "%s: the engine did not add a variable named %s" % (path, name),
-                       variables=[v.get("name") for v in after.get("variables") or []])
+    after = [v.get("name") for v in json.loads(auth.describe_blueprint_json(bp, False)).get("variables") or []]
+    if name not in after:
+        stray = [v for v in after if v.lower().startswith(name.lower() + "_")]
+        for v in stray:  # undo the half-applied add before reporting it
+            auth.remove_member_variable(bp, unreal.Name(v))
+        raise _V2Error("EDITOR_ERROR", "%s: the engine did not add a variable named %s (removed %s)" % (path, name, stray or "nothing"))
     if args.get("instance_editable") is not None:
         L.set_blueprint_variable_instance_editable(bp, unreal.Name(name), bool(args["instance_editable"]))
     if args.get("expose_on_spawn") is not None:
@@ -315,8 +363,8 @@ def _op_data_add_variable(args):
     if args.get("default") is not None:
         cdo = unreal.get_default_object(bp.generated_class())
         errors = _set_props(cdo, {name: args["default"]})
-    unreal.EditorAssetLibrary.save_asset(path)
-    added = next((v for v in json.loads(_authoring().describe_blueprint_json(bp, False)).get("variables") or []
+    _save(path)
+    added = next((v for v in json.loads(auth.describe_blueprint_json(bp, False)).get("variables") or []
                   if v.get("name") == name), {"name": name})
     return {"asset": path, "added": added, "property_errors": errors}
 
@@ -356,21 +404,26 @@ def _op_data_input_mapping(args):
     for k in keys:
         key = unreal.Key()
         key.import_text(str(k))
-        if str(key.get_editor_property("key_name")) in ("", "None"):
-            raise _V2Error("BAD_VALUE", "%r is not a key name" % k)
+        # The engine takes any name as a key (FKey::ImportTextItem never checks it): a typo
+        # would map a key that never fires.
+        if not unreal.InputLibrary.key_is_valid(key):
+            raise _V2Error("BAD_VALUE", "%r is not a key name (e.g. LeftShift, SpaceBar, E, Gamepad_FaceButton_Bottom)" % k)
         parsed.append(key)
-    action, made_action = _input_asset(action_path, unreal.InputAction)
     vt = args.get("value_type")
-    if vt is not None:
-        if vt not in _VALUE_TYPES:
-            raise _V2Error("BAD_VALUE", "value_type must be one of %s (got %r)" % (", ".join(_VALUE_TYPES), vt))
-        action.set_editor_property("value_type", getattr(unreal.InputActionValueType, _VALUE_TYPES[vt]))
+    if vt is not None and vt not in _VALUE_TYPES:
+        raise _V2Error("BAD_VALUE", "value_type must be one of %s (got %r)" % (", ".join(_VALUE_TYPES), vt))
+    action, made_action = _input_asset(action_path, unreal.InputAction)
     context, made_context = _input_asset(context_path, unreal.InputMappingContext)
+    # MapKey / UnmapAllKeysFromAction do not mark the package: mark it, so it saves.
+    action.modify()
+    context.modify()
+    if vt is not None:
+        action.set_editor_property("value_type", getattr(unreal.InputActionValueType, _VALUE_TYPES[vt]))
     context.unmap_all_keys_from_action(action)
     for key in parsed:
         context.map_key(action, key)
-    unreal.EditorAssetLibrary.save_asset(action_path)
-    unreal.EditorAssetLibrary.save_asset(context_path)
+    _save(action_path)
+    _save(context_path)
     mapped = [str(m.get_editor_property("key").get_editor_property("key_name"))
               for m in context.get_editor_property("default_key_mappings").get_editor_property("mappings")
               if m.get_editor_property("action") == action]

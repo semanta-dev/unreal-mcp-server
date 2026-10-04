@@ -1,28 +1,26 @@
-"""R3 companion ops (toolset `data`): DataTable keyed upsert/delete with field checks,
-curve keys and Blueprint describe through the plugin (API 6), set_properties on assets,
-add_variable, Enhanced Input mappings."""
+"""R3 companion ops (toolset `data`): DataTable keyed upsert/delete checked against the
+table's columns, curve keys and Blueprint describe through the plugin (API 6),
+set_properties on assets and settings classes, add_variable, Enhanced Input mappings.
+The fakes model the engine's real behaviour, including what it does NOT check."""
 import json
 
 import pytest
 from fakeunreal import _NS, Class, Fake, installed
 
 
-class Struct:
-    pass
-
-
 class DataTable:
-    """A DataTable as the engine's JSON export/import sees it: fill empties first."""
+    """A DataTable as the engine's JSON export/import sees it: fill empties first, and
+    the import matches only the columns' export names (an unknown key is ignored)."""
+    COLUMNS = ("EnemyCount", "SpawnInterval")
 
-    def __init__(self, rows, row_struct):
+    def __init__(self, rows):
         self.rows = {r["Name"]: {k: v for k, v in r.items() if k != "Name"} for r in rows}
-        self.row_struct = row_struct
         self.modified = 0
         self.fail_fill = False
 
     def get_editor_property(self, k):
         assert k == "row_struct"
-        return self.row_struct
+        return _NS(get_name=lambda: "AesirWaveRow", get_path_name=lambda: "/Script/Game.AesirWaveRow")
 
     def modify(self):
         self.modified += 1
@@ -31,12 +29,8 @@ class DataTable:
         return Class("DataTable", "/Script/Engine.DataTable")
 
 
-class AesirWaveRow:
-    """**Editor Properties:**
-
-- ``enemy_count`` (int32):  [Read-Write]
-- ``spawn_interval`` (float):  [Read-Write]
-"""
+class CompositeDataTable(DataTable):
+    pass
 
 
 class Curve:
@@ -67,20 +61,41 @@ class Asset:
         self.modified += 1
 
 
+class Tx:
+    """ScopedEditorTransaction: exiting commits, unless cancelled."""
+    log = []
+
+    def __init__(self, title):
+        self.title, self.cancelled = title, False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        Tx.log.append((self.title, "cancelled" if self.cancelled else "committed"))
+        return False
+
+    def cancel(self):
+        self.cancelled = True
+
+
 @pytest.fixture
 def ue(v2):
     fake = Fake()
     fake.pie_actors = None
-    row_struct = _NS(get_name=lambda: "AesirWaveRow", get_path_name=lambda: "/Script/Game.AesirWaveRow")
-    fake.AesirWaveRow = AesirWaveRow
+    Tx.log = []
+    fake.ScopedEditorTransaction = Tx
     fake.dt = DataTable([{"Name": "Wave_01", "EnemyCount": 5, "SpawnInterval": 0.8},
-                         {"Name": "Wave_02", "EnemyCount": 8, "SpawnInterval": 0.8}], row_struct)
+                         {"Name": "Wave_02", "EnemyCount": 8, "SpawnInterval": 0.8}])
     fake.curve = Curve()
     fake.tuning = Asset({"player_damage_multiplier": 1.0})
-    fake.DataTable, fake.CurveFloat, fake.Blueprint = DataTable, Curve, type("Blueprint", (), {})
-    fake.assets.update({"/Game/Data/DT_Waves": fake.dt, "/Game/Data/C_Falloff": fake.curve, "/Game/Data/DA_Tuning": fake.tuning})
+    fake.DataTable, fake.CompositeDataTable, fake.CurveFloat = DataTable, CompositeDataTable, Curve
+    fake.Blueprint = type("Blueprint", (), {})
+    fake.assets.update({"/Game/Data/DT_Waves": fake.dt, "/Game/Data/C_Falloff": fake.curve, "/Game/Data/DA_Tuning": fake.tuning,
+                        "/Game/Data/DT_Comp": CompositeDataTable([])})
     saved = fake.saved = []
-    fake.EditorAssetLibrary.save_asset = lambda p: saved.append(p) or True
+    fake.save_ok = True
+    fake.EditorAssetLibrary.save_asset = lambda p, only_if_is_dirty=True: (saved.append((p, only_if_is_dirty)) or fake.save_ok)
 
     def export(dt):
         return json.dumps([dict({"Name": n}, **r) for n, r in dt.rows.items()])
@@ -91,7 +106,7 @@ def ue(v2):
             return False
         for r in json.loads(raw):
             row = {"EnemyCount": 0, "SpawnInterval": 1.0}
-            row.update({k: v for k, v in r.items() if k != "Name" and k in ("EnemyCount", "SpawnInterval")})
+            row.update({k: v for k, v in r.items() if k in DataTable.COLUMNS})  # like UE: unknown keys ignored
             dt.rows[r["Name"]] = row
         return True
 
@@ -99,13 +114,14 @@ def ue(v2):
         dt.rows.pop(str(name), None)
 
     fake.DataTableFunctionLibrary = _NS(export_data_table_to_json_string=export, fill_data_table_from_json_string=fill,
-                                        remove_data_table_row=remove)
+                                        remove_data_table_row=remove,
+                                        get_data_table_column_export_names=lambda dt: list(DataTable.COLUMNS))
     fake.keys = [{"time": 0, "value": 1, "interp": "linear", "arrive_tangent": 0, "leave_tangent": 0}]
 
     def set_keys(curve, raw):
         k = json.loads(raw)
-        if any(x.get("interp") not in (None, "linear", "constant", "cubic") for x in k):
-            return "key 0: interp must be linear, constant or cubic"
+        if any(x.get("interp") not in (None, "linear", "constant", "cubic", "none") for x in k):
+            return "key 0: interp must be linear, constant, cubic or none"
         fake.keys = [dict({"interp": "linear", "arrive_tangent": 0, "leave_tangent": 0}, **x) for x in k]
         return ""
 
@@ -126,28 +142,32 @@ def call(v2, op, args):
 
 
 def test_table_read(v2, ue):
-    env = call(v2, "data_table_read", {"asset": "/Game/Data/DT_Waves", "rows": ["Wave_02"]})
+    env = call(v2, "data_table_read", {"asset": "/Game/Data/DT_Waves", "rows": ["wave_02"]})  # FName: any case
     assert env["ok"] and env["result"]["rows"] == {"Wave_02": {"EnemyCount": 8, "SpawnInterval": 0.8}}, env
+    assert env["result"]["columns"] == ["EnemyCount", "SpawnInterval"]
     assert call(v2, "data_table_read", {"asset": "/Game/Data/DT_Waves", "rows": ["Wave_99"]})["code"] == "NOT_FOUND"
     assert call(v2, "data_table_read", {"asset": "/Game/Data/DA_Tuning"})["code"] == "BAD_VALUE"
+    assert call(v2, "data_table_read", {"asset": "/Game/Data/DT_Comp"})["code"] == "BAD_VALUE"  # composite
+    assert len(call(v2, "data_table_read", {"asset": "/Game/Data/DT_Waves", "limit": -3})["result"]["rows"]) == 1
 
 
 def test_table_upsert_is_keyed_and_checked(v2, ue):
     env = call(v2, "data_table_upsert", {"asset": "/Game/Data/DT_Waves",
-                                         "rows": {"Wave_02": {"enemy_count": 9}, "Wave_03": {"EnemyCount": 12}}})
+                                         "rows": {"wave_02": {"enemy_count": 9}, "Wave_03": {"enemy_count": 12}}})
     assert env["ok"] and env["result"]["created"] == ["Wave_03"] and env["result"]["updated"] == ["Wave_02"], env
-    # Wave_01 untouched, Wave_02 keeps its other field, Wave_03 has defaults for the rest.
+    # Wave_01 untouched; Wave_02 (named in another case) keeps its other field; Wave_03, a
+    # NEW row given in snake_case, gets its value (the import matches export names only).
     assert ue.dt.rows == {"Wave_01": {"EnemyCount": 5, "SpawnInterval": 0.8}, "Wave_02": {"EnemyCount": 9, "SpawnInterval": 0.8},
                           "Wave_03": {"EnemyCount": 12, "SpawnInterval": 1.0}}
-    assert ue.dt.modified == 1 and ue.saved == ["/Game/Data/DT_Waves"]
+    assert ue.dt.modified == 1 and ue.saved == [("/Game/Data/DT_Waves", False)]
+    assert Tx.log[-1][1] == "committed"
     # An unknown field is refused before anything changes (UE's import would ignore it).
     before = json.dumps(ue.dt.rows, sort_keys=True)
     env = call(v2, "data_table_upsert", {"asset": "/Game/Data/DT_Waves", "rows": {"Wave_01": {"EnemyCnt": 1}}})
     assert env["code"] == "BAD_VALUE" and "EnemyCnt" in env["error"] and json.dumps(ue.dt.rows, sort_keys=True) == before
 
 
-def test_a_failed_fill_restores_the_rows(v2, ue):
-    # The engine empties the table before filling it: a failure must never leave it empty.
+def test_a_failed_fill_restores_the_rows_and_cancels_the_undo_step(v2, ue):
     real_fill = ue.DataTableFunctionLibrary.fill_data_table_from_json_string
     calls = []
 
@@ -160,13 +180,24 @@ def test_a_failed_fill_restores_the_rows(v2, ue):
     env = call(v2, "data_table_upsert", {"asset": "/Game/Data/DT_Waves", "rows": {"Wave_01": {"EnemyCount": 6}}})
     assert env["code"] == "BAD_VALUE" and "unchanged" in env["error"], env
     assert ue.dt.rows["Wave_01"]["EnemyCount"] == 5 and len(ue.dt.rows) == 2
+    assert Tx.log[-1][1] == "cancelled" and ue.saved == []  # no undo step, nothing saved
+    # A restore that also fails says so (never "unchanged").
+    ue.DataTableFunctionLibrary.fill_data_table_from_json_string = lambda dt, raw: False
+    env = call(v2, "data_table_upsert", {"asset": "/Game/Data/DT_Waves", "rows": {"Wave_01": {"EnemyCount": 6}}})
+    assert env["code"] == "EDITOR_ERROR" and "RESTORING THE TABLE FAILED" in env["error"], env
 
 
 def test_table_delete_all_or_nothing(v2, ue):
     env = call(v2, "data_table_delete", {"asset": "/Game/Data/DT_Waves", "rows": ["Wave_01", "Wave_99"]})
     assert env["code"] == "NOT_FOUND" and len(ue.dt.rows) == 2, env
-    env = call(v2, "data_table_delete", {"asset": "/Game/Data/DT_Waves", "rows": ["Wave_01"]})
-    assert env["ok"] and list(ue.dt.rows) == ["Wave_02"] and env["result"]["total"] == 1, env
+    env = call(v2, "data_table_delete", {"asset": "/Game/Data/DT_Waves", "rows": ["WAVE_01"]})
+    assert env["ok"] and list(ue.dt.rows) == ["Wave_02"] and env["result"]["deleted"] == ["Wave_01"], env
+
+
+def test_a_save_that_fails_is_an_error(v2, ue):
+    ue.save_ok = False
+    env = call(v2, "data_set_properties", {"asset": "/Game/Data/DA_Tuning", "properties": {"player_damage_multiplier": 2.0}})
+    assert env["code"] == "EDITOR_ERROR" and "did not save" in env["error"], env
 
 
 def test_curve_keys(v2, ue):
@@ -174,6 +205,7 @@ def test_curve_keys(v2, ue):
     assert env["ok"] and [k["value"] for k in env["result"]["keys"]] == [1, 0.25], env
     env = call(v2, "data_curve_keys", {"asset": "/Game/Data/C_Falloff", "keys": [{"time": 0, "value": 1, "interp": "smooth"}]})
     assert env["code"] == "BAD_VALUE" and "interp" in env["error"]
+    assert Tx.log[-1][1] == "cancelled"  # refused: no undo step
     assert call(v2, "data_curve_read", {"asset": "/Game/Data/C_Falloff"})["result"]["keys"][1]["time"] == 5000
     ue.MCPCoreLibrary = _NS(get_plugin_api_version=lambda: 5)
     assert call(v2, "data_curve_read", {"asset": "/Game/Data/C_Falloff"})["code"] == "PLUGIN_MISSING"
@@ -187,18 +219,35 @@ def test_set_properties(v2, ue):
     assert env["code"] == "BAD_VALUE" and ue.tuning.modified == 1  # refused before any transaction
 
 
+def test_settings_are_written_to_config(v2, ue):
+    settings = Asset({"default_feature_bloom": True})
+    ue.add_class("RendererSettings", "/Script/Engine.RendererSettings")
+    ue.get_default_object = lambda cls: settings
+    written = []
+    ue.auth.update_default_config = lambda o: written.append(o) or True
+    env = call(v2, "data_set_settings", {"class": "/Script/Engine.RendererSettings", "properties": {"default_feature_bloom": False}})
+    assert env["ok"] and env["result"]["values"] == {"default_feature_bloom": False} and written == [settings], env
+    ue.auth.update_default_config = lambda o: False  # not a config class
+    env = call(v2, "data_set_settings", {"class": "/Script/Engine.RendererSettings", "properties": {"default_feature_bloom": True}})
+    assert env["code"] == "EDITOR_ERROR", env
+
+
+class Key:
+    """unreal.Key: import_text takes ANY name (FKey::ImportTextItem never checks it)."""
+
+    def __init__(self):
+        self.name = ""
+
+    def import_text(self, t):
+        self.name = t
+
+    def get_editor_property(self, k):
+        return self.name
+
+
 def test_input_key_names_are_checked(v2, ue):
-    class Key:
-        def __init__(self):
-            self.name = ""
-
-        def import_text(self, t):
-            self.name = t if t in ("LeftShift", "SpaceBar") else ""
-
-        def get_editor_property(self, k):
-            return self.name
-
     ue.Key = Key
+    ue.InputLibrary = _NS(key_is_valid=lambda k: k.name in ("LeftShift", "E"))
     env = call(v2, "data_input_mapping", {"action": "/Game/Input/IA_Dash", "context": "/Game/Input/IMC_Aesir", "keys": ["LeftShfit"]})
     assert env["code"] == "BAD_VALUE" and "LeftShfit" in env["error"], env
     env = call(v2, "data_input_mapping", {"action": "IA_Dash", "context": "/Game/Input/IMC_Aesir", "keys": []})
@@ -245,19 +294,45 @@ def test_pin_types(v2, ue):
     assert e.value.code == "EDITOR_ERROR"
 
 
-def test_add_variable_refuses_a_taken_name(v2, ue):
+def _bp_fixture(ue, state, rename=None):
     ue.EdGraphPinType = PinType
-    added = []
-    bp = type("Blueprint", (), {})()
-    ue.Blueprint = type(bp)
+    bp = ue.Blueprint()
     ue.assets["/Game/R3/BP"] = bp
-    state = {"variables": [{"name": "Health"}], "components": [{"name": "Mesh"}], "functions": ["Fire"], "events": []}
+    removed = []
     ue.auth.describe_blueprint_json = lambda b, compile: json.dumps(state)
-    ue.BlueprintEditorLibrary = _NS(add_member_variable=lambda b, n, t: added.append(str(n)) or state["variables"].append({"name": str(n)}) or True,
-                                    compile_blueprint=lambda b: None)
-    for taken in ("health", "Mesh", "FIRE"):
+    # Kismet's validator: names of this Blueprint AND what it inherits (Tags on Actor).
+    taken = {"health", "mesh", "fire", "tags"}
+    ue.auth.check_member_name = lambda b, n: ("%s is already used" % n) if str(n).lower() in taken else ""
+    ue.auth.remove_member_variable = lambda b, n: removed.append(str(n)) or True
+
+    def add(b, n, t):
+        state["variables"].append({"name": rename(str(n)) if rename else str(n)})
+        return True
+
+    ue.BlueprintEditorLibrary = _NS(add_member_variable=add, compile_blueprint=lambda b: None)
+    return removed
+
+
+def test_add_variable_refuses_a_taken_name_including_inherited(v2, ue):
+    state = {"variables": [{"name": "Health"}], "components": [], "functions": [], "events": []}
+    removed = _bp_fixture(ue, state)
+    for taken in ("health", "Tags", "FIRE"):
         env = call(v2, "data_add_variable", {"asset": "/Game/R3/BP", "name": taken, "type": "float"})
         assert env["code"] == "CONFLICT", env
-    assert added == []
     env = call(v2, "data_add_variable", {"asset": "/Game/R3/BP", "name": "Armor", "type": "int"})
-    assert env["ok"] and env["result"]["added"]["name"] == "Armor" and added == ["Armor"], env
+    assert env["ok"] and env["result"]["added"]["name"] == "Armor" and removed == [], env
+
+
+def test_add_variable_removes_a_renamed_stray(v2, ue):
+    # Should the engine still rename it (Armor -> Armor_0), the stray is removed, not left.
+    state = {"variables": [], "components": [], "functions": [], "events": []}
+    removed = _bp_fixture(ue, state, rename=lambda n: n + "_0")
+    env = call(v2, "data_add_variable", {"asset": "/Game/R3/BP", "name": "Armor", "type": "int"})
+    assert env["code"] == "EDITOR_ERROR" and removed == ["Armor_0"], env
+
+
+def test_add_variable_refuses_during_pie(v2, ue):
+    _bp_fixture(ue, {"variables": [], "components": [], "functions": [], "events": []})
+    ue.pie_actors = []
+    env = call(v2, "data_add_variable", {"asset": "/Game/R3/BP", "name": "Armor", "type": "int"})
+    assert env["code"] == "PRECONDITION", env

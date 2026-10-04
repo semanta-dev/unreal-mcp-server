@@ -267,7 +267,7 @@ func installPermissiveOps(h *harness, dir, png string) {
 	for _, py := range []string{"python_recipe", "open_level", "save_all", "set_world_gamemode", "console", "viewport_get", "viewport_set",
 		"focus_actors", "asset_info", "asset_query", "asset_deps", "asset_tags", "asset_edit", "import_assets", "asset_reimport",
 		"datatable_import", "map_gameplay", "widget_tree", "widget_describe", "widget_compose", "widget_compile", "world_query",
-		"instances_count", "pie_input", "pie_cursor", "pie_ui_click", "data_table_read", "data_table_upsert",
+		"instances_count", "pie_input", "pie_cursor", "pie_ui_click", "data_set_settings", "data_table_read", "data_table_upsert",
 		"data_table_delete", "data_curve_read", "data_curve_keys", "data_blueprint", "data_set_properties", "data_add_variable",
 		"data_input_mapping", "audio_capture_start", "audio_capture_stop", "play_test_sound", "scene_apply",
 		"scene_clear", "scene_prune", "scene_actors", "design_probe", "capture_poll", "company_status", "company_build",

@@ -88,12 +88,15 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
 - **Game data and logic authoring** (new toolset `data`, plugin API 6 where Python cannot reach): `data_query` reads a
   DataTable's typed rows, a float curve's keys, and a Blueprint (components — Blueprint and native — variables with
   type, class default and flags, functions, events, and the status + messages of a fresh in-memory compile).
-  `data_edit` sets properties on any non-Blueprint asset (per-property errors), upserts / deletes DataTable rows by
-  name (never replace-all; every field checked against the row struct — UE's import ignores unknown fields; a failed
-  fill restores the table), replaces a curve's keys (all or nothing), adds a Blueprint variable (exact pin types — UE
-  5.7 silently makes an unknown basic type an int; a name the Blueprint already uses is refused — UE renames it), and
-  sets an InputAction's keys in a mapping context (creating either when missing). Property, table and curve edits are
-  one undo step each; `add_variable` and `input_mapping` say `undoable: false`.
+  `data_edit` sets properties on any non-Blueprint asset (per-property errors) or on a settings class (written to its
+  Default*.ini), upserts / deletes DataTable rows by name (never replace-all; row names match in any case; every
+  field checked against the table's columns — C++ and Blueprint row structs alike; UE's import ignores unknown fields;
+  a failed fill restores the table and leaves no undo step), replaces a curve's keys (all or nothing; a read's keys
+  can be written back as they are), adds a Blueprint variable (exact pin types — UE 5.7 silently makes an unknown basic
+  type an int; a name the Blueprint or a parent class already uses is refused — UE would rename it), and sets an
+  InputAction's keys in a mapping context (creating either when missing; key names checked — the engine maps any
+  name). Every edit is saved and a failed save is an error. Property, table and curve edits are one undo step each;
+  `add_variable`, `input_mapping` and `settings` say `undoable: false`.
 
 ### Fixed
 - `world=editor` during PIE found no editor world on UE 5.7 (`get_editor_world()` is None while PIE runs): it is now

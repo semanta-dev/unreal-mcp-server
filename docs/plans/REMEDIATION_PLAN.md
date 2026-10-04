@@ -133,9 +133,10 @@ R2's plugin changes (per-tick axis injection, cursor/UI click, `SpawnInGame`) sh
 
 ### R3 — Data and logic authoring (≈ 9 d; new toolset `data`)
 
-Tools (all in toolset `data`, keeping core within budget): **`data_query`** (read-only: `table` rows, `blueprint`
-describe) and **`data_edit`** (Mutating: `set_properties` on any asset, `table_upsert`, `curve_keys`, `add_variable`,
-`input_mapping`; Destructive: `table_delete`).
+Tools (all in toolset `data`, keeping core within budget): **`data_query`** (`table` rows and `curve` keys read-only;
+`blueprint` describe is Ephemeral — it compiles in memory for a current status, which re-instances live actors) and
+**`data_edit`** (Mutating: `set_properties` on any asset, `settings` on a settings class (written to its Default*.ini),
+`table_upsert`, `curve_keys`, `add_variable`, `input_mapping`; Destructive: `table_delete`).
 
 | ID | Item | Acceptance |
 |---|---|---|

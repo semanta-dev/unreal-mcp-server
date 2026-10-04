@@ -32,6 +32,7 @@
 #include "K2Node_CustomEvent.h"
 #include "EdGraphSchema_K2.h"
 #include "GameFramework/Actor.h"
+#include "Kismet2/Kismet2NameValidators.h"
 
 static FString MCPJsonToString(const TSharedRef<FJsonObject>& Obj)
 {
@@ -416,6 +417,17 @@ static const TCHAR* MCPInterpName(ERichCurveInterpMode Mode)
 	}
 }
 
+static const TCHAR* MCPTangentModeName(ERichCurveTangentMode Mode)
+{
+	switch (Mode)
+	{
+	case RCTM_User: return TEXT("user");
+	case RCTM_Break: return TEXT("break");
+	case RCTM_None: return TEXT("none");
+	default: return TEXT("auto");
+	}
+}
+
 FString UMCPAuthoringSubsystem::GetCurveKeysJson(UCurveFloat* Curve)
 {
 	TArray<TSharedPtr<FJsonValue>> Keys;
@@ -430,6 +442,7 @@ FString UMCPAuthoringSubsystem::GetCurveKeysJson(UCurveFloat* Curve)
 			J->SetStringField(TEXT("interp"), MCPInterpName(K.InterpMode));
 			J->SetNumberField(TEXT("arrive_tangent"), K.ArriveTangent);
 			J->SetNumberField(TEXT("leave_tangent"), K.LeaveTangent);
+			J->SetStringField(TEXT("tangent_mode"), MCPTangentModeName(K.TangentMode));
 			Keys.Add(MakeShared<FJsonValueObject>(J));
 		}
 	}
@@ -457,21 +470,37 @@ FString UMCPAuthoringSubsystem::SetCurveKeysJson(UCurveFloat* Curve, const FStri
 		float Value = 0.f;
 		ERichCurveInterpMode Mode = RCIM_Linear;
 		TOptional<float> Arrive, Leave;
+		bool bBreak = false;
 	};
 	TArray<FKeyIn> Parsed;
 	TSet<float> Times;
 	for (int32 i = 0; i < In.Num(); ++i)
 	{
 		const TSharedPtr<FJsonObject>* O = nullptr;
-		double T = 0.0, V = 0.0;
-		if (!In[i].IsValid() || !In[i]->TryGetObject(O) || !(*O)->TryGetNumberField(TEXT("time"), T) || !(*O)->TryGetNumberField(TEXT("value"), V))
+		if (!In[i].IsValid() || !In[i]->TryGetObject(O))
 		{
-			return FString::Printf(TEXT("key %d: needs numeric time and value"), i);
+			return FString::Printf(TEXT("key %d: must be an object {time, value, ...}"), i);
+		}
+		// Numbers only (TryGetNumberField would take true as 1), and finite ones.
+		auto Number = [&](const TCHAR* Name, double& Out) -> bool
+		{
+			const TSharedPtr<FJsonValue> F = (*O)->TryGetField(Name);
+			if (!F.IsValid() || F->Type != EJson::Number)
+			{
+				return false;
+			}
+			Out = F->AsNumber();
+			return FMath::IsFinite(Out) && FMath::Abs(Out) <= (double)TNumericLimits<float>::Max();
+		};
+		double T = 0.0, V = 0.0;
+		if (!Number(TEXT("time"), T) || !Number(TEXT("value"), V))
+		{
+			return FString::Printf(TEXT("key %d: needs finite numeric time and value"), i);
 		}
 		for (const auto& Field : (*O)->Values)
 		{
 			if (Field.Key != TEXT("time") && Field.Key != TEXT("value") && Field.Key != TEXT("interp")
-				&& Field.Key != TEXT("arrive_tangent") && Field.Key != TEXT("leave_tangent"))
+				&& Field.Key != TEXT("arrive_tangent") && Field.Key != TEXT("leave_tangent") && Field.Key != TEXT("tangent_mode"))
 			{
 				return FString::Printf(TEXT("key %d: unknown field %s"), i, *Field.Key);
 			}
@@ -485,11 +514,23 @@ FString UMCPAuthoringSubsystem::SetCurveKeysJson(UCurveFloat* Curve, const FStri
 			if (Interp == TEXT("linear")) { K.Mode = RCIM_Linear; }
 			else if (Interp == TEXT("constant")) { K.Mode = RCIM_Constant; }
 			else if (Interp == TEXT("cubic")) { K.Mode = RCIM_Cubic; }
-			else { return FString::Printf(TEXT("key %d: interp must be linear, constant or cubic (got %s)"), i, *Interp); }
+			else if (Interp == TEXT("none")) { K.Mode = RCIM_None; }
+			else { return FString::Printf(TEXT("key %d: interp must be linear, constant, cubic or none (got %s)"), i, *Interp); }
 		}
+		// Tangents are kept only for a key that says they are its own (tangent_mode user or
+		// break, as a read reports them): an auto key read back and written is still auto.
+		FString TangentMode;
+		(*O)->TryGetStringField(TEXT("tangent_mode"), TangentMode);
+		if (!TangentMode.IsEmpty() && TangentMode != TEXT("auto") && TangentMode != TEXT("user") && TangentMode != TEXT("break") && TangentMode != TEXT("none"))
+		{
+			return FString::Printf(TEXT("key %d: tangent_mode must be auto, user, break or none (got %s)"), i, *TangentMode);
+		}
+		const bool bOwnTangents = TangentMode == TEXT("user") || TangentMode == TEXT("break")
+			|| (TangentMode.IsEmpty() && ((*O)->HasField(TEXT("arrive_tangent")) || (*O)->HasField(TEXT("leave_tangent"))));
 		double Tan = 0.0;
-		if ((*O)->TryGetNumberField(TEXT("arrive_tangent"), Tan)) { K.Arrive = (float)Tan; }
-		if ((*O)->TryGetNumberField(TEXT("leave_tangent"), Tan)) { K.Leave = (float)Tan; }
+		if (bOwnTangents && Number(TEXT("arrive_tangent"), Tan)) { K.Arrive = (float)Tan; }
+		if (bOwnTangents && Number(TEXT("leave_tangent"), Tan)) { K.Leave = (float)Tan; }
+		K.bBreak = TangentMode == TEXT("break");
 		if (Times.Contains(K.Time))
 		{
 			return FString::Printf(TEXT("key %d: two keys at time %g"), i, T);
@@ -512,7 +553,7 @@ FString UMCPAuthoringSubsystem::SetCurveKeysJson(UCurveFloat* Curve, const FStri
 		if (K.Arrive.IsSet() || K.Leave.IsSet())
 		{
 			FRichCurveKey& Key = RC.GetKey(H);
-			Key.TangentMode = RCTM_User;
+			Key.TangentMode = K.bBreak ? RCTM_Break : RCTM_User;
 			Key.ArriveTangent = K.Arrive.Get(Key.ArriveTangent);
 			Key.LeaveTangent = K.Leave.Get(Key.LeaveTangent);
 		}
@@ -673,4 +714,36 @@ FString UMCPAuthoringSubsystem::DescribeBlueprintJson(UBlueprint* Blueprint, boo
 	}
 	Root->SetArrayField(TEXT("events"), Events);
 	return MCPJsonToString(Root);
+}
+
+FString UMCPAuthoringSubsystem::CheckMemberName(UBlueprint* Blueprint, FName Name)
+{
+	if (!Blueprint)
+	{
+		return TEXT("not a Blueprint");
+	}
+	FKismetNameValidator Validator(Blueprint);
+	switch (Validator.IsValid(Name))
+	{
+	case EValidatorResult::Ok: return FString();
+	case EValidatorResult::EmptyName: return TEXT("the name is empty");
+	case EValidatorResult::TooLong: return TEXT("the name is too long");
+	case EValidatorResult::ContainsInvalidCharacters: return TEXT("the name contains invalid characters");
+	default: return FString::Printf(TEXT("%s is already used by this Blueprint or a class it inherits from"), *Name.ToString());
+	}
+}
+
+bool UMCPAuthoringSubsystem::RemoveMemberVariable(UBlueprint* Blueprint, FName Name)
+{
+	if (!Blueprint || FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, Name) == INDEX_NONE)
+	{
+		return false;
+	}
+	FBlueprintEditorUtils::RemoveMemberVariable(Blueprint, Name);
+	return true;
+}
+
+bool UMCPAuthoringSubsystem::UpdateDefaultConfig(UObject* ConfigObject)
+{
+	return ConfigObject && ConfigObject->GetClass()->HasAnyClassFlags(CLASS_Config) && ConfigObject->TryUpdateDefaultConfigFile();
 }

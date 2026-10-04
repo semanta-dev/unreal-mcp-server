@@ -92,6 +92,7 @@ var PyOps = map[string]PyOp{
 	"data_curve_read":     {Tier: ReadOnly, Plugin: 6},
 	"data_blueprint":      {Tier: Ephemeral, Plugin: 6, Note: "compiles the Blueprint in memory (not saved) for its status and messages"},
 	"data_set_properties": {Tier: Mutating},
+	"data_set_settings":   {Tier: Mutating, Plugin: 6, Note: "writes the settings class's Default*.ini"},
 	"data_table_upsert":   {Tier: Mutating, Note: "keyed: other rows are written back unchanged"},
 	"data_table_delete":   {Tier: Destructive},
 	"data_curve_keys":     {Tier: Mutating, Plugin: 6},
@@ -192,5 +193,5 @@ var UndoClass = map[string]string{
 	"editor_undo": "none", "open_level": "none", "quit_editor": "none", "save_all": "none",
 	"game_command":        "pie",
 	"data_set_properties": "tx", "data_table_upsert": "tx", "data_table_delete": "tx", "data_curve_keys": "tx",
-	"data_add_variable": "untracked", "data_input_mapping": "untracked",
+	"data_add_variable": "untracked", "data_input_mapping": "untracked", "data_set_settings": "untracked",
 }
