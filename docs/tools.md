@@ -2,7 +2,7 @@
 
 # Tools
 
-46 tools (34 core). Optional toolsets are enabled per session with `toolsets op=enable` or a project's `.umcp.json` `toolsets`. Every tool takes JSON arguments validated against its schema; errors come back as `{"error": {code, message, hint, retryable, outcome, details}}` with a closed code set.
+48 tools (34 core). Optional toolsets are enabled per session with `toolsets op=enable` or a project's `.umcp.json` `toolsets`. Every tool takes JSON arguments validated against its schema; errors come back as `{"error": {code, message, hint, retryable, outcome, details}}` with a closed code set.
 
 **Tiers** (per op; a tool's annotations follow its worst op): `readonly` · `ephemeral` (UI/session state, server-owned scratch files) · `mutating` (project/world content; nothing authored is lost) · `destructive` (can lose authored content; approval-gated when the gate policy requires) · `exec` (runs caller-supplied code/input; gated).
 
@@ -20,6 +20,7 @@
 | desktop (OS-level screen capture and input (Windows)) | `desktop_capture`, `desktop_input` |
 | polyworld (the PolyWorld Company-MVP game) | `polyworld`, `polyworld_demolish` |
 | world (declarative scenes and spatial queries) | `world_query`, `scene`, `scene_clear` |
+| game (the game's own API (.umcp.json game_api; on when declared)) | `game`, `game_command` |
 
 ## Toolset `core`
 
@@ -832,6 +833,7 @@ Optional tool groups: enable one to get its tools.
 - polyworld: polyworld, polyworld_demolish
 - headless: headless (commandlets, tests)
 - world: scene, scene_clear (declarative scenes), world_query (traces, overlaps, nav)
+- game: game, game_command (the game's own API; on when .umcp.json declares game_api)
 ops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).
 
 | op | tier | does | required | needs |
@@ -845,7 +847,7 @@ ops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, ne
 |---|---|---|
 | `op` | string | one of: list, enable, disable, describe |
 | `tool` | string | describe: one tool (default: every tool of the enabled toolsets, briefly) |
-| `toolset` | string | enable/disable: the toolset — one of: core, daemon, headless, design, ui, desktop, polyworld, world |
+| `toolset` | string | enable/disable: the toolset — one of: core, daemon, headless, design, ui, desktop, polyworld, world, game |
 
 ## Toolset `daemon`
 
@@ -1043,7 +1045,7 @@ OS-level input to whatever window is in front (Windows only; elsewhere UNSUPPORT
 
 _tier mutating_
 
-Play the PolyWorld Company-MVP in the running game (PIE only; PIE_NOT_RUNNING otherwise, never the editor level).
+DEPRECATED (removed in v2.3): use game / game_command — docs/polyworld-migration.md maps each op. Play the PolyWorld Company-MVP in the running game (PIE only; PIE_NOT_RUNNING otherwise, never the editor level).
 - status: capital and each building's supplier, market, last-cycle profit.
 - build: place catalog `option` at `location`.
 - select: a `building`'s supplier and/or market.
@@ -1071,7 +1073,7 @@ Play the PolyWorld Company-MVP in the running game (PIE only; PIE_NOT_RUNNING ot
 
 _tier destructive_
 
-Bulldoze the building nearest `location` in the running game (PIE only): destroys it, frees its grid cells, refunds half its cost → {demolished, name, refund, capital}.
+DEPRECATED (removed in v2.3): game_command name=demolish {building_id, confirm: true}. Bulldoze the building nearest `location` in the running game (PIE only): destroys it, frees its grid cells, refunds half its cost → {demolished, name, refund, capital}.
 
 | tier | required | needs |
 |---|---|---|
@@ -1166,3 +1168,38 @@ dry_run lists them.
 | `path` | string | prune: the scene spec file (its scene_id and labels are kept) |
 | `save` | boolean | save afterwards (default true) |
 | `scene_id` | string | all: the scene whose actors to delete |
+
+## Toolset `game`
+
+### `game` — The game's own API (read)
+
+_tier readonly_
+
+Read the running game through its own agent API (the project's .umcp.json game_api; PIE). capabilities: commands + world_epoch; snapshot: the game state; events since=<cursor>: {events, next_cursor, gap, dropped}. Change the game with game_command.
+
+| op | tier | does | required | needs |
+|---|---|---|---|---|
+| `capabilities` | readonly | the game's commands (with tiers), event kinds, world_epoch |  | editor, pie, plugin>=3 |
+| `snapshot` | readonly | the game state, read-only |  | editor, pie, plugin>=3 |
+| `events` | readonly | gameplay events after a cursor (gap/dropped when some were lost) |  | editor, pie, plugin>=3 |
+
+| param | type | description |
+|---|---|---|
+| `op` | string | one of: capabilities, snapshot, events |
+| `since` | string | events: the cursor from the last events/snapshot (default: from the start); another world's cursor reports gap |
+
+### `game_command` — Run a game command
+
+_tier exec_
+
+Run one of the game's commands (its own API; PIE) → {accepted, result}. request_id is required: after outcome:unknown, re-send the SAME request_id (the game returns the recorded result). A command for a world that restarted is refused (dedup_expired): read the game again, then send it with a new request_id.
+
+| tier | required | needs |
+|---|---|---|
+| exec | name, request_id | editor, pie, plugin>=3 |
+
+| param | type | description |
+|---|---|---|
+| `args` | object | the command's arguments |
+| `name` | string | the command (game op=capabilities lists them) |
+| `request_id` | string | required, unique per intended action: re-sending the same id returns the recorded result and never runs it twice |

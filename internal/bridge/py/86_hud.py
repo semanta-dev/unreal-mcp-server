@@ -64,6 +64,10 @@ def _widget_prim_class(name):
     return cls, is_composite
 
 
+_SLOT_KEYS = frozenset(("anchor_preset", "anchors", "alignment", "offsets", "z", "size_to_content", "size", "padding",
+                        "h_align", "v_align", "row", "col", "row_span", "col_span"))
+
+
 def _widget_apply_slot(child, slot_body):
     """Apply a slot-class-aware layout body to a child's (already-added) UPanelSlot.
     Must run AFTER add_child (which mints a fresh slot). Returns [issue,...]."""
@@ -71,6 +75,9 @@ def _widget_apply_slot(child, slot_body):
     slot = child.slot
     if slot is None or not slot_body:
         return issues
+    for k in slot_body:
+        if k not in _SLOT_KEYS:  # never ignore a layout key silently (the widget would sit at 0,0)
+            issues.append(_issue("SLOT_KEY_UNKNOWN", k, "slot keys are " + ", ".join(sorted(_SLOT_KEYS))))
     tn = type(slot).__name__
     try:
         if isinstance(slot, unreal.CanvasPanelSlot):
@@ -274,6 +281,9 @@ def _op_widget_compose(args):
         if w is not None and w != root:
             try:
                 w.remove_from_parent()
+                auth = _mcp_authoring()
+                if auth is not None and hasattr(auth, "unregister_widget"):
+                    auth.unregister_widget(wbp, unreal.Name(nm))
                 removed.append(nm)
             except Exception as e:
                 issues.append(_issue("REMOVE_FAILED", nm, str(e)))

@@ -1,6 +1,6 @@
 # Phase G content for aesir-wave-defense (remediation plan G.3/G.4): run once in the editor
 # (python tool, or the editor's Python console) after the G C++ patch is built. Creates
-# /Game/Data/DT_Waves (the built-in wave formula as rows), C_DamageFalloff (flat 1.0),
+# /Game/Data/DT_Waves (the built-in wave formula as rows Wave_01-Wave_13; past the table the game uses the formula), C_DamageFalloff (flat 1.0),
 # DA_AesirTuning (pointing at both) and /Game/Input/IA_Dash + IMC_Aesir (Dash on Left
 # Shift). Idempotent: existing assets are reused.
 import json
@@ -32,7 +32,7 @@ if not dt:
     f.set_editor_property("struct", struct)
     dt = at.create_asset("DT_Waves", "/Game/Data", unreal.DataTable, f)
 rows = [{"Name": "Wave_%02d" % n, "EnemyCount": min(5 + (n - 1) * 3, 40), "SpawnInterval": 0.8,
-         "BruteChance": 0.2, "SprinterChance": 0.25} for n in range(1, 11)]
+         "BruteChance": 0.2, "SprinterChance": 0.25} for n in range(1, 14)]  # through wave 13, where the formula reaches its 40 cap
 R["dt_fill"] = unreal.DataTableFunctionLibrary.fill_data_table_from_json_string(dt, json.dumps(rows))
 eal.save_asset(dt_path)
 R["dt_rows"] = [str(n) for n in unreal.DataTableFunctionLibrary.get_data_table_row_names(dt)]

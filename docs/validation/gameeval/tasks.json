@@ -451,7 +451,7 @@
       "id": "aesir_read_waves",
       "goal": "G4",
       "project": "aesir",
-      "prompt": "According to the game's wave table, how many enemies does wave 5 spawn?",
+      "prompt": "In the game's wave table, what EnemyCount does wave 5's row (Wave_05) set? Answer with the table value.",
       "requires": [
         "G",
         "R3"

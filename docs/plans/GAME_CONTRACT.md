@@ -14,11 +14,12 @@ declared in the project's `.umcp.json` `game_api` (R1.4). Every function is a `U
 | Function | Kind | Returns |
 |---|---|---|
 | `GetCapabilitiesJson()` | pure, const | `{api_version, world_epoch, commands: [{name, tier, args}], event_kinds: [...]}` — `tier` is informational (R1.5: `game_command` is always Exec) |
-| `PeekSnapshotJson()` | pure, const, **no side effects** | the game state + `world_epoch`, `events_cursor` |
+| `PeekSnapshotJson()` | pure, const, **no side effects** | the game state + `world_epoch`, `events_cursor` (poly-world: the copy its ticker builds, ≤ 0.25 s old and rebuilt after every command — building one hydrates the economy, which writes) |
 | `GetEventsSince(FString Cursor)` | pure, const | `{events: [...], next_cursor, gap: bool, dropped: n, world_epoch, reason?}` — the cursor is `""` (from the start) or `"<world_epoch>:<seq>"` (it carries the epoch, so it is a string, not the `int64` of plan r6) |
 | `ExecuteCommandJson(FString RequestJson)` | callable | `{accepted, request_id, world_epoch, result?, error_code?, message?}` |
 
-- **`world_epoch`**: a GUID made when the subsystem initialises (a new one per PIE session). Cursors encode it
+- **`world_epoch`**: a GUID made per world — when the subsystem initialises and, for Aesir's GameInstance subsystem,
+  on every world it enters (map travel, a new PIE session), which also clears its journal, dedup memory and difficulty. Cursors encode it
   (`"<epoch>:<seq>"`); `GetEventsSince` with an old-epoch cursor returns `gap: true, reason: "world_changed"` and the
   events of the current world from its start.
 - **Event journal**: a ring buffer of ≥ 512 events. When the cursor has fallen behind the oldest kept event,
@@ -49,9 +50,9 @@ Subsystem `UAesirAgentSubsystem` (GameInstance subsystem, game module `AesirWave
 | Item | Name |
 |---|---|
 | snapshot | `{wave_number, wave_state, enemies_remaining, enemies_on_field, intermission_remaining_s, player: {alive, health, max_health, weapon, ammo, max_ammo, location}, kills, score, difficulty}` |
-| commands | `start_wave` (from intermission; `wave_in_progress` otherwise), `set_difficulty {level: easy\|normal\|hard}` (enemy health ×0.75 / ×1 / ×1.5, this world only) |
-| event kinds | `weapon_fire`, `hit {damage, target}`, `kill {by_player}`, `death`, `dash`, `vfx`, `sfx`, `camera_shake`, `wave_start`, `wave_end` |
-| wave table | DataTable `/Game/Data/DT_Waves`, rows `Wave_01`…`Wave_10`, row struct `FAesirWaveRow {EnemyCount, SpawnInterval, BruteChance, SprinterChance}`; waves past the last row use the last row |
+| commands | `start_wave` (from intermission; `wave_in_progress` during a wave, `run_over` after defeat/victory), `set_difficulty {level: easy\|normal\|hard}` (enemy health ×0.75 / ×1 / ×1.5, this world only, nest spawns included); both tier `mutating` |
+| event kinds | `weapon_fire`, `hit {weapon, damage, distance, visual_t}` (`visual_t`: when the HUD drew the hit marker), `kill {by_player}`, `death`, `dash`, `vfx`, `sfx`, `camera_shake`, `wave_start`, `wave_end {wave, clear_s}`. Recorded by the authority (standalone / listen server / PIE); multiplayer clients record nothing |
+| wave table | DataTable `/Game/Data/DT_Waves`, rows `Wave_01`…`Wave_13`, row struct `FAesirWaveRow {EnemyCount, SpawnInterval, BruteChance, SprinterChance}`; a wave with no row (past the table, a deleted row, a table of another row type) uses the game's built-in formula. Every 5th wave adds a boss on top of `EnemyCount` |
 | tuning asset | `UAesirTuning` (`UPrimaryDataAsset`) `/Game/Data/DA_AesirTuning`: `PlayerDamageMultiplier`, `EnemyHealthMultiplier`, `DamageFalloff` (→ curve), `Waves` (→ table) |
 | damage curve | `UCurveFloat` `/Game/Data/C_DamageFalloff`: damage multiplier by distance (units) |
 | input | Enhanced Input action `/Game/Input/IA_Dash` in mapping context `/Game/Input/IMC_Aesir` (default key Left Shift), bound in `AAesirCharacter` |
@@ -59,5 +60,7 @@ Subsystem `UAesirAgentSubsystem` (GameInstance subsystem, game module `AesirWave
 ## poly-world
 
 Subsystem `UPolyWorldAgentSubsystem` (World subsystem, game module `PolyWorld`) — the existing `polyworld.agent.v1`
-API plus: `GetEventsSince(int64)`, `PeekSnapshotJson()` (no `RefreshRevision`), `world_epoch` everywhere, and per-command
-tiers in `GetCapabilitiesJson`. Commands as today (`place_building`, `place_road`, `demolish`, `step_cycles`, …).
+API plus: `GetEventsSince(FString)`, `PeekSnapshotJson()`, `world_epoch` everywhere, per-command tiers and arguments in
+`GetCapabilitiesJson`, `request_id` + `error_code`/`message` on every result (the `error` object stays for its gRPC
+clients). Events are `world.revised` (`data` = `{economy_digest, capital}`, `actor` = the company, plus `cycle`).
+Commands as today (`place_building`, `place_road`, `demolish`, `step_cycles`, …).

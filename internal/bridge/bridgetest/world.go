@@ -31,6 +31,8 @@ type World struct {
 	undo      []txn // the editor's transaction buffer (spawn/delete record theirs)
 	redo      []txn
 	objects   map[string]*Actor // PIE object refs (@gameinstance, @subsystem:<Class>, …) -> fake object
+	// Game is the fake game API behind game_read / game_command.
+	Game *FakeGame
 }
 
 // SetObject registers a PIE object reference (e.g. "@subsystem:AesirAgentSubsystem")
@@ -115,7 +117,8 @@ func (w *World) editorUndo(args map[string]any) (any, *OpError) {
 
 // NewWorld returns an empty level.
 func NewWorld() *World {
-	return &World{editor: map[string]*Actor{}, level: "/Game/Maps/L_Test", assets: map[string]string{}, PluginAPI: 3}
+	return &World{editor: map[string]*Actor{}, level: "/Game/Maps/L_Test", assets: map[string]string{}, PluginAPI: 3,
+		Game: NewFakeGame()}
 }
 
 // Install registers the ops the world answers.
@@ -123,6 +126,9 @@ func (w *World) Install(e *Emulator) {
 	e.Handle("editor_status", w.editorStatus)
 	e.Handle("editor_ping", w.editorPing)
 	e.Handle("editor_undo", w.editorUndo)
+	e.Handle("game_read", w.gameRead)
+	e.Handle("game_command", w.gameCommand)
+	e.Handle("observe_paths", w.observePaths)
 	e.Handle("note_edit", func(args map[string]any) (any, *OpError) {
 		w.mu.Lock()
 		defer w.mu.Unlock()

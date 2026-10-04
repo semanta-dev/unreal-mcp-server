@@ -51,6 +51,8 @@ func everyOp(t *testing.T, native bool) {
 		"Game.uproject":          `{"Modules":[{"Name":"Game"}]}`,
 		"Saved/Logs/Game.log":    "LogTemp: Warning: hello\n",
 		"Config/DefaultGame.ini": "",
+		".umcp.json": `{"game_api": {"version": 1, "object": "@subsystem:Game.GameAgentSubsystem", "capabilities": "GetCapabilitiesJson",
+			"snapshot": "PeekSnapshotJson", "command": "ExecuteCommandJson", "events": "GetEventsSince"}}`,
 	} {
 		full := filepath.Join(dir, filepath.FromSlash(p))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -73,7 +75,7 @@ func everyOp(t *testing.T, native bool) {
 	gitRun(t, dir, "commit", "-q", "-m", "seed")
 	gitRun(t, dir, "tag", "-a", "umcp/cp/1", "-m", "seed")
 
-	h := startHarness(t, harnessOpts{project: dir, native: native, toolsets: []spec.Toolset{spec.Design, spec.UI, spec.PolyWorld, spec.Headless, spec.World}})
+	h := startHarness(t, harnessOpts{project: dir, native: native, toolsets: []spec.Toolset{spec.Design, spec.UI, spec.PolyWorld, spec.Headless, spec.World, spec.Game}})
 	installPermissiveOps(h, dir, png)
 	h.call(t, "actor_edit", map[string]any{"op": "spawn", "world": "editor", "class": "/Script/Engine.Actor", "label": "Cube"})
 
@@ -214,6 +216,8 @@ func opArgs(sp *spec.Spec, op spec.OpSpec, dir, png string) map[string]any {
 		}
 	case "design_audit":
 		args["kind"] = "decision"
+	case "game_command":
+		args["name"], args["request_id"] = "start_wave", "everyop-1"
 	case "analyze":
 		if op.Name == "perf" {
 			csv := filepath.Join(dir, "perf.csv")

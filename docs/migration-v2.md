@@ -2,7 +2,7 @@
 
 # Migrating from v1 to v2
 
-v2 replaces v1's 155 tools with 46. Tool names are not compatible: update prompts, scripts and `.mcp.json` allow-lists using the table below. The v1 server is recoverable from tag `v1-final`.
+v2 replaces v1's 155 tools with 48. Tool names are not compatible: update prompts, scripts and `.mcp.json` allow-lists using the table below. The v1 server is recoverable from tag `v1-final`.
 
 ## What changed everywhere
 
@@ -45,11 +45,11 @@ Tools outside the core toolset are marked: enable them first with `toolsets op=e
 | `capture_status` | `capture` op=status |
 | `capture_stop` | `capture` op=stop |
 | `cockpit_url` | `toolsets` op=describe (cockpit.url, without the access token) |
-| `company_build` | `polyworld` op=build (PIE only) — toolset `polyworld` |
-| `company_demolish` | `polyworld_demolish` (PIE only) — toolset `polyworld` |
-| `company_road` | `polyworld` op=road (PIE only) — toolset `polyworld` |
-| `company_select` | `polyworld` op=select (PIE only) — toolset `polyworld` |
-| `company_status` | `polyworld` op=status (PIE only) — toolset `polyworld` |
+| `company_build` | `polyworld` op=build (PIE only) — deprecated, removed in v2.3: docs/polyworld-migration.md — toolset `polyworld` |
+| `company_demolish` | `polyworld_demolish` (PIE only) — deprecated, removed in v2.3: docs/polyworld-migration.md — toolset `polyworld` |
+| `company_road` | `polyworld` op=road (PIE only) — deprecated, removed in v2.3: docs/polyworld-migration.md — toolset `polyworld` |
+| `company_select` | `polyworld` op=select (PIE only) — deprecated, removed in v2.3: docs/polyworld-migration.md — toolset `polyworld` |
+| `company_status` | `polyworld` op=status (PIE only) — deprecated, removed in v2.3: docs/polyworld-migration.md — toolset `polyworld` |
 | `create_material_instance` | `asset_create` op=create kind=material_instance |
 | `dataasset_create` | `asset_create` op=create kind=data_asset |
 | `datatable_create` | `asset_create` op=create kind=data_table |

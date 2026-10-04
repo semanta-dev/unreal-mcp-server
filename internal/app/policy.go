@@ -1,6 +1,7 @@
 package app
 
 import (
+	"log/slog"
 	"strings"
 
 	"github.com/jdziat/unreal-mcp-server/internal/session"
@@ -21,6 +22,13 @@ func StartupPolicy(projectDir, extra string) ([]spec.Toolset, spec.Gate, error) 
 		if t = strings.TrimSpace(t); t != "" {
 			ts = append(ts, spec.Toolset(t))
 		}
+	}
+	// A declared game API turns its toolset on; an invalid one leaves it off (the error
+	// is reported by toolsets op=list and the game tools), never failing the session.
+	if pf.GameAPI != nil {
+		ts = append(ts, spec.Game)
+	} else if pf.GameAPIErr != "" {
+		slog.Warn("game_api in .umcp.json is invalid; the game toolset is off", "error", pf.GameAPIErr)
 	}
 	var gate spec.Gate
 	if pf.GatePolicy == "require" {

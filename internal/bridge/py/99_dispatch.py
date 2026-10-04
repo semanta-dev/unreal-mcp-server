@@ -7,6 +7,8 @@ _OPS = {
     "editor_undo": _op_editor_undo,
     "note_edit": _op_note_edit,
     "observe_paths": _op_observe_paths,
+    "game_read": _op_game_read,
+    "game_command": _op_game_command,
     "actor_transform": _op_actor_transform,
     "actor_set_properties": _op_actor_set_properties,
     "actor_call": _op_actor_call,

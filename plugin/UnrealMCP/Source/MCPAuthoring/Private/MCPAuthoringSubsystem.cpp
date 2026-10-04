@@ -308,10 +308,25 @@ FString UMCPAuthoringSubsystem::SetClassDefaultJson(UBlueprint* Blueprint, const
 	{
 		return MCPJsonResult(false, TEXT("the value is not valid JSON"));
 	}
-	CDO->Modify();
-	if (!FJsonObjectConverter::JsonValueToUProperty(Wrapper->TryGetField(TEXT("v")), Prop, Prop->ContainerPtrToValuePtr<void>(CDO), 0, 0))
+	if (!Prop->HasAnyPropertyFlags(CPF_Edit) || Prop->HasAnyPropertyFlags(CPF_EditConst))
 	{
-		return MCPJsonResult(false, FString::Printf(TEXT("the JSON does not fit %s (%s)"), *PropertyName, *Prop->GetCPPType()));
+		return MCPJsonResult(false, FString::Printf(TEXT("%s is not an editable class default"), *PropertyName));
+	}
+	// All or nothing: convert into a temporary value first, so a JSON that fits only
+	// partly never leaves the class default half-written.
+	void* Temp = FMemory::Malloc(Prop->GetSize(), Prop->GetMinAlignment());
+	Prop->InitializeValue(Temp);
+	const bool bOk = FJsonObjectConverter::JsonValueToUProperty(Wrapper->TryGetField(TEXT("v")), Prop, Temp, 0, 0);
+	if (bOk)
+	{
+		CDO->Modify();
+		Prop->CopyCompleteValue(Prop->ContainerPtrToValuePtr<void>(CDO), Temp);
+	}
+	Prop->DestroyValue(Temp);
+	FMemory::Free(Temp);
+	if (!bOk)
+	{
+		return MCPJsonResult(false, FString::Printf(TEXT("the JSON does not fit %s (%s); nothing changed"), *PropertyName, *Prop->GetCPPType()));
 	}
 	FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
 	return MCPJsonResult(true, FString());
@@ -334,6 +349,10 @@ bool UMCPAuthoringSubsystem::SetRootWidget(UWidgetBlueprint* WidgetBP, UWidget* 
 		return false; // the root must be a widget of this tree
 	}
 	WidgetBP->WidgetTree->Modify();
+	if (Widget->GetParent())
+	{
+		Widget->RemoveFromParent(); // a root has no parent
+	}
 	WidgetBP->WidgetTree->RootWidget = Widget;
 	RegisterWidget(WidgetBP, Widget);
 	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WidgetBP);
@@ -361,5 +380,18 @@ bool UMCPAuthoringSubsystem::SetWidgetIsVariable(UWidget* Widget, bool bIsVariab
 	}
 	Widget->Modify();
 	Widget->bIsVariable = bIsVariable;
+	return true;
+}
+
+bool UMCPAuthoringSubsystem::UnregisterWidget(UWidgetBlueprint* WidgetBP, FName WidgetName)
+{
+	if (!WidgetBP)
+	{
+		return false;
+	}
+	if (WidgetBP->WidgetVariableNameToGuidMap.Contains(WidgetName))
+	{
+		WidgetBP->OnVariableRemoved(WidgetName);
+	}
 	return true;
 }

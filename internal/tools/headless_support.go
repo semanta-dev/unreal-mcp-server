@@ -3,6 +3,7 @@ package tools
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -22,19 +23,28 @@ func lastLines(s string, n int) string {
 	return strings.Join(lines, "\n")
 }
 
-// summarizeAutomation pulls the pass/fail tally from UE's LogAutomationController
-// result lines ("Test Completed. Result={Passed|Failed}"). Anchored to the exact
-// form (no fuzzy "...passed" fallback that could mis-tally incidental log lines).
+// automationResult matches UE's LogAutomationController result line, "Test Completed.
+// Result={<state>}" — anchored to that exact form (no fuzzy "...passed" fallback that
+// could mis-tally incidental log lines). UE 5.7 writes Success/Fail; older engines
+// Passed/Failed.
+var automationResult = regexp.MustCompile(`(?i)test completed\. result=\{(\w+)\}`)
+
+// summarizeAutomation pulls the pass/fail tally from the result lines.
 func summarizeAutomation(stdout string) map[string]any {
-	passed, failed := 0, 0
-	for _, ln := range strings.Split(stdout, "\n") {
-		l := strings.ToLower(ln)
-		switch {
-		case strings.Contains(l, "test completed. result={passed}"):
+	passed, failed, skipped := 0, 0, 0
+	for _, m := range automationResult.FindAllStringSubmatch(stdout, -1) {
+		switch strings.ToLower(m[1]) {
+		case "passed", "success":
 			passed++
-		case strings.Contains(l, "test completed. result={failed}"):
+		case "failed", "fail":
 			failed++
+		default: // NotRun, Skipped
+			skipped++
 		}
 	}
-	return map[string]any{"passed": passed, "failed": failed, "ok": failed == 0}
+	out := map[string]any{"passed": passed, "failed": failed, "ok": failed == 0}
+	if skipped > 0 {
+		out["skipped"] = skipped
+	}
+	return out
 }

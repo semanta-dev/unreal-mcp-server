@@ -25,7 +25,7 @@ func toolBytes(t *testing.T, s *spec.Spec) int {
 	return len(b)
 }
 
-// TestToolListBudgets pins the plan's counts and byte budgets: 46 tools (34 core; scene,
+// TestToolListBudgets pins the plan's counts and byte budgets: 48 tools (34 core; scene,
 // scene_clear and world_query moved to toolset `world` in v2.1), core tools/list ≤ 45 KB, everything ≤ 75 KB.
 func TestToolListBudgets(t *testing.T) {
 	specs := Specs(Deps{Bridge: bridge.New(noEditorRunner{}, bridge.Options{}), Jobs: jobs.NewRegistry(), Projects: docsProjects{}})
@@ -46,8 +46,8 @@ func TestToolListBudgets(t *testing.T) {
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].n > rows[j].n })
 	t.Logf("tools=%d core=%d core_bytes=%d all_bytes=%d largest=%v", len(specs), nCore, core, all, rows[:5])
-	if len(specs) != 46 || nCore != 34 {
-		t.Errorf("tool counts = %d (%d core), want 46 (34 core)", len(specs), nCore)
+	if len(specs) != 48 || nCore != 34 {
+		t.Errorf("tool counts = %d (%d core), want 48 (34 core)", len(specs), nCore)
 	}
 	if core > coreBudget {
 		t.Errorf("core tools/list = %d bytes, budget %d", core, coreBudget)

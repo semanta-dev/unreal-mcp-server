@@ -104,4 +104,8 @@ private:
 
 	// one-shot issue de-dup (SOURCE_NULL / RATIO_DENOM_ZERO hold-last-good)
 	TSet<FName> IssuedOnce;
+
+	// Subsystem bind source: class path -> class, resolved once (a miss stays a miss:
+	// never a load per frame).
+	mutable TMap<FString, TWeakObjectPtr<UClass>> SubsystemClasses;
 };

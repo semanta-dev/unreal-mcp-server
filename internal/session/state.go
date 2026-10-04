@@ -88,6 +88,9 @@ func ProjectKey(path string) string { return lifecycle.ProjectKey(path) }
 // ProjectFile is a project's optional .umcp.json (see lifecycle.ProjectFile).
 type ProjectFile = lifecycle.ProjectFile
 
+// GameAPI is a project's validated .umcp.json game_api (see lifecycle.GameAPI).
+type GameAPI = lifecycle.GameAPI
+
 // ProjectFileName is the per-project config file name.
 const ProjectFileName = lifecycle.ProjectFileName
 

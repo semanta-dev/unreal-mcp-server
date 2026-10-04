@@ -130,10 +130,20 @@ UObject* UMCPHUDWidget::ResolveSource(const FMCPFieldSourceBinding& B) const
 		return GetWorld() ? GetWorld()->GetGameState() : nullptr;
 	case EMCPBindSource::Subsystem:
 	{
-		UClass* Cls = FindObject<UClass>(nullptr, *B.SourceLabel);
-		if (!Cls)
+		UClass* Cls = nullptr;
+		if (const TWeakObjectPtr<UClass>* Known = SubsystemClasses.Find(B.SourceLabel))
 		{
-			Cls = LoadObject<UClass>(nullptr, *B.SourceLabel);
+			Cls = Known->Get();
+		}
+		else
+		{
+			// Native subsystem classes only (/Script/...): they are loaded with their module,
+			// so a find is enough and nothing is ever loaded from a tick.
+			if (B.SourceLabel.StartsWith(TEXT("/Script/")))
+			{
+				Cls = FindObject<UClass>(nullptr, *B.SourceLabel);
+			}
+			SubsystemClasses.Add(B.SourceLabel, Cls);
 		}
 		UWorld* World = GetWorld();
 		if (!Cls || !World)

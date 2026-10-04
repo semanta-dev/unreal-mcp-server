@@ -1,5 +1,66 @@
+diff --git a/Source/PolyWorld/AgentApiTests.cpp b/Source/PolyWorld/AgentApiTests.cpp
+index 128a44a..2b2e4b1 100644
+--- a/Source/PolyWorld/AgentApiTests.cpp
++++ b/Source/PolyWorld/AgentApiTests.cpp
+@@ -54,6 +54,56 @@ bool FPolyAgentApiCommandCore::RunTest(const FString&)
+ 	return true;
+ }
+ 
++IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolyAgentApiUnrealMcpContract,
++	"PolyWorld.AgentApi.CommandCore.UnrealMcpContract",
++	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
++
++// unreal-mcp's game_api contract (its docs/plans/GAME_CONTRACT.md): world_epoch, a peek with
++// no side effects, epoch cursors, and commands refused for another world.
++bool FPolyAgentApiUnrealMcpContract::RunTest(const FString&)
++{
++	FHeadlessWorldFixture Fix;
++	if (!Fix.Ok()) { return false; }
++	UPolyWorldAgentSubsystem* Api = Fix.World->GetSubsystem<UPolyWorldAgentSubsystem>();
++	if (!TestNotNull(TEXT("agent subsystem"), Api)) { return false; }
++
++	const TSharedPtr<FJsonObject> Caps = ParseAgentJson(Api->GetCapabilitiesJson());
++	const FString Epoch = Caps.IsValid() ? Caps->GetStringField(TEXT("world_epoch")) : FString();
++	TestFalse(TEXT("capabilities carry a world_epoch"), Epoch.IsEmpty());
++	TestTrue(TEXT("capabilities list commands with tiers"), Caps.IsValid() && Caps->GetArrayField(TEXT("commands")).Num() > 0);
++
++	const FString Fresh = Api->GetSnapshotJson(false);
++	const uint64 Rev = Api->CurrentRevision();
++	const TSharedPtr<FJsonObject> Peek = ParseAgentJson(Api->PeekSnapshotJson());
++	TestTrue(TEXT("peek returns the snapshot with the epoch"), Peek.IsValid() && Peek->GetStringField(TEXT("world_epoch")) == Epoch);
++	Api->PeekSnapshotJson();
++	TestEqual(TEXT("peeking does not revise the world"), Api->CurrentRevision(), Rev);
++
++	const TSharedPtr<FJsonObject> Events = ParseAgentJson(Api->GetEventsSince(TEXT("")));
++	TestTrue(TEXT("events from the start: no gap"), Events.IsValid() && !Events->GetBoolField(TEXT("gap")));
++	TestTrue(TEXT("events carry the contract fields"), Events.IsValid() && Events->GetArrayField(TEXT("events")).Num() > 0
++		&& Events->GetArrayField(TEXT("events"))[0]->AsObject()->HasField(TEXT("kind"))
++		&& Events->GetArrayField(TEXT("events"))[0]->AsObject()->HasField(TEXT("t")));
++	const TSharedPtr<FJsonObject> Old = ParseAgentJson(Api->GetEventsSince(TEXT("another-world:3")));
++	TestTrue(TEXT("another world's cursor is a gap"), Old.IsValid() && Old->GetBoolField(TEXT("gap"))
++		&& Old->GetStringField(TEXT("reason")) == TEXT("world_changed"));
++	const TSharedPtr<FJsonObject> Bad = ParseAgentJson(Api->GetEventsSince(TEXT("garbage")));
++	TestTrue(TEXT("a malformed cursor is reported"), Bad.IsValid() && Bad->GetStringField(TEXT("reason")) == TEXT("bad_cursor"));
++
++	const int64 CycleBefore = Fix.Manager->CycleCounter;
++	const TSharedPtr<FJsonObject> Expired = ParseAgentJson(Api->ExecuteCommandJson(
++		TEXT("{\"request_id\":\"e1\",\"world_epoch\":\"another-world\",\"command\":\"step_cycles\",\"cycles\":2}")));
++	TestTrue(TEXT("another world's command is refused"), Expired.IsValid() && !Expired->GetBoolField(TEXT("accepted"))
++		&& Expired->GetStringField(TEXT("error_code")) == TEXT("dedup_expired"));
++	TestEqual(TEXT("a refused command does not run"), Fix.Manager->CycleCounter, CycleBefore);
++	const FString Req = FString::Printf(TEXT("{\"request_id\":\"e2\",\"world_epoch\":\"%s\",\"command\":\"step_cycles\",\"cycles\":2}"), *Epoch);
++	const TSharedPtr<FJsonObject> Ok = ParseAgentJson(Api->ExecuteCommandJson(Req));
++	TestTrue(TEXT("this world's command runs and echoes request_id"), Ok.IsValid() && Ok->GetBoolField(TEXT("accepted"))
++		&& Ok->GetStringField(TEXT("request_id")) == TEXT("e2"));
++	TestEqual(TEXT("it advanced two cycles"), Fix.Manager->CycleCounter, CycleBefore + 2);
++	return true;
++}
++
+ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPolyAgentApiCoffeeLoop,
+ 	"PolyWorld.AgentApi.Integration.FreshCoffeeCompany",
+ 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 diff --git a/Source/PolyWorld/PolyWorldAgentSubsystem.cpp b/Source/PolyWorld/PolyWorldAgentSubsystem.cpp
-index f718323..0609958 100644
+index f718323..f3657a0 100644
 --- a/Source/PolyWorld/PolyWorldAgentSubsystem.cpp
 +++ b/Source/PolyWorld/PolyWorldAgentSubsystem.cpp
 @@ -86,6 +86,10 @@ namespace
@@ -13,13 +74,18 @@ index f718323..0609958 100644
  	const bool bRequested = !GIsEditor || FParse::Param(FCommandLine::Get(), TEXT("PolyWorldGrpc"));
  	if (!bRequested) { return; }
  	int32 Port = 50051;
-@@ -100,8 +104,15 @@ void UPolyWorldAgentSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+@@ -100,8 +104,20 @@ void UPolyWorldAgentSubsystem::Initialize(FSubsystemCollectionBase& Collection)
  	else UE_LOG(LogTemp, Display, TEXT("[AgentAPI] gRPC listening on %s"), *Address);
  }
  
 +bool UPolyWorldAgentSubsystem::TickRevision(float DeltaSeconds)
 +{
 +	RefreshRevision();
++	if (CachedSnapshot.IsEmpty() || CachedRevision != Revision)
++	{
++		CachedSnapshot = BuildSnapshotJson(false);
++		CachedRevision = Revision;
++	}
 +	return true;
 +}
 +
@@ -29,7 +95,15 @@ index f718323..0609958 100644
  	if (GrpcServer) { GrpcServer->Stop(); GrpcServer.Reset(); }
  	Super::Deinitialize();
  }
-@@ -153,6 +164,75 @@ FString UPolyWorldAgentSubsystem::GetCapabilitiesJson() const
+@@ -131,6 +147,7 @@ uint64 UPolyWorldAgentSubsystem::RefreshRevision()
+ 		Event.Type = TEXT("world.revised");
+ 		Event.EntityId = Manager->CompanyName;
+ 		Event.PayloadJson = FString::Printf(TEXT("{\"economy_digest\":\"%llu\",\"capital\":%lld}"), Digest, Manager->Capital);
++		Event.T = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+ 		if (EventJournal.Num() > 512) { EventJournal.RemoveAt(0, EventJournal.Num() - 512, EAllowShrinking::No); }
+ 	}
+ 	LastDigest = Digest;
+@@ -153,6 +170,98 @@ FString UPolyWorldAgentSubsystem::GetCapabilitiesJson() const
  		Features.Add(MakeShared<FJsonValueString>(Feature));
  	}
  	Root->SetArrayField(TEXT("features"), Features);
@@ -50,6 +124,15 @@ index f718323..0609958 100644
 +		TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
 +		J->SetStringField(TEXT("name"), C.Key);
 +		J->SetStringField(TEXT("tier"), C.Value);
++		static const TMap<FString, FString> Args = {
++			{TEXT("set_simulation"), TEXT("{speed}")}, {TEXT("step_cycles"), TEXT("{cycles 1..10000}")},
++			{TEXT("new_game"), TEXT("{company_name, start_city_id, seed}")}, {TEXT("place_building"), TEXT("{option_id, x, y, orientation, city_id?, search_radius?}")},
++			{TEXT("place_road"), TEXT("{cells: [{x, y}], city_id?}")}, {TEXT("demolish"), TEXT("{building_id, confirm: true}")},
++			{TEXT("borrow"), TEXT("{amount, product_index}")}, {TEXT("repay"), TEXT("{loan_index, amount}")},
++			{TEXT("set_sourcing"), TEXT("{part_id, mode: in_house|contract|generic, supplier_id}")},
++			{TEXT("set_product_strategy"), TEXT("{origin, roast, channel, packaging, price 5..25}")}};
++		const FString* A = Args.Find(C.Key);
++		J->SetStringField(TEXT("args"), A ? *A : FString(TEXT("see the ExecuteCommandJson handler")));
 +		Commands.Add(MakeShared<FJsonValueObject>(J));
 +	}
 +	Root->SetArrayField(TEXT("commands"), Commands);
@@ -67,7 +150,12 @@ index f718323..0609958 100644
 +	FString Epoch, Rev;
 +	if (!Cursor.IsEmpty())
 +	{
-+		if (!Cursor.Split(TEXT(":"), &Epoch, &Rev) || Epoch != WorldEpoch)
++		if (!Cursor.Split(TEXT(":"), &Epoch, &Rev) || !Rev.IsNumeric())
++		{
++			bGap = true; // not a cursor this API made: replay from the start, flagged
++			Root->SetStringField(TEXT("reason"), TEXT("bad_cursor"));
++		}
++		else if (Epoch != WorldEpoch)
 +		{
 +			bGap = true; // another world's cursor: everything since this world began
 +			Root->SetStringField(TEXT("reason"), TEXT("world_changed"));
@@ -78,11 +166,14 @@ index f718323..0609958 100644
 +		}
 +	}
 +	const uint64 Oldest = EventJournal.Num() > 0 ? EventJournal[0].EventRevision : Revision + 1;
-+	if (!bGap && After + 1 < Oldest)
++	if (After + 1 < Oldest)
 +	{
-+		bGap = true;
-+		Dropped = Oldest - (After + 1);
-+		Root->SetStringField(TEXT("reason"), TEXT("journal_overrun"));
++		Dropped = Oldest - (After + 1); // lost to the 512-event journal (also for another world's cursor)
++		if (!bGap)
++		{
++			bGap = true;
++			Root->SetStringField(TEXT("reason"), TEXT("journal_overrun"));
++		}
 +	}
 +	TArray<TSharedPtr<FJsonValue>> Events;
 +	uint64 Last = After;
@@ -91,10 +182,16 @@ index f718323..0609958 100644
 +		if (Event.EventRevision <= After) { continue; }
 +		TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
 +		Json->SetNumberField(TEXT("seq"), (double)Event.EventRevision);
++		Json->SetNumberField(TEXT("t"), Event.T);
 +		Json->SetStringField(TEXT("kind"), Event.Type);
++		Json->SetStringField(TEXT("actor"), Event.EntityId);
++		Json->SetBoolField(TEXT("by_player"), false);
++		TSharedPtr<FJsonObject> Data;
++		if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Event.PayloadJson), Data) && Data.IsValid())
++		{
++			Json->SetObjectField(TEXT("data"), Data);
++		}
 +		Json->SetNumberField(TEXT("cycle"), (double)Event.Cycle);
-+		Json->SetStringField(TEXT("entity_id"), Event.EntityId);
-+		Json->SetStringField(TEXT("payload_json"), Event.PayloadJson);
 +		Events.Add(MakeShared<FJsonValueObject>(Json));
 +		Last = Event.EventRevision;
 +	}
@@ -105,25 +202,33 @@ index f718323..0609958 100644
  	return JsonString(Root);
  }
  
-@@ -177,6 +257,17 @@ FString UPolyWorldAgentSubsystem::GetEventsJson(uint64 AfterRevision)
+@@ -177,6 +286,25 @@ FString UPolyWorldAgentSubsystem::GetEventsJson(uint64 AfterRevision)
  }
  
  FString UPolyWorldAgentSubsystem::GetSnapshotJson(bool bIncludeGraphs)
 +{
 +	RefreshRevision();
-+	return BuildSnapshotJson(bIncludeGraphs);
++	const FString Snapshot = BuildSnapshotJson(bIncludeGraphs);
++	if (!bIncludeGraphs)
++	{
++		CachedSnapshot = Snapshot; // PeekSnapshotJson's copy
++		CachedRevision = Revision;
++	}
++	return Snapshot;
 +}
 +
 +FString UPolyWorldAgentSubsystem::PeekSnapshotJson() const
 +{
-+	return BuildSnapshotJson(false);
++	// No side effects: building a snapshot hydrates the economy (it writes), so the ticker
++	// does that and this returns its copy.
++	return CachedSnapshot.IsEmpty() ? FString(TEXT("{\"error\":\"snapshot_not_ready\"}")) : CachedSnapshot;
 +}
 +
 +FString UPolyWorldAgentSubsystem::BuildSnapshotJson(bool bIncludeGraphs) const
  {
  	ACompanyManager* Manager = ACompanyManager::Get(this);
  	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-@@ -190,9 +281,10 @@ FString UPolyWorldAgentSubsystem::GetSnapshotJson(bool bIncludeGraphs)
+@@ -190,9 +318,10 @@ FString UPolyWorldAgentSubsystem::GetSnapshotJson(bool bIncludeGraphs)
  	Cmvp_HydrateEconomyState(*Manager, State);
  	TArray<FEconSample> History; Manager->ReadHistory(false, 2, History);
  	const uint64 Digest = Manager->WholeCompanyDigest(State);
@@ -135,17 +240,25 @@ index f718323..0609958 100644
  	Root->SetStringField(TEXT("economy_digest"), LexToString(Digest));
  	Root->SetStringField(TEXT("company_name"), Manager->CompanyName);
  	Root->SetStringField(TEXT("world_seed"), LexToString(Manager->WorldSeed));
-@@ -610,6 +702,7 @@ FString UPolyWorldAgentSubsystem::ResultJson(bool bAccepted, const FString& Erro
+@@ -610,6 +739,13 @@ FString UPolyWorldAgentSubsystem::ResultJson(bool bAccepted, const FString& Erro
  	RefreshRevision();
  	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
  	Root->SetBoolField(TEXT("accepted"), bAccepted);
 +	Root->SetStringField(TEXT("world_epoch"), WorldEpoch);
++	Root->SetStringField(TEXT("request_id"), CurrentRequestId);
++	if (!bAccepted)
++	{
++		Root->SetStringField(TEXT("error_code"), ErrorCode);
++		Root->SetStringField(TEXT("message"), Message);
++	}
  	Root->SetStringField(TEXT("revision"), LexToString(Revision));
  	Root->SetNumberField(TEXT("cycle"), Manager ? (double)Manager->CycleCounter : 0.0);
  	Root->SetStringField(TEXT("economy_digest"), LexToString(LastDigest));
-@@ -651,6 +744,14 @@ FString UPolyWorldAgentSubsystem::ExecuteCommandJson(const FString& RequestJson)
+@@ -650,7 +786,16 @@ FString UPolyWorldAgentSubsystem::ExecuteCommandJson(const FString& RequestJson)
+ 		return ResultJson(false, TEXT("invalid_argument"), TEXT("Request is not valid JSON."));
  	}
  	const FString RequestId = Request->GetStringField(TEXT("request_id"));
++	CurrentRequestId = RequestId;
  	if (RequestId.IsEmpty()) { return ResultJson(false, TEXT("invalid_argument"), TEXT("request_id is required.")); }
 +	FString Epoch;
 +	if (Request->TryGetStringField(TEXT("world_epoch"), Epoch) && Epoch != WorldEpoch)
@@ -158,8 +271,18 @@ index f718323..0609958 100644
  	if (const FString* Prior = CompletedRequests.Find(RequestId)) { return *Prior; }
  
  	RefreshRevision();
+@@ -982,5 +1127,9 @@ FString UPolyWorldAgentSubsystem::ExecuteCommandJson(const FString& RequestJson)
+ 	Request->TryGetBoolField(TEXT("return_snapshot"), bReturnSnapshot);
+ 	const FString Response = ResultJson(bAccepted, ErrorCode, ErrorMessage, bReturnSnapshot);
+ 	Remember(RequestId, Response);
++	// Keep PeekSnapshotJson current right after a command, not just on the next tick.
++	RefreshRevision();
++	CachedSnapshot = BuildSnapshotJson(false);
++	CachedRevision = Revision;
+ 	return Response;
+ }
 diff --git a/Source/PolyWorld/PolyWorldAgentSubsystem.h b/Source/PolyWorld/PolyWorldAgentSubsystem.h
-index 383a3b2..2ece52d 100644
+index 383a3b2..4a08852 100644
 --- a/Source/PolyWorld/PolyWorldAgentSubsystem.h
 +++ b/Source/PolyWorld/PolyWorldAgentSubsystem.h
 @@ -1,6 +1,7 @@
@@ -170,7 +293,7 @@ index 383a3b2..2ece52d 100644
  #include "Subsystems/WorldSubsystem.h"
  #include "PolyWorldGrpcServer.h"
  #include "PolyWorldAgentSubsystem.generated.h"
-@@ -21,8 +22,13 @@ public:
+@@ -21,8 +22,14 @@ public:
  	virtual void Deinitialize() override;
  	virtual bool DoesSupportWorldType(EWorldType::Type WorldType) const override;
  
@@ -178,14 +301,15 @@ index 383a3b2..2ece52d 100644
 +	/** {api_version, world_epoch, commands: [{name, tier}], event_kinds, features} (unreal-mcp game_api). */
 +	UFUNCTION(BlueprintPure, Category="PolyWorld|Agent") FString GetCapabilitiesJson() const;
  	UFUNCTION(BlueprintCallable, Category="PolyWorld|Agent") FString GetSnapshotJson(bool bIncludeGraphs = false);
-+	/** The snapshot with no side effects (no revision bump): world_epoch and events_cursor included. */
++	/** The snapshot with no side effects: the copy the subsystem's ticker builds (≤ 0.25 s old, rebuilt on
++	 *  every revision and after every command) — building one hydrates the economy, which writes. */
 +	UFUNCTION(BlueprintPure, Category="PolyWorld|Agent") FString PeekSnapshotJson() const;
 +	/** Events after Cursor ("" or "<world_epoch>:<revision>"): {events, next_cursor, gap, dropped, world_epoch, reason?}. */
 +	UFUNCTION(BlueprintPure, Category="PolyWorld|Agent") FString GetEventsSince(const FString& Cursor) const;
  	UFUNCTION(BlueprintCallable, Category="PolyWorld|Agent") FString GetBuildCatalogJson(const FString& CityId, const FString& Category);
  	UFUNCTION(BlueprintCallable, Category="PolyWorld|Agent") FString ValidatePlacementJson(const FString& CityId, int32 OptionId, FIntPoint Anchor, int32 Orientation);
  	UFUNCTION(BlueprintCallable, Category="PolyWorld|Agent") FString GetBuildingGraphJson(int32 BuildingId);
-@@ -34,6 +40,11 @@ public:
+@@ -34,6 +41,14 @@ public:
  	uint64 CurrentRevision();
  
  private:
@@ -193,7 +317,18 @@ index 383a3b2..2ece52d 100644
 +	bool TickRevision(float DeltaSeconds);
 +
 +	FString WorldEpoch;
++	FString CachedSnapshot;      // PeekSnapshotJson's copy
++	uint64 CachedRevision = 0;
++	FString CurrentRequestId;    // the command being answered (ResultJson echoes it)
 +	FTSTicker::FDelegateHandle RevisionTicker;
  	uint64 Revision = 0;
  	uint64 LastDigest = 0;
  	uint64 LastFingerprint = 0;
+@@ -47,6 +62,7 @@ private:
+ 		FString Type;
+ 		FString EntityId;
+ 		FString PayloadJson;
++		double T = 0.0; // world seconds when recorded
+ 	};
+ 	TArray<FAgentEvent> EventJournal;
+ 

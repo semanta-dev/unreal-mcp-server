@@ -34,6 +34,8 @@ var PyOps = map[string]PyOp{
 	"actor_delete":         {Tier: Destructive},
 	"editor_undo":          {Tier: Destructive, Plugin: 3, Note: "undo/redo the next editor transaction, only if the server made it"},
 	"note_edit":            {Tier: Ephemeral, Note: "records an untracked server edit in the companion's undo journal"},
+	"game_read":            {Tier: ReadOnly, Plugin: 3, Note: "calls a game_api read function after checking it is BlueprintPure/const"},
+	"game_command":         {Tier: Exec, Plugin: 3, Note: "calls the game_api command function (idempotent by request_id + world_epoch)"},
 	"observe_paths":        {Tier: ReadOnly, Note: "reads object paths; calls only BlueprintPure/const getters (plugin API 3, checked when called: object paths are optional in a predicate)"},
 	"actor_query":          {Tier: ReadOnly},
 	"actor_set_properties": {Tier: Mutating},
@@ -175,4 +177,5 @@ var UndoClass = map[string]string{
 	"apply_level_recipe": "untracked_world", "console": "untracked_world", "company_build": "untracked_world",
 	"company_road": "untracked_world", "company_demolish": "untracked_world", "company_select": "untracked_world",
 	"editor_undo": "none", "open_level": "none", "quit_editor": "none", "save_all": "none",
+	"game_command": "pie",
 }

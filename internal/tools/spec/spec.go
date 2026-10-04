@@ -65,6 +65,7 @@ const (
 	Desktop   Toolset = "desktop"
 	PolyWorld Toolset = "polyworld"
 	World     Toolset = "world"
+	Game      Toolset = "game"
 )
 
 // OpSpec is one operation of a tool. Single-op tools have one OpSpec with Name "".

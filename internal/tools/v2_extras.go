@@ -52,9 +52,9 @@ func toolsetsSpec(d Deps) *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "toolsets", Title: "Toolsets and capabilities", Toolset: spec.Core, Offline: true, Timeout: sync8, Max: sync8, Ops: ops,
-		Description: "Optional tool groups: enable one to get its tools.\n- design: design_audit (luminance, style, feel, novelty… audits), design_explore\n- ui: widget_edit (author UMG trees)\n- desktop: desktop_capture, desktop_input (OS screen/input)\n- polyworld: polyworld, polyworld_demolish\n- headless: headless (commandlets, tests)\n- world: scene, scene_clear (declarative scenes), world_query (traces, overlaps, nav)\nops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).",
+		Description: "Optional tool groups: enable one to get its tools.\n- design: design_audit (luminance, style, feel, novelty… audits), design_explore\n- ui: widget_edit (author UMG trees)\n- desktop: desktop_capture, desktop_input (OS screen/input)\n- polyworld: polyworld, polyworld_demolish\n- headless: headless (commandlets, tests)\n- world: scene, scene_clear (declarative scenes), world_query (traces, overlaps, nav)\n- game: game, game_command (the game's own API; on when .umcp.json declares game_api)\nops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).",
 		Schema: spec.SchemaFor[toolsetsIn](map[string][]any{"op": spec.OpEnum(ops...),
-			"toolset": {"core", "daemon", "headless", "design", "ui", "desktop", "polyworld", "world"}}, "op"),
+			"toolset": {"core", "daemon", "headless", "design", "ui", "desktop", "polyworld", "world", "game"}}, "op"),
 		Replaces: []string{"affordances", "cockpit_url"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			ts, ok := spec.ToolsetsFrom(ctx)
@@ -69,7 +69,13 @@ func toolsetsSpec(d Deps) *spec.Spec {
 			case "list":
 				var out []map[string]any
 				for _, t := range ts.Known() {
-					out = append(out, map[string]any{"toolset": t, "enabled": ts.IsEnabled(t), "tools": ts.Tools(t)})
+					row := map[string]any{"toolset": t, "enabled": ts.IsEnabled(t), "tools": ts.Tools(t)}
+					if t == spec.Game && c.Deps.ProjectDir != "" {
+						if pf, perr := session.LoadProjectFile(c.Deps.ProjectDir); perr == nil && pf.GameAPIErr != "" {
+							row["unavailable"] = pf.GameAPIErr // game_api is invalid: only this toolset is off
+						}
+					}
+					out = append(out, row)
 				}
 				return &spec.Result{Data: map[string]any{"toolsets": out}, Summary: fmt.Sprintf("%d toolsets", len(out))}, nil
 			case "enable", "disable":
@@ -225,6 +231,12 @@ func projectSpec(pm session.ProjectManager) *spec.Spec {
 				want := []spec.Toolset{spec.Daemon}
 				for _, t := range pf.Toolsets {
 					want = append(want, spec.Toolset(t))
+				}
+				if pf.GameAPI != nil {
+					want = append(want, spec.Game)
+				}
+				if pf.GameAPIErr != "" {
+					out["game_api_error"] = pf.GameAPIErr // only the game toolset is off
 				}
 				if aerr := ts.Apply(want); aerr != nil {
 					out["toolsets_error"] = aerr.Error()
@@ -759,9 +771,10 @@ func polyworldSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "polyworld", Title: "PolyWorld company game", Toolset: spec.PolyWorld, Timeout: sync15, Max: sync28, Ops: ops,
-		Description: "Play the PolyWorld Company-MVP in the running game (PIE only; PIE_NOT_RUNNING otherwise, never the editor level).\n- status: capital and each building's supplier, market, last-cycle profit.\n- build: place catalog `option` at `location`.\n- select: a `building`'s supplier and/or market.\n- road: grid cell `start` to `end` (X first, then Y).",
-		Schema:      spec.SchemaFor[polyworldIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
-		Replaces:    []string{"company_status", "company_build", "company_select", "company_road"},
+		Description: "DEPRECATED (removed in v2.3): use game / game_command — docs/polyworld-migration.md maps each op. " +
+			"Play the PolyWorld Company-MVP in the running game (PIE only; PIE_NOT_RUNNING otherwise, never the editor level).\n- status: capital and each building's supplier, market, last-cycle profit.\n- build: place catalog `option` at `location`.\n- select: a `building`'s supplier and/or market.\n- road: grid cell `start` to `end` (X first, then Y).",
+		Schema:   spec.SchemaFor[polyworldIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
+		Replaces: []string{"company_status", "company_build", "company_select", "company_road"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			args := pick(c.Args, "option", "location", "building", "supplier", "market", "start", "end")
 			out, err := v2Op(ctx, c, "company_"+c.Op.Name, args)
@@ -781,7 +794,8 @@ func polyworldDemolishSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "polyworld_demolish", Title: "Demolish a PolyWorld building", Toolset: spec.PolyWorld, Timeout: sync15, Max: sync28,
 		Ops: []spec.OpSpec{{Tier: spec.Destructive, Required: []string{"location"}, Reaches: []string{"company_demolish"}, Needs: []string{"pie"}}},
-		Description: "Bulldoze the building nearest `location` in the running game (PIE only): destroys it, frees its grid " +
+		Description: "DEPRECATED (removed in v2.3): game_command name=demolish {building_id, confirm: true}. " +
+			"Bulldoze the building nearest `location` in the running game (PIE only): destroys it, frees its grid " +
 			"cells, refunds half its cost → {demolished, name, refund, capital}.",
 		Schema:   spec.SchemaFor[polyworldDemolishIn](nil, "location"),
 		Replaces: []string{"company_demolish"},

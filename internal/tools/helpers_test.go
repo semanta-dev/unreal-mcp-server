@@ -113,6 +113,13 @@ func TestSummarizeAutomationAndLastLines(t *testing.T) {
 	if s["passed"] != 1 || s["failed"] != 1 || s["ok"] != false {
 		t.Fatalf("summary = %v", s)
 	}
+	// UE 5.7 spells the states Success / Fail.
+	s57 := summarizeAutomation("LogAutomationController: Display: Test Completed. Result={Success} Name={A}\n" +
+		"LogAutomationController: Display: Test Completed. Result={Fail} Name={B}\n" +
+		"LogAutomationController: Display: Test Completed. Result={NotRun} Name={C}\n")
+	if s57["passed"] != 1 || s57["failed"] != 1 || s57["skipped"] != 1 || s57["ok"] != false {
+		t.Fatalf("5.7 summary = %v", s57)
+	}
 	if lastLines("a\nb\nc", 2) != "b\nc" {
 		t.Fatal("lastLines")
 	}

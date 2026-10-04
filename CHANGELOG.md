@@ -39,6 +39,10 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
   now hands the companion the tree and its root, registers each new widget (no "did not get a GUID" ensure) and sets
   `is_variable`. Also: `UMCPHUDWidget` binding sources `GameState` and `Subsystem`, class-default read/write as JSON,
   `MountWidget`/`UnmountWidget` and `DescribeLiveWidgets` in PIE. Text props use `unreal.Text(...)`.
+- `headless op=tests` counted no results on UE 5.7, which prints `Result={Success}` / `{Fail}`; both spellings are
+  parsed now (and `NotRun`/`Skipped` are reported as `skipped`).
+- `widget_edit op=compose` reports an unknown `slot` key (`SLOT_KEY_UNKNOWN`) instead of ignoring it; prune unregisters
+  the widgets it removes.
 
 ## v2.0.2 — 2026-10-03
 

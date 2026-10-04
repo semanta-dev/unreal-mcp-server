@@ -81,6 +81,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
 	bool RegisterWidget(UWidgetBlueprint* WidgetBP, UWidget* Widget);
 
+	/** Forget a widget removed from the tree (its variable GUID), as the editor does on
+	 *  delete — prune calls it so no stale GUIDs stay behind. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
+	bool UnregisterWidget(UWidgetBlueprint* WidgetBP, FName WidgetName);
+
 	/** Mark a design-time widget as a variable (bIsVariable is hidden from Python). */
 	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
 	bool SetWidgetIsVariable(UWidget* Widget, bool bIsVariable);

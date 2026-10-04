@@ -1362,6 +1362,68 @@
     },
     {
       "annotations": {
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Read the running game through its own agent API (the project's .umcp.json game_api; PIE). capabilities: commands + world_epoch; snapshot: the game state; events since=\u003ccursor\u003e: {events, next_cursor, gap, dropped}. Change the game with game_command.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "enum": [
+              "capabilities",
+              "snapshot",
+              "events"
+            ],
+            "type": "string"
+          },
+          "since": {
+            "description": "events: the cursor from the last events/snapshot (default: from the start); another world's cursor reports gap",
+            "type": "string"
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "type": "object"
+      },
+      "name": "game",
+      "title": "The game's own API (read)"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Run one of the game's commands (its own API; PIE) → {accepted, result}. request_id is required: after outcome:unknown, re-send the SAME request_id (the game returns the recorded result). A command for a world that restarted is refused (dedup_expired): read the game again, then send it with a new request_id.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "args": {
+            "additionalProperties": true,
+            "description": "the command's arguments",
+            "type": "object"
+          },
+          "name": {
+            "description": "the command (game op=capabilities lists them)",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "required, unique per intended action: re-sending the same id returns the recorded result and never runs it twice",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "name": "game_command",
+      "title": "Run a game command"
+    },
+    {
+      "annotations": {
         "destructiveHint": false,
         "openWorldHint": false
       },
@@ -1863,7 +1925,7 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Play the PolyWorld Company-MVP in the running game (PIE only; PIE_NOT_RUNNING otherwise, never the editor level).\n- status: capital and each building's supplier, market, last-cycle profit.\n- build: place catalog `option` at `location`.\n- select: a `building`'s supplier and/or market.\n- road: grid cell `start` to `end` (X first, then Y).",
+      "description": "DEPRECATED (removed in v2.3): use game / game_command — docs/polyworld-migration.md maps each op. Play the PolyWorld Company-MVP in the running game (PIE only; PIE_NOT_RUNNING otherwise, never the editor level).\n- status: capital and each building's supplier, market, last-cycle profit.\n- build: place catalog `option` at `location`.\n- select: a `building`'s supplier and/or market.\n- road: grid cell `start` to `end` (X first, then Y).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1927,7 +1989,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Bulldoze the building nearest `location` in the running game (PIE only): destroys it, frees its grid cells, refunds half its cost → {demolished, name, refund, capital}.",
+      "description": "DEPRECATED (removed in v2.3): game_command name=demolish {building_id, confirm: true}. Bulldoze the building nearest `location` in the running game (PIE only): destroys it, frees its grid cells, refunds half its cost → {demolished, name, refund, capital}.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2461,7 +2523,7 @@
         "idempotentHint": true,
         "openWorldHint": false
       },
-      "description": "Optional tool groups: enable one to get its tools.\n- design: design_audit (luminance, style, feel, novelty… audits), design_explore\n- ui: widget_edit (author UMG trees)\n- desktop: desktop_capture, desktop_input (OS screen/input)\n- polyworld: polyworld, polyworld_demolish\n- headless: headless (commandlets, tests)\n- world: scene, scene_clear (declarative scenes), world_query (traces, overlaps, nav)\nops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).",
+      "description": "Optional tool groups: enable one to get its tools.\n- design: design_audit (luminance, style, feel, novelty… audits), design_explore\n- ui: widget_edit (author UMG trees)\n- desktop: desktop_capture, desktop_input (OS screen/input)\n- polyworld: polyworld, polyworld_demolish\n- headless: headless (commandlets, tests)\n- world: scene, scene_clear (declarative scenes), world_query (traces, overlaps, nav)\n- game: game, game_command (the game's own API; on when .umcp.json declares game_api)\nops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2488,7 +2550,8 @@
               "ui",
               "desktop",
               "polyworld",
-              "world"
+              "world",
+              "game"
             ],
             "type": "string"
           }

@@ -1,9 +1,9 @@
 diff --git a/Source/AesirWaveDefense/AesirAgentSubsystem.cpp b/Source/AesirWaveDefense/AesirAgentSubsystem.cpp
 new file mode 100644
-index 0000000..8323309
+index 0000000..77396ee
 --- /dev/null
 +++ b/Source/AesirWaveDefense/AesirAgentSubsystem.cpp
-@@ -0,0 +1,324 @@
+@@ -0,0 +1,387 @@
 +#include "AesirAgentSubsystem.h"
 +
 +#include "AesirCharacter.h"
@@ -50,6 +50,46 @@ index 0000000..8323309
 +{
 +	Super::Initialize(Collection);
 +	WorldEpoch = FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphensLower);
++	WorldInitHandle = FWorldDelegates::OnPostWorldInitialization.AddUObject(this, &UAesirAgentSubsystem::ResetForWorld);
++}
++
++void UAesirAgentSubsystem::Deinitialize()
++{
++	FWorldDelegates::OnPostWorldInitialization.Remove(WorldInitHandle);
++	Super::Deinitialize();
++}
++
++void UAesirAgentSubsystem::ResetForWorld(UWorld* World, const UWorld::InitializationValues IVS)
++{
++	if (!World || World->GetGameInstance() != GetGameInstance())
++	{
++		return; // another game instance's world (another PIE client, the editor)
++	}
++	WorldEpoch = FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphensLower);
++	Events.Reset();
++	Responses.Reset();
++	ResponseOrder.Reset();
++	DifficultyHealthScale = 1.f;
++	Difficulty = TEXT("normal");
++}
++
++void UAesirAgentSubsystem::MarkHitVisual(const UObject* WorldContext)
++{
++	UAesirAgentSubsystem* Self = Get(WorldContext);
++	const UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
++	if (!Self || !World)
++	{
++		return;
++	}
++	const double Now = World->GetTimeSeconds();
++	for (int32 i = Self->Events.Num() - 1; i >= 0 && Now - Self->Events[i].T < 1.0; --i)
++	{
++		FEvent& E = Self->Events[i];
++		if (E.Kind == TEXT("hit") && E.Data.IsValid() && !E.Data->HasField(TEXT("visual_t")))
++		{
++			E.Data->SetNumberField(TEXT("visual_t"), Now);
++		}
++	}
 +}
 +
 +UAesirAgentSubsystem* UAesirAgentSubsystem::Get(const UObject* WorldContext)
@@ -73,8 +113,8 @@ index 0000000..8323309
 +		C->SetStringField(TEXT("args"), Args);
 +		Commands.Add(MakeShared<FJsonValueObject>(C));
 +	};
-+	AddCommand(TEXT("start_wave"), TEXT("ephemeral"), TEXT("{} — from an intermission"));
-+	AddCommand(TEXT("set_difficulty"), TEXT("ephemeral"), TEXT("{level: easy|normal|hard} — enemy health x0.75/x1/x1.5, this world only"));
++	AddCommand(TEXT("start_wave"), TEXT("mutating"), TEXT("{} — from an intermission"));
++	AddCommand(TEXT("set_difficulty"), TEXT("mutating"), TEXT("{level: easy|normal|hard} — enemy health x0.75/x1/x1.5, this world only"));
 +	Root->SetArrayField(TEXT("commands"), Commands);
 +	TArray<TSharedPtr<FJsonValue>> Kinds;
 +	for (const TCHAR* K : {TEXT("weapon_fire"), TEXT("hit"), TEXT("kill"), TEXT("death"), TEXT("dash"), TEXT("vfx"),
@@ -151,7 +191,12 @@ index 0000000..8323309
 +	FString Epoch, SeqStr;
 +	if (!Cursor.IsEmpty())
 +	{
-+		if (!Cursor.Split(TEXT(":"), &Epoch, &SeqStr) || Epoch != WorldEpoch)
++		if (!Cursor.Split(TEXT(":"), &Epoch, &SeqStr) || !SeqStr.IsNumeric())
++		{
++			bGap = true; // not a cursor this API made: replay from the start, flagged
++			Root->SetStringField(TEXT("reason"), TEXT("bad_cursor"));
++		}
++		else if (Epoch != WorldEpoch)
 +		{
 +			// A cursor from another world (an earlier PIE session): everything since this
 +			// world began, flagged as a gap.
@@ -164,11 +209,16 @@ index 0000000..8323309
 +		}
 +	}
 +	const int64 Oldest = Events.Num() > 0 ? Events[0].Seq : NextSeq;
-+	if (!bGap && After + 1 < Oldest)
++	if (After + 1 < Oldest)
 +	{
-+		bGap = true;
++		// Events this world recorded but no longer keeps (also counted when the cursor was
++		// another world's: those are lost too).
 +		Dropped = Oldest - (After + 1);
-+		Root->SetStringField(TEXT("reason"), TEXT("journal_overrun"));
++		if (!bGap)
++		{
++			bGap = true;
++			Root->SetStringField(TEXT("reason"), TEXT("journal_overrun"));
++		}
 +	}
 +	TArray<TSharedPtr<FJsonValue>> Out;
 +	int64 Last = After;
@@ -214,9 +264,9 @@ index 0000000..8323309
 +{
 +	UAesirAgentSubsystem* Self = Get(WorldContext);
 +	const UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
-+	if (!Self || !World)
++	if (!Self || !World || World->GetNetMode() == NM_Client)
 +	{
-+		return;
++		return; // the journal is the authority's (standalone / listen server / PIE)
 +	}
 +	FEvent E;
 +	E.Seq = Self->NextSeq++;
@@ -286,6 +336,11 @@ index 0000000..8323309
 +		{
 +			Response = Result(RequestId, false, TEXT("precondition_failed"), TEXT("no wave game mode in this world"), nullptr);
 +		}
++		else if (const AAesirGameState* RunGS = GetWorld()->GetGameState<AAesirGameState>();
++			RunGS && (RunGS->WaveState == EWaveState::Defeat || RunGS->WaveState == EWaveState::Victory))
++		{
++			Response = Result(RequestId, false, TEXT("run_over"), TEXT("the run has ended (defeat or victory)"), nullptr);
++		}
 +		else if (!GM->StartWaveNow())
 +		{
 +			Response = Result(RequestId, false, TEXT("wave_in_progress"), TEXT("a wave is already running (or this mission has no waves)"), nullptr);
@@ -328,12 +383,20 @@ index 0000000..8323309
 +	}
 +	return Response;
 +}
++
++void UAesirAgentSubsystem::DebugRecordBurst(int32 Count)
++{
++	for (int32 i = 0; i < Count; ++i)
++	{
++		Record(this, TEXT("debug"));
++	}
++}
 diff --git a/Source/AesirWaveDefense/AesirAgentSubsystem.h b/Source/AesirWaveDefense/AesirAgentSubsystem.h
 new file mode 100644
-index 0000000..354c801
+index 0000000..3bc0b7b
 --- /dev/null
 +++ b/Source/AesirWaveDefense/AesirAgentSubsystem.h
-@@ -0,0 +1,74 @@
+@@ -0,0 +1,88 @@
 +#pragma once
 +
 +#include "CoreMinimal.h"
@@ -355,6 +418,7 @@ index 0000000..354c801
 +
 +public:
 +	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
++	virtual void Deinitialize() override;
 +
 +	/** {api_version, world_epoch, commands: [{name, tier, args}], event_kinds}. */
 +	UFUNCTION(BlueprintPure, Category = "Aesir|Agent")
@@ -381,6 +445,14 @@ index 0000000..354c801
 +
 +	static UAesirAgentSubsystem* Get(const UObject* WorldContext);
 +
++	/** The hit marker is on screen: stamp data.visual_t (world seconds) on the recent
++	 *  hits that have none — the hit-to-visual latency the feel audit reads. */
++	static void MarkHitVisual(const UObject* WorldContext);
++
++	/** Dev-only: record Count "debug" events (exercises the journal's overrun reporting). */
++	UFUNCTION(BlueprintCallable, Category = "Debug")
++	void DebugRecordBurst(int32 Count);
++
 +	/** Enemy health multiplier from set_difficulty (1 = normal). */
 +	float GetDifficultyHealthScale() const { return DifficultyHealthScale; }
 +
@@ -397,6 +469,11 @@ index 0000000..354c801
 +	FString Result(const FString& RequestId, bool bAccepted, const FString& ErrorCode, const FString& Message,
 +		TSharedPtr<FJsonObject> ResultObj) const;
 +
++	/** A new world (map travel, a new PIE session): a new epoch, an empty journal and
++	 *  dedup memory, normal difficulty — the contract's "this world only". */
++	void ResetForWorld(UWorld* World, const UWorld::InitializationValues IVS);
++
++	FDelegateHandle WorldInitHandle;
 +	static constexpr int32 MaxEvents = 1024;
 +	static constexpr int32 MaxRemembered = 256;
 +
@@ -538,12 +615,48 @@ index 76972dd..9254009 100644
  	UPROPERTY(EditDefaultsOnly, Category = "Camera")
  	float ThirdPersonArmLength = 300.f;
  
+diff --git a/Source/AesirWaveDefense/AesirHUD.cpp b/Source/AesirWaveDefense/AesirHUD.cpp
+index 01a32c2..e054264 100644
+--- a/Source/AesirWaveDefense/AesirHUD.cpp
++++ b/Source/AesirWaveDefense/AesirHUD.cpp
+@@ -1,5 +1,6 @@
+ ﻿#include "AesirHUD.h"
+ 
++#include "AesirAgentSubsystem.h"
+ #include "AesirCharacter.h"
+ #include "AesirGameState.h"
+ #include "AesirPlayerState.h"
+@@ -461,6 +462,12 @@ void AAesirHUD::DrawCrosshair()
+ 	const float SinceHit = GetWorld()->GetTimeSeconds() - LastHitTime;
+ 	if (SinceHit >= 0.f && SinceHit < 0.18f)
+ 	{
++		if (LastMarkedHitTime != LastHitTime)
++		{
++			// The hit's visual feedback is on screen now: stamp it on the journal's hits.
++			LastMarkedHitTime = LastHitTime;
++			UAesirAgentSubsystem::MarkHitVisual(this);
++		}
+ 		const float A = 1.f - SinceHit / 0.18f;
+ 		const float M = 11.f;
+ 		const FLinearColor HitCol = WithA(AesirPalette::GreenPhosphor(), A);
+diff --git a/Source/AesirWaveDefense/AesirHUD.h b/Source/AesirWaveDefense/AesirHUD.h
+index 120de83..d004d46 100644
+--- a/Source/AesirWaveDefense/AesirHUD.h
++++ b/Source/AesirWaveDefense/AesirHUD.h
+@@ -55,6 +55,7 @@ protected:
+ 	void DrawValidityLock(float CX, float CY, bool bValid, float Reach = 26.f);
+ 
+ 	float LastHitTime = -100.f;
++	float LastMarkedHitTime = -100.f; // the hit marker already reported to the agent journal
+ 
+ 	/** Wave-state tracking for transition banners. */
+ 	int32 LastSeenWave = -1;
 diff --git a/Source/AesirWaveDefense/AesirTuning.cpp b/Source/AesirWaveDefense/AesirTuning.cpp
 new file mode 100644
-index 0000000..f8d6371
+index 0000000..5b69a9a
 --- /dev/null
 +++ b/Source/AesirWaveDefense/AesirTuning.cpp
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,27 @@
 +#include "AesirTuning.h"
 +
 +#include "AesirWaveDefenseGameMode.h"
@@ -552,27 +665,12 @@ index 0000000..f8d6371
 +
 +const FAesirWaveRow* UAesirTuning::FindWave(int32 WaveNumber) const
 +{
-+	if (!Waves)
++	if (!Waves || !Waves->GetRowStruct() || !Waves->GetRowStruct()->IsChildOf(FAesirWaveRow::StaticStruct()))
 +	{
-+		return nullptr;
++		return nullptr; // no table, or a table of another row type: the built-in formula
 +	}
-+	const FName Row(*FString::Printf(TEXT("Wave_%02d"), WaveNumber));
-+	if (const FAesirWaveRow* Found = Waves->FindRow<FAesirWaveRow>(Row, TEXT("AesirTuning"), false))
-+	{
-+		return Found;
-+	}
-+	// Past the table: the last row (the highest-numbered Wave_NN).
-+	const FAesirWaveRow* Last = nullptr;
-+	FName LastName;
-+	for (const TPair<FName, uint8*>& It : Waves->GetRowMap())
-+	{
-+		if (LastName.IsNone() || It.Key.ToString() > LastName.ToString())
-+		{
-+			LastName = It.Key;
-+			Last = reinterpret_cast<const FAesirWaveRow*>(It.Value);
-+		}
-+	}
-+	return Last;
++	// Past the table (or a deleted row) the game mode uses its built-in formula.
++	return Waves->FindRow<FAesirWaveRow>(FName(*FString::Printf(TEXT("Wave_%02d"), WaveNumber)), TEXT("AesirTuning"), false);
 +}
 +
 +float UAesirTuning::FalloffAt(float Distance) const
@@ -588,7 +686,7 @@ index 0000000..f8d6371
 +}
 diff --git a/Source/AesirWaveDefense/AesirTuning.h b/Source/AesirWaveDefense/AesirTuning.h
 new file mode 100644
-index 0000000..a173042
+index 0000000..4eca3aa
 --- /dev/null
 +++ b/Source/AesirWaveDefense/AesirTuning.h
 @@ -0,0 +1,68 @@
@@ -647,11 +745,11 @@ index 0000000..a173042
 +	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
 +	TObjectPtr<UCurveFloat> DamageFalloff;
 +
-+	/** The wave table (FAesirWaveRow rows Wave_01..; waves past the last row use it). */
++	/** The wave table (FAesirWaveRow rows Wave_01..); a wave with no row uses the built-in formula. */
 +	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Waves")
 +	TObjectPtr<UDataTable> Waves;
 +
-+	/** The wave row for a wave number (1-based), or nullptr without a table. */
++	/** The wave row for a wave number (1-based), or nullptr (no table, wrong row type, no such row). */
 +	const FAesirWaveRow* FindWave(int32 WaveNumber) const;
 +
 +	/** Damage multiplier at a distance (1 without a curve). */
@@ -676,7 +774,7 @@ index 8067d9f..66b0235 100644
  	}
  }
 diff --git a/Source/AesirWaveDefense/AesirWaveDefenseGameMode.cpp b/Source/AesirWaveDefense/AesirWaveDefenseGameMode.cpp
-index 8d10dd9..f4cdd02 100644
+index 8d10dd9..58e81b6 100644
 --- a/Source/AesirWaveDefense/AesirWaveDefenseGameMode.cpp
 +++ b/Source/AesirWaveDefense/AesirWaveDefenseGameMode.cpp
 @@ -1,6 +1,9 @@
@@ -729,7 +827,7 @@ index 8d10dd9..f4cdd02 100644
  	bBossPendingThisWave = GS->WaveNumber % 5 == 0; // every 5th wave opens with a boss
  	if (bBossPendingThisWave)
  	{
-@@ -224,8 +244,26 @@ void AAesirWaveDefenseGameMode::StartNextWave()
+@@ -224,8 +244,39 @@ void AAesirWaveDefenseGameMode::StartNextWave()
  	GS->EnemiesRemaining = EnemiesLeftToSpawn;
  
  	UE_LOG(LogAesir, Log, TEXT("Wave %d starting: %d enemies"), GS->WaveNumber, EnemiesLeftToSpawn);
@@ -738,11 +836,24 @@ index 8d10dd9..f4cdd02 100644
 +	Data->SetNumberField(TEXT("wave"), GS->WaveNumber);
 +	Data->SetNumberField(TEXT("enemies"), EnemiesLeftToSpawn);
 +	UAesirAgentSubsystem::Record(this, TEXT("wave_start"), nullptr, nullptr, false, Data);
- 
--	GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &AAesirWaveDefenseGameMode::SpawnTick, SpawnInterval, true, 0.f);
++
 +	GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &AAesirWaveDefenseGameMode::SpawnTick, Interval, true, 0.f);
 +}
 +
++void AAesirWaveDefenseGameMode::ApplyEnemyScaling(AEnemyCharacter* Enemy) const
++{
++	float HealthScale = Tuning ? Tuning->EnemyHealthMultiplier : 1.f;
++	if (const UAesirAgentSubsystem* Agent = UAesirAgentSubsystem::Get(this))
++	{
++		HealthScale *= Agent->GetDifficultyHealthScale();
++	}
++	if (Enemy && !FMath::IsNearlyEqual(HealthScale, 1.f))
++	{
++		Enemy->ScaleHealth(HealthScale);
++	}
++}
+ 
+-	GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &AAesirWaveDefenseGameMode::SpawnTick, SpawnInterval, true, 0.f);
 +bool AAesirWaveDefenseGameMode::StartWaveNow()
 +{
 +	AAesirGameState* GS = GetGameState<AAesirGameState>();
@@ -757,7 +868,7 @@ index 8d10dd9..f4cdd02 100644
  }
  
  void AAesirWaveDefenseGameMode::SpawnTick()
-@@ -255,17 +293,26 @@ void AAesirWaveDefenseGameMode::SpawnTick()
+@@ -255,17 +306,18 @@ void AAesirWaveDefenseGameMode::SpawnTick()
  		else
  		{
  			const float Roll = FMath::FRand();
@@ -774,19 +885,11 @@ index 8d10dd9..f4cdd02 100644
  		}
  
  		Enemy->ConfigureForWave(Wave, Archetype);
-+		float HealthScale = Tuning ? Tuning->EnemyHealthMultiplier : 1.f;
-+		if (const UAesirAgentSubsystem* Agent = UAesirAgentSubsystem::Get(this))
-+		{
-+			HealthScale *= Agent->GetDifficultyHealthScale();
-+		}
-+		if (!FMath::IsNearlyEqual(HealthScale, 1.f))
-+		{
-+			Enemy->ScaleHealth(HealthScale);
-+		}
++		ApplyEnemyScaling(Enemy);
  		EnemiesLeftToSpawn--;
  		EnemiesAlive++;
  	}
-@@ -310,6 +357,12 @@ void AAesirWaveDefenseGameMode::EndWave()
+@@ -310,6 +362,12 @@ void AAesirWaveDefenseGameMode::EndWave()
  {
  	AAesirGameState* GS = GetGameState<AAesirGameState>();
  	UE_LOG(LogAesir, Log, TEXT("Wave %d cleared"), GS->WaveNumber);
@@ -800,7 +903,7 @@ index 8d10dd9..f4cdd02 100644
  	// Heal survivors and respawn the fallen before the next assault.
  	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 diff --git a/Source/AesirWaveDefense/AesirWaveDefenseGameMode.h b/Source/AesirWaveDefense/AesirWaveDefenseGameMode.h
-index 4fa115d..9e65962 100644
+index 4fa115d..e526165 100644
 --- a/Source/AesirWaveDefense/AesirWaveDefenseGameMode.h
 +++ b/Source/AesirWaveDefense/AesirWaveDefenseGameMode.h
 @@ -7,6 +7,8 @@
@@ -812,7 +915,7 @@ index 4fa115d..9e65962 100644
  
  UENUM()
  enum class EMissionType : uint8
-@@ -47,6 +49,13 @@ public:
+@@ -47,6 +49,16 @@ public:
  
  	EMissionType GetMissionType() const { return MissionType; }
  
@@ -823,10 +926,13 @@ index 4fa115d..9e65962 100644
 +	 *  False when a wave is running, the run is over, or the mission has no waves. */
 +	bool StartWaveNow();
 +
++	/** Tuning and difficulty health scaling, for every spawned enemy (waves and nests). */
++	void ApplyEnemyScaling(AEnemyCharacter* Enemy) const;
++
  	/** Dev-only: freeze the wave director and pose a named HUD-validation scene. */
  	UFUNCTION(BlueprintCallable, Category = "Debug")
  	void DebugPoseScene(const FString& Scene);
-@@ -62,6 +71,14 @@ protected:
+@@ -62,6 +74,14 @@ protected:
  	UPROPERTY(EditDefaultsOnly, Category = "Waves")
  	TSubclassOf<AEnemyCharacter> EnemyClass;
  
@@ -841,7 +947,7 @@ index 4fa115d..9e65962 100644
  	/** Enemies in wave N = BaseEnemiesPerWave + (N - 1) * EnemiesAddedPerWave (capped). */
  	UPROPERTY(EditDefaultsOnly, Category = "Waves")
  	int32 BaseEnemiesPerWave = 5;
-@@ -112,6 +129,9 @@ protected:
+@@ -112,6 +132,9 @@ protected:
  	int32 NestsAlive = 0;
  	int32 MissionExtractorsAlive = 0;
  	bool bBossPendingThisWave = false;
@@ -852,7 +958,7 @@ index 4fa115d..9e65962 100644
  	FTimerHandle WaveTimerHandle;
  	FTimerHandle SpawnTimerHandle;
 diff --git a/Source/AesirWaveDefense/AesirWeapon.cpp b/Source/AesirWaveDefense/AesirWeapon.cpp
-index 86c14f0..f39077b 100644
+index 86c14f0..31d44e5 100644
 --- a/Source/AesirWaveDefense/AesirWeapon.cpp
 +++ b/Source/AesirWaveDefense/AesirWeapon.cpp
 @@ -1,5 +1,9 @@
@@ -865,7 +971,7 @@ index 86c14f0..f39077b 100644
  #include "AesirCharacter.h"
  #include "AesirWaveDefense.h"
  #include "Animation/AnimSequence.h"
-@@ -202,11 +206,23 @@ void AAesirWeapon::FireShot()
+@@ -202,11 +206,22 @@ void AAesirWeapon::FireShot()
  
  		if (bHit && Hit.GetActor())
  		{
@@ -885,12 +991,11 @@ index 86c14f0..f39077b 100644
 +				Data->SetStringField(TEXT("weapon"), DisplayName);
 +				Data->SetNumberField(TEXT("damage"), Applied);
 +				Data->SetNumberField(TEXT("distance"), Hit.Distance);
-+				Data->SetNumberField(TEXT("visual_t"), GetWorld()->GetTimeSeconds());
 +				UAesirAgentSubsystem::Record(this, TEXT("hit"), OwningCharacter, Hit.GetActor(), true, Data);
  			}
  		}
  
-@@ -245,9 +261,20 @@ void AAesirWeapon::MulticastShotEffects_Implementation(FVector_NetQuantize Trace
+@@ -245,9 +260,20 @@ void AAesirWeapon::MulticastShotEffects_Implementation(FVector_NetQuantize Trace
  {
  	const FVector MuzzleLocation = WeaponMesh->GetComponentLocation() + GetActorForwardVector() * 40.f;
  
@@ -949,3 +1054,18 @@ index 1eeccf5..ed9c4b4 100644
  protected:
  	virtual void BeginPlay() override;
  
+diff --git a/Source/AesirWaveDefense/MissionActors.cpp b/Source/AesirWaveDefense/MissionActors.cpp
+index 72e6cba..a5bd0ea 100644
+--- a/Source/AesirWaveDefense/MissionActors.cpp
++++ b/Source/AesirWaveDefense/MissionActors.cpp
+@@ -132,6 +132,10 @@ void AEnemyNest::SpawnEnemy()
+ 		const int32 PseudoWave = 1 + static_cast<int32>(GetWorld()->GetTimeSeconds() / 60.f);
+ 		const bool bBrute = FMath::FRand() < 0.15f;
+ 		Enemy->ConfigureForWave(PseudoWave, bBrute ? EEnemyArchetype::Brute : EEnemyArchetype::Grunt);
++		if (const AAesirWaveDefenseGameMode* GM = GetWorld()->GetAuthGameMode<AAesirWaveDefenseGameMode>())
++		{
++			GM->ApplyEnemyScaling(Enemy);
++		}
+ 
+ 		if (AAesirWaveDefenseGameMode* GameMode = GetWorld()->GetAuthGameMode<AAesirWaveDefenseGameMode>())
+ 		{

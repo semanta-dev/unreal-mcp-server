@@ -241,6 +241,45 @@ def _op_observe_paths(args):
     return {"world": name, "values": values, "errors": errors}
 
 
+def _game_api_object(args):
+    """The game_api subsystem in the running game (PIE)."""
+    world, name = _v2_world({"world": "pie"}, "pie")
+    return _resolve_subsystem(world, name, args.get("class") or "", False)
+
+
+def _game_json(fn, raw):
+    if not isinstance(raw, str):
+        raise _V2Error("BAD_VALUE", "%s returned %s, not a JSON string" % (fn, type(raw).__name__))
+    try:
+        return json.loads(raw)
+    except ValueError as e:
+        raise _V2Error("BAD_VALUE", "%s did not return JSON (%s)" % (fn, e), head=raw[:200]) from None
+
+
+def _op_game_read(args):
+    """Call a game_api read function (capabilities / snapshot / events). It must be
+    BlueprintPure or const — checked by the plugin, never assumed."""
+    lib = _need_plugin(3, "the game API")
+    obj = _game_api_object(args)
+    fn = args.get("function") or ""
+    if not lib.is_pure_or_const(obj.get_class(), fn):
+        raise _V2Error("BAD_VALUE", "%s.%s is not BlueprintPure or const: game_api read functions must be read-only"
+                       % (obj.get_class().get_name(), fn))
+    raw = obj.call_method(fn, args=tuple(args.get("args") or ()))
+    return {"result": _game_json(fn, raw)}
+
+
+def _op_game_command(args):
+    """Call the game_api command function with one request (JSON with command,
+    request_id, world_epoch). The game deduplicates request_id and refuses another
+    world's epoch; this op never retries."""
+    _need_plugin(3, "the game API")
+    obj = _game_api_object(args)
+    fn = args.get("function") or ""
+    raw = obj.call_method(fn, args=(args.get("request") or "",))
+    return {"result": _game_json(fn, raw)}
+
+
 def _object_view(obj, world_name):
     """An actor's view, or — for a non-actor object — its identity (no transform)."""
     if hasattr(obj, "get_actor_label"):
