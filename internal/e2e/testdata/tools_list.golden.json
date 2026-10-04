@@ -27,7 +27,7 @@
             "type": "number"
           },
           "parse": {
-            "description": "json: the function returns a JSON string; decode it (an error if it is not JSON)",
+            "description": "json: decode the function's JSON string result (error if not JSON)",
             "enum": [
               "json"
             ],
@@ -73,7 +73,7 @@
             "type": "string"
           },
           "class": {
-            "description": "spawn: /Script/Module.Class, a /Game Blueprint, Module.Class, or a short name (CONFLICT if ambiguous)",
+            "description": "spawn: /Script/Module.Class, a /Game Blueprint, Module.Class or a short name (CONFLICT if ambiguous)",
             "type": "string"
           },
           "label": {
@@ -214,11 +214,11 @@
             "type": "string"
           },
           "dir": {
-            "description": "scenarios: directory of scenario/v1 files (default the project's .mcp/scenarios)",
+            "description": "scenarios: scenario/v1 folder (default .mcp/scenarios)",
             "type": "string"
           },
           "hitch_ms": {
-            "description": "perf: frames slower than this are hitches (default 33.3)",
+            "description": "perf: hitch threshold in ms (default 33.3)",
             "type": "number"
           },
           "logs": {
@@ -243,11 +243,11 @@
             "type": "object"
           },
           "max_dhash": {
-            "description": "image_diff: pass threshold on dHash distance (default 8; 0 = exact)",
+            "description": "image_diff: max dHash distance (default 8; 0 = exact)",
             "type": "integer"
           },
           "max_luma_delta": {
-            "description": "image_diff: pass threshold on mean-luma delta (default 0.15)",
+            "description": "image_diff: max mean-luma delta (default 0.15)",
             "type": "number"
           },
           "op": {
@@ -298,7 +298,7 @@
             "type": "array"
           },
           "timeline": {
-            "description": "rubric: recorded frames [{index, t_world, state}] (a playtest result's timeline)",
+            "description": "rubric: a playtest result's timeline",
             "items": {
               "additionalProperties": false,
               "properties": {
@@ -380,7 +380,7 @@
             "type": "string"
           },
           "root_panel": {
-            "description": "widget_blueprint: root panel (default CanvasPanel; Overlay for a stacked full-screen menu)",
+            "description": "widget_blueprint: root panel (default CanvasPanel; Overlay: a stacked menu)",
             "type": "string"
           },
           "row_struct": {
@@ -510,11 +510,11 @@
             "type": "string"
           },
           "blueprints": {
-            "description": "search: find Blueprints deriving the classes (a Blueprint's own class is always Blueprint)",
+            "description": "search: Blueprints deriving the classes (a Blueprint's own class is Blueprint)",
             "type": "boolean"
           },
           "classes": {
-            "description": "search: /Script/Module.Class paths; with blueprints=true, the PARENT classes",
+            "description": "search: /Script/Module.Class paths (blueprints=true: the PARENT classes)",
             "items": {
               "type": "string"
             },
@@ -644,7 +644,7 @@
             "type": "number"
           },
           "camera_mode": {
-            "description": "start: viewport (default, editor camera) | fixed | actor | player (game_scene POV)",
+            "description": "start: viewport (default) | fixed | actor | player (game_scene POV)",
             "enum": [
               "viewport",
               "fixed",
@@ -1445,7 +1445,7 @@
             "type": "integer"
           },
           "expect_version": {
-            "description": "health: fail if the companion version is below this (catches a stale module)",
+            "description": "health: fail below this companion version (a stale module)",
             "type": "integer"
           },
           "op": {
@@ -1503,7 +1503,7 @@
             "type": "number"
           },
           "wait_s": {
-            "description": "ensure_open/restart: wait up to this many seconds (max 25) before returning the job",
+            "description": "ensure_open/restart: return the job after up to this many seconds (max 25)",
             "type": "number"
           }
         },
@@ -1629,7 +1629,7 @@
         "additionalProperties": false,
         "properties": {
           "discard_dirty": {
-            "description": "if the editor must close: THROW AWAY unsaved packages instead of PRECONDITION",
+            "description": "if the editor must close: DROP unsaved packages (else PRECONDITION)",
             "type": "boolean"
           },
           "dry_run": {
@@ -1719,7 +1719,7 @@
         "idempotentHint": true,
         "openWorldHint": false
       },
-      "description": "Follow async work (build, playtest, editor_lifecycle, git_revert, headless: {job_id, state} unless wait_s).\n- status: state, last progress, result or error.\n- wait: up to wait_s (default 25), streaming progress.\n- cancel.\n- list: this project's jobs (any session of the project can poll them).",
+      "description": "Follow async work (build, playtest, editor_lifecycle, git_revert, headless: {job_id, state} unless wait_s).\n- status: state, last progress, result or error.\n- wait: up to wait_s (default 25), streaming progress.\n- cancel.\n- list: this project's jobs (any of its sessions can poll them).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1854,7 +1854,7 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop (pie-world changes are discarded).\n- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s (hold/axis durations are game time: paused, they wait).\n- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate — your OS cursor is never moved; the game's cursor stays until action=release.\n- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the UnrealMCP plugin.",
+      "description": "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop (pie-world changes are discarded).\n- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s (hold/axis durations are game time: paused, they wait).\n- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate (never your OS cursor); the game's cursor stays until action=release.\n- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the plugin.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1962,7 +1962,7 @@
             "type": "array"
           },
           "include": {
-            "description": "glob patterns of property names to include (default all, minus engine noise)",
+            "description": "property-name globs to include (default all but engine noise)",
             "items": {
               "type": "string"
             },
@@ -2011,7 +2011,7 @@
             "type": "boolean"
           },
           "predicate": {
-            "description": "conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave \u003e= 2 and counts.Enemy \u003e= 1'; or an object path: '@subsystem:Class.Getter().field \u003e= 3' (BlueprintPure/const getters only)",
+            "description": "conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave \u003e= 2 and counts.Enemy \u003e= 1'; or an object path: '@subsystem:Class.Getter().field == 3' (BlueprintPure/const getters only)",
             "type": "string"
           },
           "properties": {
@@ -2022,11 +2022,11 @@
             "type": "array"
           },
           "timeout_s": {
-            "description": "give up after this many seconds (default 20; up to 600 — beyond 25 the wait continues as a job)",
+            "description": "give up after this many seconds (default 20, max 600; over 25 runs as a job)",
             "type": "number"
           },
           "wait_s": {
-            "description": "timeout_s \u003e 25: return after this many seconds (max 25), then follow it with job",
+            "description": "timeout_s over 25: return after this many seconds (max 25), then call job",
             "type": "number"
           }
         },
@@ -2285,15 +2285,28 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Orient in a project.\n- project: offline (no editor) — modules, dependencies, every UCLASS/USTRUCT/UENUM with /Script path and header.\n- level: the level's GameMode wiring, plus live classes in PIE.",
+      "description": "Orient in a project.\n- project: offline — modules, dependencies, every UCLASS/USTRUCT/UENUM with /Script path and header.\n- level: the level's GameMode wiring, plus live classes in PIE.\n- source: offline — list a folder, read a file (400 lines from `line`) or find `match`.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "line": {
+            "description": "source: first line",
+            "type": "integer"
+          },
+          "match": {
+            "description": "source: search text",
+            "type": "string"
+          },
           "op": {
             "enum": [
               "project",
-              "level"
+              "level",
+              "source"
             ],
+            "type": "string"
+          },
+          "path": {
+            "description": "source: project-relative file or folder",
             "type": "string"
           }
         },
@@ -2310,7 +2323,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Run Python in the editor (arbitrary code). Check for a dedicated tool first: game data (tables, data assets, curves, input mappings) is toolset data; the running game's API is toolset game.\n- run: `code` → captured output; evaluate=true → one expression's value.\n- recipe: run the level-recipe file `path`; clean_slate=true FIRST destroys every actor except WorldSettings; save defaults true.",
+      "description": "Run Python in the editor (arbitrary code). Check for a dedicated tool first: game data (tables, data assets, curves, input mappings) is toolset data, the running game's API toolset game, project files project_map op=source.\n- run: `code` → captured output; evaluate=true → one expression's value.\n- recipe: run the level-recipe file `path`; clean_slate=true FIRST destroys every actor except WorldSettings; save defaults true.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2618,7 +2631,7 @@
             "type": "array"
           },
           "ui": {
-            "description": "pie: the screen as the player sees it, UMG/Slate UI included, paused or not (plugin; a visible game viewport, at its own size)",
+            "description": "pie: the player's screen, UMG/Slate UI included, paused or not (plugin; a visible game viewport, its own size)",
             "type": "boolean"
           },
           "width": {
@@ -2640,7 +2653,7 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Record and compare the editor level (Saved/MCP/snapshots).\n- take: store `name` (default auto): every actor's path, class, tags, transform (+ `properties`).\n- diff: `name` vs `against` (default: now) → added, removed, moved, retagged, changed (by object path); unloaded World Partition actors are unknown, never removed.\n- list.\n- digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.\nPut back transforms and properties with snapshot_restore.",
+      "description": "Record and compare the editor level.\n- take: store `name` (default auto): every actor's path, class, tags, transform (+ `properties`).\n- diff: `name` vs `against` (default: now) → added, removed, moved, retagged, changed (by object path); unloaded World Partition actors are unknown, never removed.\n- list.\n- digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.\nPut back transforms and properties with snapshot_restore.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2967,7 +2980,7 @@
             "type": "string"
           },
           "class": {
-            "description": "describe: a widget class (omit for the palette); render/mount: the UserWidget class or WidgetBlueprint; unmount/live_tree: only this class",
+            "description": "describe: a widget class (omit: the palette); render/mount: a UserWidget class or WidgetBlueprint; unmount/live_tree: only this class",
             "type": "string"
           },
           "height": {

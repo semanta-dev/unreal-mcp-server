@@ -160,6 +160,77 @@ func TestProjectToolsWorkOffline(t *testing.T) {
 	}
 }
 
+// project_map op=source reads the project's text files offline, so an agent reads C++ and
+// config without the python tool; it never leaves the project or reads build output.
+func TestProjectMapSourceReadsProjectFiles(t *testing.T) {
+	dir := t.TempDir()
+	var body strings.Builder
+	for i := 1; i <= 450; i++ {
+		fmt.Fprintf(&body, "line %d\r\n", i)
+	}
+	for p, b := range map[string]string{
+		"Game.uproject":                   `{"Modules":[{"Name":"Game"}]}`,
+		"Source/Game/GameHUD.h":           "\xef\xbb\xbf#pragma once\r\nUPROPERTY() int32 WaveNumber;\r\n",
+		"Source/Game/Long.cpp":            body.String(),
+		"Content/UI/WBP_Hud.uasset":       "bin\x00ary WaveNumber",
+		"Intermediate/Build/Game.gen.cpp": "WaveNumber",
+		"Plugins/P/Source/P/P.h":          "int WaveNumber;",
+		"Plugins/P/Binaries/Win64/P.pdb":  "WaveNumber",
+	} {
+		full := filepath.Join(dir, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(b), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(dir), "secret.txt"), []byte("outside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := startHarness(t, harnessOpts{noEditor: true, project: dir})
+	src := func(args map[string]any) map[string]any {
+		args["op"] = "source"
+		return structured(t, h.call(t, "project_map", args))
+	}
+
+	list := src(map[string]any{})
+	files := fmt.Sprint(list["files"])
+	if !strings.Contains(files, "Source/Game/GameHUD.h") || !strings.Contains(files, "Plugins/P/Source/P/P.h") ||
+		strings.Contains(files, "Content/") || strings.Contains(files, "Intermediate/") || strings.Contains(files, "Binaries/") {
+		t.Fatalf("list = %v", files)
+	}
+	if r := src(map[string]any{"path": "Source/Game/GameHUD.h"}); r["text"] != "#pragma once\nUPROPERTY() int32 WaveNumber;\n" {
+		t.Fatalf("read = %q", r["text"])
+	}
+	r := src(map[string]any{"path": "Source/Game/Long.cpp", "line": 401})
+	if !strings.HasPrefix(fmt.Sprint(r["text"]), "line 401\n") || r["truncated"] != false || r["total_lines"] != 451.0 {
+		t.Fatalf("paged read = %v", r)
+	}
+	if r := src(map[string]any{"path": "Source/Game/Long.cpp"}); r["end_line"] != 400.0 || r["truncated"] != true {
+		t.Fatalf("first page = %v %v", r["end_line"], r["truncated"])
+	}
+	hits := fmt.Sprint(src(map[string]any{"match": "wavenumber"})["hits"])
+	if !strings.Contains(hits, "Source/Game/GameHUD.h") || !strings.Contains(hits, "Plugins/P/Source/P/P.h") ||
+		strings.Contains(hits, "uasset") || strings.Contains(hits, "gen.cpp") || strings.Contains(hits, "pdb") {
+		t.Fatalf("search = %v", hits)
+	}
+	for _, bad := range []map[string]any{
+		{"path": "../secret.txt"}, {"path": filepath.Join(filepath.Dir(dir), "secret.txt")},
+		{"path": "Content/UI/WBP_Hud.uasset"},
+	} {
+		if e := errorOf(t, h.call(t, "project_map", map[string]any{"op": "source", "path": bad["path"]})); e["code"] != "INVALID_ARGUMENT" {
+			t.Fatalf("%v = %v", bad, e)
+		}
+	}
+	if e := errorOf(t, h.call(t, "project_map", map[string]any{"op": "source", "path": "Source/Nope.h"})); e["code"] != "NOT_FOUND" {
+		t.Fatalf("missing = %v", e)
+	}
+	if e := errorOf(t, h.call(t, "project_map", map[string]any{"op": "project", "match": "x"})); e["code"] != "INVALID_ARGUMENT" {
+		t.Fatalf("project with match = %v", e)
+	}
+}
+
 func TestProjectToolsNeedAProject(t *testing.T) {
 	h := startHarness(t, harnessOpts{noEditor: true})
 	if e := errorOf(t, h.call(t, "project_config", map[string]any{"op": "gameplay_tag", "tag": "A.B"})); e["code"] != "PRECONDITION" {

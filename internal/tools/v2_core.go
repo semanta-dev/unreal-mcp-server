@@ -132,7 +132,7 @@ func coreSpecs() []*spec.Spec {
 
 type editorIn struct {
 	Op            string `json:"op" jsonschema:"status | ping | health"`
-	ExpectVersion int    `json:"expect_version,omitempty" jsonschema:"health: fail if the companion version is below this (catches a stale module)"`
+	ExpectVersion int    `json:"expect_version,omitempty" jsonschema:"health: fail below this companion version (a stale module)"`
 	Since         string `json:"since,omitempty" jsonschema:"health: RFC3339; count crashes since (default 10 min ago)"`
 	ExpectPlugin  int    `json:"expect_plugin,omitempty" jsonschema:"health: fail if the UnrealMCP plugin API is below this"`
 }
@@ -230,7 +230,7 @@ func pythonSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "python", Title: "Run Python in the editor", Toolset: spec.Core, Max: sync28, Ops: ops,
-		Description: "Run Python in the editor (arbitrary code). Check for a dedicated tool first: game data (tables, data assets, curves, input mappings) is toolset data; the running game's API is toolset game.\n- run: `code` → captured output; evaluate=true → one expression's value.\n- recipe: run the level-recipe file `path`; clean_slate=true FIRST destroys every actor except WorldSettings; save defaults true.",
+		Description: "Run Python in the editor (arbitrary code). Check for a dedicated tool first: game data (tables, data assets, curves, input mappings) is toolset data, the running game's API toolset game, project files project_map op=source.\n- run: `code` → captured output; evaluate=true → one expression's value.\n- recipe: run the level-recipe file `path`; clean_slate=true FIRST destroys every actor except WorldSettings; save defaults true.",
 		Schema:      spec.SchemaFor[pythonIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces:    []string{"execute_python", "apply_level_recipe"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
@@ -436,7 +436,7 @@ type actorEditIn struct {
 	Op         string         `json:"op" jsonschema:"spawn | delete | transform | set_properties"`
 	World      string         `json:"world" jsonschema:"REQUIRED: editor (the level) or pie (the running game)"`
 	Actor      string         `json:"actor,omitempty" jsonschema:"delete/transform/set_properties: a label, an object path, @gamestate or @pawn"`
-	Class      string         `json:"class,omitempty" jsonschema:"spawn: /Script/Module.Class, a /Game Blueprint, Module.Class, or a short name (CONFLICT if ambiguous)"`
+	Class      string         `json:"class,omitempty" jsonschema:"spawn: /Script/Module.Class, a /Game Blueprint, Module.Class or a short name (CONFLICT if ambiguous)"`
 	Label      string         `json:"label,omitempty" jsonschema:"spawn: the new actor's label"`
 	Location   []float64      `json:"location,omitempty" jsonschema:"[x, y, z]"`
 	Rotation   []float64      `json:"rotation,omitempty" jsonschema:"[pitch, yaw, roll] in degrees"`
@@ -508,7 +508,7 @@ type actorCallIn struct {
 	Actor     string         `json:"actor" jsonschema:"a label, an object path, @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:Class (a game subsystem)"`
 	Function  string         `json:"function" jsonschema:"the UFUNCTION name to call"`
 	Args      map[string]any `json:"args,omitempty" jsonschema:"parameter name → value"`
-	Parse     string         `json:"parse,omitempty" jsonschema:"json: the function returns a JSON string; decode it (an error if it is not JSON)"`
+	Parse     string         `json:"parse,omitempty" jsonschema:"json: decode the function's JSON string result (error if not JSON)"`
 	World     string         `json:"world,omitempty" jsonschema:"pie (default). editor is UNSUPPORTED in v2.0"`
 	Until     string         `json:"until,omitempty" jsonschema:"poll until this predicate over {result} holds, e.g. 'result >= 3'; the function RE-RUNS each poll"`
 	TimeoutS  float64        `json:"timeout_s,omitempty" jsonschema:"until: give up after this many seconds (default 20, max 27)"`

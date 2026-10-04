@@ -87,9 +87,9 @@ func pieSpec() *spec.Spec {
 		Description: "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop (pie-world changes are discarded).\n" +
 			"- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s " +
 			"(hold/axis durations are game time: paused, they wait).\n" +
-			"- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate — your OS cursor is never moved; " +
+			"- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate (never your OS cursor); " +
 			"the game's cursor stays until action=release.\n" +
-			"- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the UnrealMCP plugin.",
+			"- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the plugin.",
 		Schema: spec.SchemaFor[pieIn](map[string][]any{"op": spec.OpEnum(ops...),
 			"action": {"tap", "press", "release", "hold", "axis", "release_all", "move", "click", "drag"}}, "op"),
 		Replaces: []string{"start_play", "stop_play", "pie_input"},
@@ -332,7 +332,7 @@ type pieObserveIn struct {
 	Actors     []string `json:"actors,omitempty" jsonschema:"actor labels to detail (unknown ones are listed in missing)"`
 	Pawn       bool     `json:"pawn,omitempty" jsonschema:"include the player pawn's location, velocity and speed"`
 	Player     int      `json:"player,omitempty" jsonschema:"pawn: local player index (default 0)"`
-	Include    []string `json:"include,omitempty" jsonschema:"glob patterns of property names to include (default all, minus engine noise)"`
+	Include    []string `json:"include,omitempty" jsonschema:"property-name globs to include (default all but engine noise)"`
 	Exclude    []string `json:"exclude,omitempty" jsonschema:"glob patterns of property names to exclude"`
 	Properties []string `json:"properties,omitempty" jsonschema:"read exactly these properties (keeps your key names for predicates)"`
 	MaxProps   int      `json:"max_props,omitempty" jsonschema:"cap on properties per object (default 48)"`
@@ -365,9 +365,9 @@ func pieObserveSpec() *spec.Spec {
 }
 
 type pieWaitIn struct {
-	Predicate  string   `json:"predicate" jsonschema:"conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave >= 2 and counts.Enemy >= 1'; or an object path: '@subsystem:Class.Getter().field >= 3' (BlueprintPure/const getters only)"`
-	TimeoutS   float64  `json:"timeout_s,omitempty" jsonschema:"give up after this many seconds (default 20; up to 600 — beyond 25 the wait continues as a job)"`
-	WaitS      float64  `json:"wait_s,omitempty" jsonschema:"timeout_s > 25: return after this many seconds (max 25), then follow it with job"`
+	Predicate  string   `json:"predicate" jsonschema:"conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave >= 2 and counts.Enemy >= 1'; or an object path: '@subsystem:Class.Getter().field == 3' (BlueprintPure/const getters only)"`
+	TimeoutS   float64  `json:"timeout_s,omitempty" jsonschema:"give up after this many seconds (default 20, max 600; over 25 runs as a job)"`
+	WaitS      float64  `json:"wait_s,omitempty" jsonschema:"timeout_s over 25: return after this many seconds (max 25), then call job"`
 	IntervalS  float64  `json:"interval_s,omitempty" jsonschema:"seconds between observations (default 0.25)"`
 	Properties []string `json:"properties,omitempty" jsonschema:"pin exact gamestate property names so the predicate can use them verbatim"`
 	Pawn       bool     `json:"pawn,omitempty" jsonschema:"observe the pawn too (needed for pawn.* predicates)"`
@@ -610,7 +610,7 @@ func snapshotSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "snapshot", Title: "Level snapshots", Toolset: spec.Core, Timeout: sync25, Max: sync28, Ops: ops,
-		Description: "Record and compare the editor level (Saved/MCP/snapshots).\n- take: store `name` (default auto): every actor's path, class, tags, transform (+ `properties`).\n- diff: `name` vs `against` (default: now) → added, removed, moved, retagged, changed (by object path); unloaded World Partition actors are unknown, never removed.\n- list.\n- digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.\nPut back transforms and properties with snapshot_restore.",
+		Description: "Record and compare the editor level.\n- take: store `name` (default auto): every actor's path, class, tags, transform (+ `properties`).\n- diff: `name` vs `against` (default: now) → added, removed, moved, retagged, changed (by object path); unloaded World Partition actors are unknown, never removed.\n- list.\n- digest: quantized SHA1 of actor (scope=actors) or ISM/HISM instance transforms; stores nothing.\nPut back transforms and properties with snapshot_restore.",
 		Schema:      spec.SchemaFor[snapshotIn](map[string][]any{"op": spec.OpEnum(ops...), "scope": {"instances", "actors"}}, "op"),
 		Replaces:    []string{"level_snapshot", "level_diff", "scene_snapshot", "scene_digest"},
 		Handler:     snapshotHandler,
@@ -875,7 +875,7 @@ type screenshotIn struct {
 	Cols       int       `json:"cols,omitempty" jsonschema:"orbit: contact-sheet columns (default 4)"`
 	CellWidth  int       `json:"cell_width,omitempty" jsonschema:"orbit: per-angle width (default 480)"`
 	CellHeight int       `json:"cell_height,omitempty" jsonschema:"orbit: per-angle height (default 270)"`
-	UI         bool      `json:"ui,omitempty" jsonschema:"pie: the screen as the player sees it, UMG/Slate UI included, paused or not (plugin; a visible game viewport, at its own size)"`
+	UI         bool      `json:"ui,omitempty" jsonschema:"pie: the player's screen, UMG/Slate UI included, paused or not (plugin; a visible game viewport, its own size)"`
 }
 
 func screenshotSpec() *spec.Spec {
@@ -1046,7 +1046,7 @@ type captureIn struct {
 	IntervalS   float64   `json:"interval_s,omitempty" jsonschema:"start: seconds between frames (default 0.25)"`
 	CellWidth   int       `json:"cell_width,omitempty" jsonschema:"start: frame width (default 480)"`
 	CellHeight  int       `json:"cell_height,omitempty" jsonschema:"start: frame height (default 270)"`
-	CameraMode  string    `json:"camera_mode,omitempty" jsonschema:"start: viewport (default, editor camera) | fixed | actor | player (game_scene POV)"`
+	CameraMode  string    `json:"camera_mode,omitempty" jsonschema:"start: viewport (default) | fixed | actor | player (game_scene POV)"`
 	CameraActor string    `json:"camera_actor,omitempty" jsonschema:"start: actor label to ride (camera_mode=actor)"`
 	CameraFov   float64   `json:"camera_fov,omitempty" jsonschema:"game_scene: FOV (default 90)"`
 	Location    []float64 `json:"location,omitempty" jsonschema:"start camera_mode=fixed: [x, y, z]"`

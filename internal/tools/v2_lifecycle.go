@@ -276,7 +276,7 @@ type editorLifecycleIn struct {
 	Save         bool    `json:"save,omitempty" jsonschema:"restart: save every dirty package first"`
 	DiscardDirty bool    `json:"discard_dirty,omitempty" jsonschema:"restart: THROW AWAY unsaved packages instead of failing with PRECONDITION"`
 	TimeoutS     float64 `json:"timeout_s,omitempty" jsonschema:"ensure_open: seconds to wait for the editor to answer (default 300)"`
-	WaitS        float64 `json:"wait_s,omitempty" jsonschema:"ensure_open/restart: wait up to this many seconds (max 25) before returning the job"`
+	WaitS        float64 `json:"wait_s,omitempty" jsonschema:"ensure_open/restart: return the job after up to this many seconds (max 25)"`
 }
 
 func editorLifecycleSpec() *spec.Spec {
@@ -538,7 +538,7 @@ func tailStr(s string) string {
 
 type gitRevertIn struct {
 	To           string  `json:"to" jsonschema:"a checkpoint: umcp/cp/N or just N (from git op=checkpoint / op=log)"`
-	DiscardDirty bool    `json:"discard_dirty,omitempty" jsonschema:"if the editor must close: THROW AWAY unsaved packages instead of PRECONDITION"`
+	DiscardDirty bool    `json:"discard_dirty,omitempty" jsonschema:"if the editor must close: DROP unsaved packages (else PRECONDITION)"`
 	DryRun       bool    `json:"dry_run,omitempty" jsonschema:"report what would change (files, editor restart) without doing it"`
 	WaitS        float64 `json:"wait_s,omitempty" jsonschema:"wait up to this many seconds (max 25) before returning the job"`
 }

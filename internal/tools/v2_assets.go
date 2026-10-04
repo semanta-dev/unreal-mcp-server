@@ -101,8 +101,8 @@ type assetQueryIn struct {
 	Op         string   `json:"op" jsonschema:"list | info | search | deps | tags | thumbnail"`
 	Asset      string   `json:"asset,omitempty" jsonschema:"info/deps/tags/thumbnail: asset path, e.g. /Game/Meshes/SM_Rock"`
 	Folder     string   `json:"folder,omitempty" jsonschema:"list/search: content folder (default /Game)"`
-	Classes    []string `json:"classes,omitempty" jsonschema:"search: /Script/Module.Class paths; with blueprints=true, the PARENT classes"`
-	Blueprints bool     `json:"blueprints,omitempty" jsonschema:"search: find Blueprints deriving the classes (a Blueprint's own class is always Blueprint)"`
+	Classes    []string `json:"classes,omitempty" jsonschema:"search: /Script/Module.Class paths (blueprints=true: the PARENT classes)"`
+	Blueprints bool     `json:"blueprints,omitempty" jsonschema:"search: Blueprints deriving the classes (a Blueprint's own class is Blueprint)"`
 	Recursive  *bool    `json:"recursive,omitempty" jsonschema:"list/search: include subfolders (default true)"`
 	Limit      int      `json:"limit,omitempty" jsonschema:"list/search: max results (default 200; total is always the full count)"`
 	Size       int      `json:"size,omitempty" jsonschema:"thumbnail: image size in pixels (default 512)"`
@@ -183,7 +183,7 @@ type assetCreateIn struct {
 	RowStruct string         `json:"row_struct,omitempty" jsonschema:"data_table: row struct (/Script/Module.Row or a UserDefinedStruct asset)"`
 	Parent    string         `json:"parent,omitempty" jsonschema:"material_instance: parent material asset"`
 	Params    map[string]any `json:"params,omitempty" jsonschema:"material_instance: {scalar:{name:value}, vector:{name:[r,g,b,a]}, texture:{name:asset}}"`
-	RootPanel string         `json:"root_panel,omitempty" jsonschema:"widget_blueprint: root panel (default CanvasPanel; Overlay for a stacked full-screen menu)"`
+	RootPanel string         `json:"root_panel,omitempty" jsonschema:"widget_blueprint: root panel (default CanvasPanel; Overlay: a stacked menu)"`
 	DryRun    bool           `json:"dry_run,omitempty" jsonschema:"check all inputs, create nothing"`
 }
 
@@ -466,20 +466,31 @@ func projectConfig(_ context.Context, c *spec.Call) (*spec.Result, error) {
 // --- project_map -----------------------------------------------------------------
 
 type projectMapIn struct {
-	Op string `json:"op" jsonschema:"project (offline C++ map) | level (live gameplay framework; needs the editor)"`
+	Op    string `json:"op" jsonschema:"project | level | source"`
+	Path  string `json:"path,omitempty" jsonschema:"source: project-relative file or folder"`
+	Match string `json:"match,omitempty" jsonschema:"source: search text"`
+	Line  int    `json:"line,omitempty" jsonschema:"source: first line"`
 }
 
 func projectMapSpec() *spec.Spec {
 	ops := []spec.OpSpec{
-		{Name: "project", Summary: "modules + every UCLASS/USTRUCT/UENUM, parsed offline", Tier: spec.ReadOnly, Idempotent: true, Timeout: sync20, Needs: []string{"project"}},
-		{Name: "level", Summary: "the level's GameMode wiring (+ live classes in PIE)", Tier: spec.ReadOnly, Idempotent: true, Timeout: sync15, Reaches: []string{"map_gameplay"}},
+		{Name: "project", Summary: "modules + every UCLASS/USTRUCT/UENUM, parsed offline", Tier: spec.ReadOnly, Idempotent: true, Timeout: sync20, Rejects: []string{"path", "match", "line"}, Needs: []string{"project"}},
+		{Name: "level", Summary: "the level's GameMode wiring (+ live classes in PIE)", Tier: spec.ReadOnly, Idempotent: true, Timeout: sync15, Rejects: []string{"path", "match", "line"}, Reaches: []string{"map_gameplay"}},
+		{Name: "source", Summary: "read/search C++, config, scenarios", Tier: spec.ReadOnly, Idempotent: true, Timeout: sync20, Needs: []string{"project"}},
 	}
 	return &spec.Spec{
 		Name: "project_map", Title: "Map the project", Toolset: spec.Core, Max: sync28, Ops: ops,
-		Description: "Orient in a project.\n- project: offline (no editor) — modules, dependencies, every UCLASS/USTRUCT/UENUM with /Script path and header.\n- level: the level's GameMode wiring, plus live classes in PIE.",
+		Description: "Orient in a project.\n- project: offline — modules, dependencies, every UCLASS/USTRUCT/UENUM with /Script path and header.\n- level: the level's GameMode wiring, plus live classes in PIE.\n- source: offline — list a folder, read a file (400 lines from `line`) or find `match`.",
 		Schema:      spec.SchemaFor[projectMapIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces:    []string{"project_map", "map_gameplay"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
+			if c.Op.Name == "source" {
+				var in projectMapIn
+				if err := c.Decode(&in); err != nil {
+					return nil, err
+				}
+				return projectSource(c, in.Path, in.Match, in.Line)
+			}
 			if c.Op.Name == "level" {
 				out, err := v2Op(ctx, c, "map_gameplay", nil)
 				return &spec.Result{Data: out, Summary: fmt.Sprintf("level GameMode %v", out["world_settings_game_mode"])}, err
@@ -503,7 +514,7 @@ func projectMapSpec() *spec.Spec {
 type widgetQueryIn struct {
 	Op     string `json:"op" jsonschema:"tree | describe | render | mount | unmount | live_tree"`
 	Asset  string `json:"asset,omitempty" jsonschema:"tree: the WidgetBlueprint asset path"`
-	Class  string `json:"class,omitempty" jsonschema:"describe: a widget class (omit for the palette); render/mount: the UserWidget class or WidgetBlueprint; unmount/live_tree: only this class"`
+	Class  string `json:"class,omitempty" jsonschema:"describe: a widget class (omit: the palette); render/mount: a UserWidget class or WidgetBlueprint; unmount/live_tree: only this class"`
 	Width  int    `json:"width,omitempty" jsonschema:"render: pixels (default 1280)"`
 	Height int    `json:"height,omitempty" jsonschema:"render: pixels (default 720)"`
 	ZOrder int    `json:"z_order,omitempty" jsonschema:"mount: layer (default 10)"`

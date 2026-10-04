@@ -43,7 +43,7 @@ Inspect the connected Unreal Editor.
 | param | type | description |
 |---|---|---|
 | `expect_plugin` | integer | health: fail if the UnrealMCP plugin API is below this |
-| `expect_version` | integer | health: fail if the companion version is below this (catches a stale module) |
+| `expect_version` | integer | health: fail below this companion version (a stale module) |
 | `op` | string | one of: status, ping, health |
 | `since` | string | health: RFC3339; count crashes since (default 10 min ago) |
 
@@ -51,7 +51,7 @@ Inspect the connected Unreal Editor.
 
 _tier exec_
 
-Run Python in the editor (arbitrary code). Check for a dedicated tool first: game data (tables, data assets, curves, input mappings) is toolset data; the running game's API is toolset game.
+Run Python in the editor (arbitrary code). Check for a dedicated tool first: game data (tables, data assets, curves, input mappings) is toolset data, the running game's API toolset game, project files project_map op=source.
 - run: `code` → captured output; evaluate=true → one expression's value.
 - recipe: run the level-recipe file `path`; clean_slate=true FIRST destroys every actor except WorldSettings; save defaults true.
 
@@ -152,7 +152,7 @@ spawn, delete, transform, set_properties: both worlds (pie spawn: plugin API 5);
 | param | type | description |
 |---|---|---|
 | `actor` | string | delete/transform/set_properties: a label, an object path, @gamestate or @pawn |
-| `class` | string | spawn: /Script/Module.Class, a /Game Blueprint, Module.Class, or a short name (CONFLICT if ambiguous) |
+| `class` | string | spawn: /Script/Module.Class, a /Game Blueprint, Module.Class or a short name (CONFLICT if ambiguous) |
 | `label` | string | spawn: the new actor's label |
 | `location` | number[] | [x, y, z] |
 | `op` | string | one of: spawn, delete, transform, set_properties |
@@ -178,7 +178,7 @@ Call a UFUNCTION on an actor in the running game (PIE) and return its result. Wi
 | `args` | object | parameter name → value |
 | `function` | string | the UFUNCTION name to call |
 | `interval_s` | number | until: seconds between polls (default 0.25) |
-| `parse` | string | json: the function returns a JSON string; decode it (an error if it is not JSON) — one of: json |
+| `parse` | string | json: decode the function's JSON string result (error if not JSON) — one of: json |
 | `timeout_s` | number | until: give up after this many seconds (default 20, max 27) |
 | `until` | string | poll until this predicate over {result} holds, e.g. 'result >= 3'; the function RE-RUNS each poll |
 | `world` | string | pie (default). editor is UNSUPPORTED in v2.0 — one of: pie, editor |
@@ -254,8 +254,8 @@ Find and inspect Content Browser assets.
 | param | type | description |
 |---|---|---|
 | `asset` | string | info/deps/tags/thumbnail: asset path, e.g. /Game/Meshes/SM_Rock |
-| `blueprints` | boolean | search: find Blueprints deriving the classes (a Blueprint's own class is always Blueprint) |
-| `classes` | string[] | search: /Script/Module.Class paths; with blueprints=true, the PARENT classes |
+| `blueprints` | boolean | search: Blueprints deriving the classes (a Blueprint's own class is Blueprint) |
+| `classes` | string[] | search: /Script/Module.Class paths (blueprints=true: the PARENT classes) |
 | `folder` | string | list/search: content folder (default /Game) |
 | `limit` | integer | list/search: max results (default 200; total is always the full count) |
 | `op` | string | one of: list, info, search, deps, tags, thumbnail |
@@ -285,7 +285,7 @@ kind: blueprint (class = parent) | data_asset (class) | data_table (row_struct) 
 | `op` | string | one of: create, replace |
 | `params` | object | material_instance: {scalar:{name:value}, vector:{name:[r,g,b,a]}, texture:{name:asset}} |
 | `parent` | string | material_instance: parent material asset |
-| `root_panel` | string | widget_blueprint: root panel (default CanvasPanel; Overlay for a stacked full-screen menu) |
+| `root_panel` | string | widget_blueprint: root panel (default CanvasPanel; Overlay: a stacked menu) |
 | `row_struct` | string | data_table: row struct (/Script/Module.Row or a UserDefinedStruct asset) |
 
 ### `asset_edit` — Edit a Blueprint
@@ -400,17 +400,22 @@ Edit Config/*.ini directly (no editor; idempotent; the editor reads most at star
 _tier readonly_
 
 Orient in a project.
-- project: offline (no editor) — modules, dependencies, every UCLASS/USTRUCT/UENUM with /Script path and header.
+- project: offline — modules, dependencies, every UCLASS/USTRUCT/UENUM with /Script path and header.
 - level: the level's GameMode wiring, plus live classes in PIE.
+- source: offline — list a folder, read a file (400 lines from `line`) or find `match`.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
 | `project` | readonly | modules + every UCLASS/USTRUCT/UENUM, parsed offline |  | editor, project |
 | `level` | readonly | the level's GameMode wiring (+ live classes in PIE) |  | editor |
+| `source` | readonly | read/search C++, config, scenarios |  | editor, project |
 
 | param | type | description |
 |---|---|---|
-| `op` | string | one of: project, level |
+| `line` | integer | source: first line |
+| `match` | string | source: search text |
+| `op` | string | one of: project, level, source |
+| `path` | string | source: project-relative file or folder |
 
 ### `widget_query` — Inspect UMG widgets
 
@@ -434,7 +439,7 @@ In PIE: mount `class` on the game's screen / unmount; live_tree: the live widget
 | param | type | description |
 |---|---|---|
 | `asset` | string | tree: the WidgetBlueprint asset path |
-| `class` | string | describe: a widget class (omit for the palette); render/mount: the UserWidget class or WidgetBlueprint; unmount/live_tree: only this class |
+| `class` | string | describe: a widget class (omit: the palette); render/mount: a UserWidget class or WidgetBlueprint; unmount/live_tree: only this class |
 | `height` | integer | render: pixels (default 720) |
 | `op` | string | one of: tree, describe, render, mount, unmount, live_tree |
 | `width` | integer | render: pixels (default 1280) |
@@ -448,8 +453,8 @@ Play In Editor.
 - start (simulate=true: no player); waits until running.
 - stop (pie-world changes are discarded).
 - input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s (hold/axis durations are game time: paused, they wait).
-- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate — your OS cursor is never moved; the game's cursor stays until action=release.
-- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the UnrealMCP plugin.
+- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate (never your OS cursor); the game's cursor stays until action=release.
+- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the plugin.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -488,7 +493,7 @@ Read the running game (PIE) by reflection (its own API, events included: toolset
 |---|---|---|
 | `actors` | string[] | actor labels to detail (unknown ones are listed in missing) |
 | `exclude` | string[] | glob patterns of property names to exclude |
-| `include` | string[] | glob patterns of property names to include (default all, minus engine noise) |
+| `include` | string[] | property-name globs to include (default all but engine noise) |
 | `max_props` | integer | cap on properties per object (default 48) |
 | `pawn` | boolean | include the player pawn's location, velocity and speed |
 | `player` | integer | pawn: local player index (default 0) |
@@ -508,16 +513,16 @@ Poll the running game until `predicate` holds → {met, pie_running, elapsed_s, 
 |---|---|---|
 | `interval_s` | number | seconds between observations (default 0.25) |
 | `pawn` | boolean | observe the pawn too (needed for pawn.* predicates) |
-| `predicate` | string | conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave >= 2 and counts.Enemy >= 1'; or an object path: '@subsystem:Class.Getter().field >= 3' (BlueprintPure/const getters only) |
+| `predicate` | string | conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave >= 2 and counts.Enemy >= 1'; or an object path: '@subsystem:Class.Getter().field == 3' (BlueprintPure/const getters only) |
 | `properties` | string[] | pin exact gamestate property names so the predicate can use them verbatim |
-| `timeout_s` | number | give up after this many seconds (default 20; up to 600 — beyond 25 the wait continues as a job) |
-| `wait_s` | number | timeout_s > 25: return after this many seconds (max 25), then follow it with job |
+| `timeout_s` | number | give up after this many seconds (default 20, max 600; over 25 runs as a job) |
+| `wait_s` | number | timeout_s over 25: return after this many seconds (max 25), then call job |
 
 ### `snapshot` — Level snapshots
 
 _tier ephemeral_
 
-Record and compare the editor level (Saved/MCP/snapshots).
+Record and compare the editor level.
 - take: store `name` (default auto): every actor's path, class, tags, transform (+ `properties`).
 - diff: `name` vs `against` (default: now) → added, removed, moved, retagged, changed (by object path); unloaded World Partition actors are unknown, never removed.
 - list.
@@ -590,7 +595,7 @@ Results list any map the capture actors dirtied.
 | `num_angles` | integer | orbit: angles around the target (default 8) |
 | `op` | string | one of: viewport, pie, orbit |
 | `rotation` | number[] | viewport: camera [pitch, yaw, roll] |
-| `ui` | boolean | pie: the screen as the player sees it, UMG/Slate UI included, paused or not (plugin; a visible game viewport, at its own size) |
+| `ui` | boolean | pie: the player's screen, UMG/Slate UI included, paused or not (plugin; a visible game viewport, its own size) |
 | `width` | integer | viewport/pie: pixels (default 1280 / 1920) |
 
 ### `capture` — Record frames
@@ -617,7 +622,7 @@ Film the world: an in-editor recorder saves a frame + state every interval_s.
 | `all` | boolean | clear: delete EVERY MCP capture |
 | `camera_actor` | string | start: actor label to ride (camera_mode=actor) |
 | `camera_fov` | number | game_scene: FOV (default 90) |
-| `camera_mode` | string | start: viewport (default, editor camera) \| fixed \| actor \| player (game_scene POV) — one of: viewport, fixed, actor, player |
+| `camera_mode` | string | start: viewport (default) \| fixed \| actor \| player (game_scene POV) — one of: viewport, fixed, actor, player |
 | `cell_height` | integer | start: frame height (default 270) |
 | `cell_width` | integer | start: frame width (default 480) |
 | `cols` | integer | stop/read: contact-sheet columns (default 8 / 6) |
@@ -670,7 +675,7 @@ Follow async work (build, playtest, editor_lifecycle, git_revert, headless: {job
 - status: state, last progress, result or error.
 - wait: up to wait_s (default 25), streaming progress.
 - cancel.
-- list: this project's jobs (any session of the project can poll them).
+- list: this project's jobs (any of its sessions can poll them).
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -731,15 +736,15 @@ Score evidence offline.
 | param | type | description |
 |---|---|---|
 | `baseline` | string | image_diff: the image to compare against |
-| `dir` | string | scenarios: directory of scenario/v1 files (default the project's .mcp/scenarios) |
-| `hitch_ms` | number | perf: frames slower than this are hitches (default 33.3) |
+| `dir` | string | scenarios: scenario/v1 folder (default .mcp/scenarios) |
+| `hitch_ms` | number | perf: hitch threshold in ms (default 33.3) |
 | `logs` | object | rubric: {errors, warnings, ensures} for log checks |
-| `max_dhash` | integer | image_diff: pass threshold on dHash distance (default 8; 0 = exact) |
-| `max_luma_delta` | number | image_diff: pass threshold on mean-luma delta (default 0.15) |
+| `max_dhash` | integer | image_diff: max dHash distance (default 8; 0 = exact) |
+| `max_luma_delta` | number | image_diff: max mean-luma delta (default 0.15) |
 | `op` | string | one of: rubric, perf, image_diff, scenarios |
 | `path` | string | perf: a CsvProfiler .csv or a .memreport; image_diff: an image |
 | `rubric` | object[] | rubric: [{id, kind, path, params?, severity?, allow_perturbed?}] |
-| `timeline` | object[] | rubric: recorded frames [{index, t_world, state}] (a playtest result's timeline) |
+| `timeline` | object[] | rubric: a playtest result's timeline |
 
 ### `git` — Project git
 
@@ -812,7 +817,7 @@ Start, restart or reconnect the editor.
 | `op` | string | one of: ensure_open, restart, reclaim |
 | `save` | boolean | restart: save every dirty package first |
 | `timeout_s` | number | ensure_open: seconds to wait for the editor to answer (default 300) |
-| `wait_s` | number | ensure_open/restart: wait up to this many seconds (max 25) before returning the job |
+| `wait_s` | number | ensure_open/restart: return the job after up to this many seconds (max 25) |
 
 ### `build` — Compile C++
 
@@ -841,7 +846,7 @@ Restore the project's files to a git op=checkpoint (umcp/cp/N only, else PRECOND
 
 | param | type | description |
 |---|---|---|
-| `discard_dirty` | boolean | if the editor must close: THROW AWAY unsaved packages instead of PRECONDITION |
+| `discard_dirty` | boolean | if the editor must close: DROP unsaved packages (else PRECONDITION) |
 | `dry_run` | boolean | report what would change (files, editor restart) without doing it |
 | `to` | string | a checkpoint: umcp/cp/N or just N (from git op=checkpoint / op=log) |
 | `wait_s` | number | wait up to this many seconds (max 25) before returning the job |

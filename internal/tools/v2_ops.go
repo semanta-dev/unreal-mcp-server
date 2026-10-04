@@ -57,7 +57,7 @@ func jobSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "job", Title: "Background jobs", Toolset: spec.Core, Offline: true, Timeout: sync28, Max: sync28, Ops: ops,
-		Description: "Follow async work (build, playtest, editor_lifecycle, git_revert, headless: {job_id, state} unless wait_s).\n- status: state, last progress, result or error.\n- wait: up to wait_s (default 25), streaming progress.\n- cancel.\n- list: this project's jobs (any session of the project can poll them).",
+		Description: "Follow async work (build, playtest, editor_lifecycle, git_revert, headless: {job_id, state} unless wait_s).\n- status: state, last progress, result or error.\n- wait: up to wait_s (default 25), streaming progress.\n- cancel.\n- list: this project's jobs (any of its sessions can poll them).",
 		Schema:      spec.SchemaFor[jobIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces:    []string{"job_status", "job_cancel"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
@@ -188,15 +188,15 @@ func logsHandler(_ context.Context, c *spec.Call) (*spec.Result, error) {
 
 type analyzeIn struct {
 	Op       string             `json:"op" jsonschema:"rubric | perf | image_diff | scenarios"`
-	Timeline []timelineFrame    `json:"timeline,omitempty" jsonschema:"rubric: recorded frames [{index, t_world, state}] (a playtest result's timeline)"`
+	Timeline []timelineFrame    `json:"timeline,omitempty" jsonschema:"rubric: a playtest result's timeline"`
 	Logs     *logCounts         `json:"logs,omitempty" jsonschema:"rubric: {errors, warnings, ensures} for log checks"`
 	Rubric   []eval.RubricCheck `json:"rubric,omitempty" jsonschema:"rubric: [{id, kind, path, params?, severity?, allow_perturbed?}]"`
 	Path     string             `json:"path,omitempty" jsonschema:"perf: a CsvProfiler .csv or a .memreport; image_diff: an image"`
 	Baseline string             `json:"baseline,omitempty" jsonschema:"image_diff: the image to compare against"`
-	HitchMs  float64            `json:"hitch_ms,omitempty" jsonschema:"perf: frames slower than this are hitches (default 33.3)"`
-	MaxDHash *int               `json:"max_dhash,omitempty" jsonschema:"image_diff: pass threshold on dHash distance (default 8; 0 = exact)"`
-	MaxLuma  *float64           `json:"max_luma_delta,omitempty" jsonschema:"image_diff: pass threshold on mean-luma delta (default 0.15)"`
-	Dir      string             `json:"dir,omitempty" jsonschema:"scenarios: directory of scenario/v1 files (default the project's .mcp/scenarios)"`
+	HitchMs  float64            `json:"hitch_ms,omitempty" jsonschema:"perf: hitch threshold in ms (default 33.3)"`
+	MaxDHash *int               `json:"max_dhash,omitempty" jsonschema:"image_diff: max dHash distance (default 8; 0 = exact)"`
+	MaxLuma  *float64           `json:"max_luma_delta,omitempty" jsonschema:"image_diff: max mean-luma delta (default 0.15)"`
+	Dir      string             `json:"dir,omitempty" jsonschema:"scenarios: scenario/v1 folder (default .mcp/scenarios)"`
 }
 
 // timelineFrame / logCounts are the JSON shapes of a playtest timeline and its log
