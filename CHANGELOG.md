@@ -85,6 +85,16 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
   map travel fails the beat). One clock per scenario; input steps are checked when the scenario is parsed.
 - `Needs` may say when it applies: playtest declares `plugin>=5 for input/game_command beats`.
 
+- **Game data and logic authoring** (new toolset `data`, plugin API 6 where Python cannot reach): `data_query` reads a
+  DataTable's typed rows, a float curve's keys, and a Blueprint (components — Blueprint and native — variables with
+  type, class default and flags, functions, events, and the status + messages of a fresh in-memory compile).
+  `data_edit` sets properties on any non-Blueprint asset (per-property errors), upserts / deletes DataTable rows by
+  name (never replace-all; every field checked against the row struct — UE's import ignores unknown fields; a failed
+  fill restores the table), replaces a curve's keys (all or nothing), adds a Blueprint variable (exact pin types — UE
+  5.7 silently makes an unknown basic type an int; a name the Blueprint already uses is refused — UE renames it), and
+  sets an InputAction's keys in a mapping context (creating either when missing). Property, table and curve edits are
+  one undo step each; `add_variable` and `input_mapping` say `undoable: false`.
+
 ### Fixed
 - `world=editor` during PIE found no editor world on UE 5.7 (`get_editor_world()` is None while PIE runs): it is now
   the PIE map's source level.

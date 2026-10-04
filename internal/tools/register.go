@@ -29,5 +29,6 @@ func Specs(d Deps) []*spec.Spec {
 	specs = append(specs, opsSpecs()...)
 	specs = append(specs, lifecycleSpecs()...)
 	specs = append(specs, gameSpecs()...)
+	specs = append(specs, dataSpecs()...)
 	return append(specs, extraSpecs(d)...)
 }

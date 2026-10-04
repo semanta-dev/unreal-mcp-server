@@ -206,6 +206,7 @@ An audit whose evidence has no source for a game returns `insufficient_evidence`
 | **Net** | **≈ −1 800 → ~43.2 KB** |
 | *Measured after R0 (46 tools / 34 core)* | *41 818 B core (−3 165 B vs v2.0.2's 44 983 B); all toolsets 61 188 B* |
 | *Measured after R2 (48 tools / 34 core)* | *43 808 B core; all toolsets 65 006 B* |
+| *Measured after R3 (50 tools / 34 core)* | *43 989 B core; all toolsets 68 506 B* |
 
 New optional toolsets: `game` (`game`, `game_command`), `data` (`data_query`, `data_edit`), `world` (moved tools).
 Count pins: **50 tools / 34 core** after the plan (from 45 / 36). All toolsets ≤ 75 000 B (est. ~66 KB). Each phase
@@ -233,7 +234,7 @@ Plugin API versions — one bump per phase that changes the plugin; each op decl
 | 3 | R0.5 | `GetPluginApiVersion`, R0.2 fallbacks (`IsPureOrConst`, `PeekUndoTitle`/`PeekRedoTitle`, `UndoIfTitled`/`RedoIfTitled`) if needed |
 | 4 | G.5 | `EMCPBindSource` `GameState`/`Subsystem`; widget-tree access for 5.7 (`GetWidgetTree`, `Get/SetRootWidget`, `RegisterWidget`, `SetWidgetIsVariable`), `Get/SetClassDefaultJson`; `MountWidget`/`UnmountWidget`, `DescribeLiveWidgets` (R4.2's mount and live tree, needed by G.5's acceptance) |
 | 5 | R2 | `InjectAxis` (per tick), `MoveCursor`/`ClickAt`/`DragCursor`/`ClickWidget` (a virtual Slate user routed down an explicit widget path; the player's input device), `SpawnInGame` |
-| 6 | R3 | curve keys, Blueprint describe (R0.2 spike rows 5–6) |
+| 6 | R3 | `GetCurveKeysJson` / `SetCurveKeysJson`, `DescribeBlueprintJson` (R0.2 spike rows 5–6) |
 | 7 | R4 | (mount and live tree arrived in API 4) the UI-capture route, compose fixes |
 | 8 | R5 | `UMCPEventRecorder` |
 

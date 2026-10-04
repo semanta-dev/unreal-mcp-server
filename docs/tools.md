@@ -2,7 +2,7 @@
 
 # Tools
 
-48 tools (34 core). Optional toolsets are enabled per session with `toolsets op=enable` or a project's `.umcp.json` `toolsets`. Every tool takes JSON arguments validated against its schema; errors come back as `{"error": {code, message, hint, retryable, outcome, details}}` with a closed code set.
+50 tools (34 core). Optional toolsets are enabled per session with `toolsets op=enable` or a project's `.umcp.json` `toolsets`. Every tool takes JSON arguments validated against its schema; errors come back as `{"error": {code, message, hint, retryable, outcome, details}}` with a closed code set.
 
 **Tiers** (per op; a tool's annotations follow its worst op): `readonly` · `ephemeral` (UI/session state, server-owned scratch files) · `mutating` (project/world content; nothing authored is lost) · `destructive` (can lose authored content; approval-gated when the gate policy requires) · `exec` (runs caller-supplied code/input; gated).
 
@@ -21,6 +21,7 @@
 | polyworld (the PolyWorld Company-MVP game) | `polyworld`, `polyworld_demolish` |
 | world (declarative scenes and spatial queries) | `world_query`, `scene`, `scene_clear` |
 | game (the game's own API (.umcp.json game_api; on when declared)) | `game`, `game_command` |
+| data (game data and logic authoring: DataTables, curves, Blueprints, input mappings) | `data_query`, `data_edit` |
 
 ## Toolset `core`
 
@@ -843,6 +844,7 @@ Optional tool groups: enable one to get its tools.
 - headless: headless (commandlets, tests)
 - world: scene, scene_clear (declarative scenes), world_query (traces, overlaps, nav)
 - game: game, game_command (the game's own API; on when .umcp.json declares game_api)
+- data: data_query, data_edit (DataTables, curves, Blueprints, input mappings, asset properties)
 ops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).
 
 | op | tier | does | required | needs |
@@ -856,7 +858,7 @@ ops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, ne
 |---|---|---|
 | `op` | string | one of: list, enable, disable, describe |
 | `tool` | string | describe: one tool (default: every tool of the enabled toolsets, briefly) |
-| `toolset` | string | enable/disable: the toolset — one of: core, daemon, headless, design, ui, desktop, polyworld, world, game |
+| `toolset` | string | enable/disable: the toolset — one of: core, daemon, headless, design, ui, desktop, polyworld, world, game, data |
 
 ## Toolset `daemon`
 
@@ -1212,3 +1214,57 @@ Run one of the game's commands (its own API; PIE) → {accepted, result}. reques
 | `args` | object | the command's arguments |
 | `name` | string | the command (game op=capabilities lists them) |
 | `request_id` | string | required, unique per intended action: re-sending the same id returns the recorded result and never runs it twice |
+
+## Toolset `data`
+
+### `data_query` — Read game data
+
+_tier ephemeral_
+
+Read game data. table: rows of a DataTable {row: {field: value}}. curve: a float curve's keys. blueprint: components (Blueprint + native), variables (type, default, flags), functions, events, and the status + messages of a fresh in-memory compile (not saved; refused during PIE). Change data with data_edit.
+
+| op | tier | does | required | needs |
+|---|---|---|---|---|
+| `table` | readonly | a DataTable's rows, typed (the engine's JSON forms) | asset | editor |
+| `curve` | readonly | a float curve's keys | asset | editor, plugin>=6 |
+| `blueprint` | ephemeral | a Blueprint's components, variables, functions, events, compile status + messages | asset | editor, plugin>=6 |
+
+| param | type | description |
+|---|---|---|
+| `asset` | string | the DataTable, CurveFloat or Blueprint asset path |
+| `limit` | integer | table: max rows returned (default 200) |
+| `op` | string | one of: table, curve, blueprint |
+| `rows` | string[] | table: only these rows (default all) |
+
+### `data_edit` — Edit game data
+
+_tier destructive_
+
+Edit game data; each op saves. set_properties (any non-Blueprint asset), table_upsert / table_delete (keyed, never replace-all), curve_keys (all-or-nothing): one undo step each. add_variable (Blueprint graphs are not edited — logic goes in C++ via build) and input_mapping (InputAction + mapping context, created if missing) say undoable:false.
+
+| op | tier | does | required | needs |
+|---|---|---|---|---|
+| `set_properties` | mutating | set properties on an asset (per-property errors) | asset, properties | editor |
+| `table_upsert` | mutating | insert or update DataTable rows by name (others untouched) | asset, rows | editor |
+| `table_delete` | destructive | delete DataTable rows by name | asset, row_names | editor |
+| `curve_keys` | mutating | replace a float curve's keys | asset, points | editor, plugin>=6 |
+| `add_variable` | mutating | add a member variable to a Blueprint | asset, name, type | editor, plugin>=6 |
+| `input_mapping` | mutating | an InputAction's keys in a mapping context | action, context, keys | editor |
+
+| param | type | description |
+|---|---|---|
+| `action` | string | input_mapping: the InputAction asset, e.g. /Game/Input/IA_Dash (created if missing) |
+| `asset` | string | the asset (not input_mapping) |
+| `context` | string | input_mapping: the InputMappingContext asset (created if missing) |
+| `default` |  | add_variable: the default value |
+| `expose_on_spawn` | boolean | add_variable: a spawn parameter |
+| `instance_editable` | boolean | add_variable: editable per instance |
+| `keys` | string[] | input_mapping: the action's keys in that context, exactly (e.g. [LeftShift]; [] unmaps) |
+| `name` | string | add_variable: the variable's name |
+| `op` | string | one of: set_properties, table_upsert, table_delete, curve_keys, add_variable, input_mapping |
+| `points` | [] | curve_keys: the new keys, [[time, value], ...] or [{time, value, interp: linear\|constant\|cubic}] |
+| `properties` | object | set_properties: {property: value} on a non-Blueprint asset (Blueprints: asset_edit) |
+| `row_names` | string[] | table_delete: the rows to delete (all exist, or nothing is deleted) |
+| `rows` | object | table_upsert: {row name: {field: value}}; fields not given keep their values |
+| `type` | string | add_variable: bool\|byte\|int\|int64\|float\|double\|name\|string\|text, object:<Class>, class:<Class>, struct:<Struct>, array:<type>, set:<type> |
+| `value_type` | string | input_mapping: digital \| axis1d \| axis2d \| axis3d — one of: digital, axis1d, axis2d, axis3d |

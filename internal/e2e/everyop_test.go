@@ -75,7 +75,7 @@ func everyOp(t *testing.T, native bool) {
 	gitRun(t, dir, "commit", "-q", "-m", "seed")
 	gitRun(t, dir, "tag", "-a", "umcp/cp/1", "-m", "seed")
 
-	h := startHarness(t, harnessOpts{project: dir, native: native, toolsets: []spec.Toolset{spec.Design, spec.UI, spec.PolyWorld, spec.Headless, spec.World, spec.Game}})
+	h := startHarness(t, harnessOpts{project: dir, native: native, toolsets: []spec.Toolset{spec.Design, spec.UI, spec.PolyWorld, spec.Headless, spec.World, spec.Game, spec.Data}})
 	installPermissiveOps(h, dir, png)
 	h.call(t, "actor_edit", map[string]any{"op": "spawn", "world": "editor", "class": "/Script/Engine.Actor", "label": "Cube"})
 
@@ -155,7 +155,10 @@ func opArgs(sp *spec.Spec, op spec.OpSpec, dir, png string) map[string]any {
 		"level": "/Game/Maps/L_Test", "asset": "/Game/X", "dest": "/Game/New/" + tool + "_" + op.Name,
 		"kind": "blueprint", "row_struct": "/Script/Engine.TableRowBase", "parent": "/Game/M", "tree": map[string]any{"name": "Root"},
 		"position": []any{10.0, 20.0}, "widget": "StartButton",
-		"key": "W", "predicate": "counts.Actor >= 0", "name": "snap1", "message": "cp", "to": "1", "job_id": "j1",
+		"rows": map[string]any{"Wave_01": map[string]any{"EnemyCount": 5.0}}, "row_names": []any{"Wave_01"},
+		"points": []any{[]any{0.0, 1.0}}, "type": "float", "action": "/Game/Input/IA_X", "context": "/Game/Input/IMC_X",
+		"keys": []any{"SpaceBar"},
+		"key":  "W", "predicate": "counts.Actor >= 0", "name": "snap1", "message": "cp", "to": "1", "job_id": "j1",
 		"toolset": "design", "tag": "A.B", "enum": "EFoo", "files": []any{png}, "scene_id": "arena", "sound": "/Game/S",
 		"preset": "studio", "layout": map[string]any{"type": "grid", "count": 2.0, "spacing": 100.0},
 		"timeline": []any{}, "rubric": []any{}, "path": png, "baseline": png, "property": "ProjectileClass",
@@ -264,7 +267,9 @@ func installPermissiveOps(h *harness, dir, png string) {
 	for _, py := range []string{"python_recipe", "open_level", "save_all", "set_world_gamemode", "console", "viewport_get", "viewport_set",
 		"focus_actors", "asset_info", "asset_query", "asset_deps", "asset_tags", "asset_edit", "import_assets", "asset_reimport",
 		"datatable_import", "map_gameplay", "widget_tree", "widget_describe", "widget_compose", "widget_compile", "world_query",
-		"instances_count", "pie_input", "pie_cursor", "pie_ui_click", "audio_capture_start", "audio_capture_stop", "play_test_sound", "scene_apply",
+		"instances_count", "pie_input", "pie_cursor", "pie_ui_click", "data_table_read", "data_table_upsert",
+		"data_table_delete", "data_curve_read", "data_curve_keys", "data_blueprint", "data_set_properties", "data_add_variable",
+		"data_input_mapping", "audio_capture_start", "audio_capture_stop", "play_test_sound", "scene_apply",
 		"scene_clear", "scene_prune", "scene_actors", "design_probe", "capture_poll", "company_status", "company_build",
 		"company_select", "company_road", "company_demolish", "apply_level_recipe", "quit_editor"} {
 		h.emu.Handle(py, ok(map[string]any{"ok": true, "count": 0.0, "total": 0.0, "actors": []any{}, "capital": 100.0,

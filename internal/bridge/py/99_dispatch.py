@@ -90,6 +90,15 @@ _OPS = {
     "pie_ui_click": _op_pie_ui_click,
     "pie_time": _op_pie_time,
     "pie_axis_stats": _op_pie_axis_stats,
+    "data_table_read": _op_data_table_read,
+    "data_table_upsert": _op_data_table_upsert,
+    "data_table_delete": _op_data_table_delete,
+    "data_curve_read": _op_data_curve_read,
+    "data_curve_keys": _op_data_curve_keys,
+    "data_blueprint": _op_data_blueprint,
+    "data_set_properties": _op_data_set_properties,
+    "data_add_variable": _op_data_add_variable,
+    "data_input_mapping": _op_data_input_mapping,
 }
 
 

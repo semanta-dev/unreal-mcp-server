@@ -810,6 +810,148 @@
     },
     {
       "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Edit game data; each op saves. set_properties (any non-Blueprint asset), table_upsert / table_delete (keyed, never replace-all), curve_keys (all-or-nothing): one undo step each. add_variable (Blueprint graphs are not edited — logic goes in C++ via build) and input_mapping (InputAction + mapping context, created if missing) say undoable:false.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "input_mapping: the InputAction asset, e.g. /Game/Input/IA_Dash (created if missing)",
+            "type": "string"
+          },
+          "asset": {
+            "description": "the asset (not input_mapping)",
+            "type": "string"
+          },
+          "context": {
+            "description": "input_mapping: the InputMappingContext asset (created if missing)",
+            "type": "string"
+          },
+          "default": {
+            "description": "add_variable: the default value"
+          },
+          "expose_on_spawn": {
+            "description": "add_variable: a spawn parameter",
+            "type": "boolean"
+          },
+          "instance_editable": {
+            "description": "add_variable: editable per instance",
+            "type": "boolean"
+          },
+          "keys": {
+            "description": "input_mapping: the action's keys in that context, exactly (e.g. [LeftShift]; [] unmaps)",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "add_variable: the variable's name",
+            "type": "string"
+          },
+          "op": {
+            "enum": [
+              "set_properties",
+              "table_upsert",
+              "table_delete",
+              "curve_keys",
+              "add_variable",
+              "input_mapping"
+            ],
+            "type": "string"
+          },
+          "points": {
+            "description": "curve_keys: the new keys, [[time, value], ...] or [{time, value, interp: linear|constant|cubic}]",
+            "items": true,
+            "type": "array"
+          },
+          "properties": {
+            "additionalProperties": true,
+            "description": "set_properties: {property: value} on a non-Blueprint asset (Blueprints: asset_edit)",
+            "type": "object"
+          },
+          "row_names": {
+            "description": "table_delete: the rows to delete (all exist, or nothing is deleted)",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "rows": {
+            "additionalProperties": true,
+            "description": "table_upsert: {row name: {field: value}}; fields not given keep their values",
+            "type": "object"
+          },
+          "type": {
+            "description": "add_variable: bool|byte|int|int64|float|double|name|string|text, object:\u003cClass\u003e, class:\u003cClass\u003e, struct:\u003cStruct\u003e, array:\u003ctype\u003e, set:\u003ctype\u003e",
+            "type": "string"
+          },
+          "value_type": {
+            "description": "input_mapping: digital | axis1d | axis2d | axis3d",
+            "enum": [
+              "digital",
+              "axis1d",
+              "axis2d",
+              "axis3d"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "type": "object"
+      },
+      "name": "data_edit",
+      "title": "Edit game data"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "description": "Read game data. table: rows of a DataTable {row: {field: value}}. curve: a float curve's keys. blueprint: components (Blueprint + native), variables (type, default, flags), functions, events, and the status + messages of a fresh in-memory compile (not saved; refused during PIE). Change data with data_edit.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "asset": {
+            "description": "the DataTable, CurveFloat or Blueprint asset path",
+            "type": "string"
+          },
+          "limit": {
+            "description": "table: max rows returned (default 200)",
+            "type": "integer"
+          },
+          "op": {
+            "enum": [
+              "table",
+              "curve",
+              "blueprint"
+            ],
+            "type": "string"
+          },
+          "rows": {
+            "description": "table: only these rows (default all)",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "op",
+          "asset"
+        ],
+        "type": "object"
+      },
+      "name": "data_query",
+      "title": "Read game data"
+    },
+    {
+      "annotations": {
         "openWorldHint": false,
         "readOnlyHint": true
       },
@@ -2555,7 +2697,7 @@
         "idempotentHint": true,
         "openWorldHint": false
       },
-      "description": "Optional tool groups: enable one to get its tools.\n- design: design_audit (luminance, style, feel, novelty… audits), design_explore\n- ui: widget_edit (author UMG trees)\n- desktop: desktop_capture, desktop_input (OS screen/input)\n- polyworld: polyworld, polyworld_demolish\n- headless: headless (commandlets, tests)\n- world: scene, scene_clear (declarative scenes), world_query (traces, overlaps, nav)\n- game: game, game_command (the game's own API; on when .umcp.json declares game_api)\nops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).",
+      "description": "Optional tool groups: enable one to get its tools.\n- design: design_audit (luminance, style, feel, novelty… audits), design_explore\n- ui: widget_edit (author UMG trees)\n- desktop: desktop_capture, desktop_input (OS screen/input)\n- polyworld: polyworld, polyworld_demolish\n- headless: headless (commandlets, tests)\n- world: scene, scene_clear (declarative scenes), world_query (traces, overlaps, nav)\n- game: game, game_command (the game's own API; on when .umcp.json declares game_api)\n- data: data_query, data_edit (DataTables, curves, Blueprints, input mappings, asset properties)\nops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2583,7 +2725,8 @@
               "desktop",
               "polyworld",
               "world",
-              "game"
+              "game",
+              "data"
             ],
             "type": "string"
           }

@@ -100,4 +100,22 @@ public:
 	 *  modified; the caller compiles and saves. Returns {"ok": bool, "error"?}. */
 	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
 	FString SetClassDefaultJson(UBlueprint* Blueprint, const FString& PropertyName, const FString& JsonValue);
+
+	/** The keys of a float curve as JSON [{time, value, interp, arrive_tangent, leave_tangent}]
+	 *  (plugin API 6; UE 5.7's Python cannot read FRichCurve keys). */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
+	FString GetCurveKeysJson(class UCurveFloat* Curve);
+
+	/** Replace a float curve's keys with KeysJson [{time, value, interp?: linear|constant|cubic,
+	 *  arrive_tangent?, leave_tangent?}] - all or nothing (validated before anything changes).
+	 *  Curve->Modify() joins the caller's undo transaction. Returns "" or why it was refused. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
+	FString SetCurveKeysJson(class UCurveFloat* Curve, const FString& KeysJson);
+
+	/** Describe a Blueprint as JSON (plugin API 6; Python sees none of this): parent, status,
+	 *  construction-script and native components, variables (type, default, flags),
+	 *  functions, events, macros; with bCompile, compiles it in memory first (not saved)
+	 *  and adds that compile's messages. Refused while PIE runs. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Authoring")
+	FString DescribeBlueprintJson(UBlueprint* Blueprint, bool bCompile);
 };
