@@ -396,7 +396,7 @@ func levelSpec() *spec.Spec {
 type actorQueryIn struct {
 	Op         string         `json:"op" jsonschema:"list | get | find"`
 	World      string         `json:"world,omitempty" jsonschema:"editor (default) | pie | auto (PIE when running)"`
-	Actor      string         `json:"actor,omitempty" jsonschema:"get: a label, an object path, or (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud; @subsystem:Class"`
+	Actor      string         `json:"actor,omitempty" jsonschema:"get: a label, object path or @ref as for actor_call"`
 	Filter     string         `json:"filter,omitempty" jsonschema:"list/find: case-insensitive substring of label or class"`
 	Class      string         `json:"class,omitempty" jsonschema:"list/find: only this class and its subclasses"`
 	Where      map[string]any `json:"where,omitempty" jsonschema:"find: property → value equality filter on reflected properties"`

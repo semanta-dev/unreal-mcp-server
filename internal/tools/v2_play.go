@@ -342,7 +342,7 @@ func pieObserveSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "pie_observe", Title: "Observe the running game", Toolset: spec.Core, Timeout: sync15, Max: sync28,
 		Ops: []spec.OpSpec{{Tier: spec.ReadOnly, Idempotent: true, Reaches: []string{"pie_observe"}, Needs: []string{"pie"}}},
-		Description: "Read the running game (PIE): gamestate properties (discovered by reflection), a class histogram " +
+		Description: "Read the running game (PIE) by reflection (its own API, events included: toolset game): gamestate properties, a class histogram " +
 			"`counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. " +
 			"The output schema is what pie_wait predicates address (gamestate.Prop, counts.Class, pawn.speed).",
 		Schema:   spec.SchemaFor[pieObserveIn](nil),
@@ -367,7 +367,7 @@ func pieObserveSpec() *spec.Spec {
 type pieWaitIn struct {
 	Predicate  string   `json:"predicate" jsonschema:"conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave >= 2 and counts.Enemy >= 1'; or an object path: '@subsystem:Class.Getter().field >= 3' (BlueprintPure/const getters only)"`
 	TimeoutS   float64  `json:"timeout_s,omitempty" jsonschema:"give up after this many seconds (default 20; up to 600 — beyond 25 the wait continues as a job)"`
-	WaitS      float64  `json:"wait_s,omitempty" jsonschema:"a job wait (timeout_s > 25): return after this many seconds (max 25), then follow it with job"`
+	WaitS      float64  `json:"wait_s,omitempty" jsonschema:"timeout_s > 25: return after this many seconds (max 25), then follow it with job"`
 	IntervalS  float64  `json:"interval_s,omitempty" jsonschema:"seconds between observations (default 0.25)"`
 	Properties []string `json:"properties,omitempty" jsonschema:"pin exact gamestate property names so the predicate can use them verbatim"`
 	Pawn       bool     `json:"pawn,omitempty" jsonschema:"observe the pawn too (needed for pawn.* predicates)"`

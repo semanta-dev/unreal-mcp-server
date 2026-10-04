@@ -114,7 +114,7 @@ func logsSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "logs", Title: "Editor logs", Toolset: spec.Core, Offline: true, Timeout: sync15, Max: sync28, Ops: ops,
-		Description: "Read the editor log files (works while the editor is busy or gone).\n- mark → marker; later since `marker` → those lines + error/warning/ensure counts.\n- tail: last `lines` at min_severity.\n- events: structured events from offset `marker`.",
+		Description: "Read the editor log files (works while the editor is busy or gone).\n- mark → marker; later since `marker` → those lines + error/warning/ensure counts.\n- tail: last `lines` at min_severity.\n- events: the log's structured events from `marker` (gameplay events: toolset game).",
 		Schema:      spec.SchemaFor[logsIn](map[string][]any{"op": spec.OpEnum(ops...), "min_severity": {"Verbose", "Log", "Display", "Warning", "Error"}}, "op"),
 		Replaces:    []string{"logs_mark", "logs_tail", "logs_since", "editor_events"},
 		Handler:     logsHandler,
@@ -178,8 +178,10 @@ func logsHandler(_ context.Context, c *spec.Call) (*spec.Result, error) {
 	if n := orDefaultInt(in.Limit, 200); len(out) > n {
 		out = out[len(out)-n:]
 	}
-	return &spec.Result{Data: map[string]any{"events": out, "marker": strconv.FormatInt(next, 10), "count": len(out)},
-		Summary: fmt.Sprintf("%d events", len(out))}, nil
+	// Agents asking for gameplay events (kills, hits) land here: say whose events these are.
+	return &spec.Result{Data: map[string]any{"events": out, "marker": strconv.FormatInt(next, 10), "count": len(out),
+		"note": "the editor log's events (issues, PIE transitions), not the game's: gameplay events are game op=events (toolset game)"},
+		Summary: fmt.Sprintf("%d editor log events", len(out))}, nil
 }
 
 // --- analyze ---------------------------------------------------------------------

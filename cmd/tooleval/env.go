@@ -136,6 +136,9 @@ func seedProject(dir string) error {
 		"Config/DefaultGame.ini":  "[/Script/EngineSettings.GeneralProjectSettings]\nProjectName=Game\n",
 		"Source/Game/Game.cpp":    "// game module\n",
 		"Saved/Profiling/run.csv": "FrameTime,GameThreadTime\n16.6,9.1\n33.4,20.2\n16.7,9.0\n",
+		// The game's own agent API (R1.4), served by the emulator's fake game.
+		".umcp.json": `{"game_api": {"version": 1, "object": "@subsystem:Game.GameAgentSubsystem", "capabilities": "GetCapabilitiesJson",` +
+			` "snapshot": "PeekSnapshotJson", "command": "ExecuteCommandJson", "events": "GetEventsSince"}}`,
 		".mcp/scenarios/smoke.json": `{"schema":"scenario/v1","name":"smoke","mode":"pie","duration_s":2,"interval_s":0.5,` +
 			`"rubric":[{"id":"no_errors","kind":"log_zero","path":"errors","severity":"warn"}]}`,
 	}
@@ -187,6 +190,47 @@ func installPermissive(emu *bridgetest.Emulator, w *bridgetest.World, dir string
 		return p
 	}
 	(&bridgetest.Recorder{Dir: filepath.Join(dir, "Saved", "MCP", "capture"), Frames: 3}).Install(emu)
+	// The data toolset's companion ops (R3) over one wave table, tuning asset and curve.
+	rows := map[string]any{"Wave_01": map[string]any{"EnemyCount": 5.0}, "Wave_02": map[string]any{"EnemyCount": 8.0},
+		"Wave_03": map[string]any{"EnemyCount": 10.0}}
+	keys := []any{map[string]any{"time": 0.0, "value": 1.0}, map[string]any{"time": 5000.0, "value": 1.0}}
+	var dmu sync.Mutex
+	emu.Handle("data_table_read", func(a map[string]any) (any, *bridgetest.OpError) {
+		dmu.Lock()
+		defer dmu.Unlock()
+		return map[string]any{"asset": a["asset"], "rows": rows, "columns": []any{"EnemyCount"}, "row_struct": "AesirWaveRow"}, nil
+	})
+	emu.Handle("data_table_upsert", func(a map[string]any) (any, *bridgetest.OpError) {
+		dmu.Lock()
+		defer dmu.Unlock()
+		in, _ := a["rows"].(map[string]any)
+		created, updated := []any{}, []any{}
+		for k, v := range in {
+			if _, ok := rows[k]; ok {
+				updated = append(updated, k)
+			} else {
+				created = append(created, k)
+			}
+			rows[k] = v
+		}
+		return map[string]any{"asset": a["asset"], "created": created, "updated": updated, "total": float64(len(rows))}, nil
+	})
+	emu.Handle("data_set_properties", func(a map[string]any) (any, *bridgetest.OpError) {
+		return map[string]any{"asset": a["asset"], "values": a["properties"], "property_errors": []any{}}, nil
+	})
+	emu.Handle("data_curve_read", func(a map[string]any) (any, *bridgetest.OpError) {
+		dmu.Lock()
+		defer dmu.Unlock()
+		return map[string]any{"asset": a["asset"], "keys": keys}, nil
+	})
+	emu.Handle("data_curve_keys", func(a map[string]any) (any, *bridgetest.OpError) {
+		dmu.Lock()
+		defer dmu.Unlock()
+		if k, ok := a["keys"].([]any); ok {
+			keys = k
+		}
+		return map[string]any{"asset": a["asset"], "keys": keys}, nil
+	})
 	(&bridgetest.Packages{}).Install(emu, w)
 	ok := func(v map[string]any) bridgetest.OpFunc {
 		return func(map[string]any) (any, *bridgetest.OpError) { return v, nil }

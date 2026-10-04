@@ -3386,6 +3386,13 @@
   ],
   "reference": [
    {
+    "tool": "toolsets",
+    "args": {
+     "op": "enable",
+     "toolset": "game"
+    }
+   },
+   {
     "tool": "game",
     "args": {
      "op": "snapshot"
@@ -3422,6 +3429,13 @@
    }
   ],
   "reference": [
+   {
+    "tool": "toolsets",
+    "args": {
+     "op": "enable",
+     "toolset": "game"
+    }
+   },
    {
     "tool": "game",
     "args": {
@@ -3466,6 +3480,13 @@
   ],
   "reference": [
    {
+    "tool": "toolsets",
+    "args": {
+     "op": "enable",
+     "toolset": "game"
+    }
+   },
+   {
     "tool": "game",
     "args": {
      "op": "events"
@@ -3504,10 +3525,17 @@
   ],
   "reference": [
    {
+    "tool": "toolsets",
+    "args": {
+     "op": "enable",
+     "toolset": "data"
+    }
+   },
+   {
     "tool": "data_query",
     "args": {
      "op": "table",
-     "path": "/Game/Data/DT_Waves"
+     "asset": "/Game/Data/DT_Waves"
     }
    }
   ],
@@ -3545,15 +3573,22 @@
   ],
   "reference": [
    {
+    "tool": "toolsets",
+    "args": {
+     "op": "enable",
+     "toolset": "data"
+    }
+   },
+   {
     "tool": "data_edit",
     "args": {
      "op": "table_upsert",
-     "path": "/Game/Data/DT_Waves",
      "rows": {
       "Wave_03": {
        "EnemyCount": 12
       }
-     }
+     },
+     "asset": "/Game/Data/DT_Waves"
     }
    }
   ],
@@ -3590,13 +3625,20 @@
   ],
   "reference": [
    {
+    "tool": "toolsets",
+    "args": {
+     "op": "enable",
+     "toolset": "data"
+    }
+   },
+   {
     "tool": "data_edit",
     "args": {
      "op": "set_properties",
-     "path": "/Game/Data/DA_AesirTuning",
      "properties": {
       "PlayerDamageMultiplier": 1.5
-     }
+     },
+     "asset": "/Game/Data/DA_AesirTuning"
     }
    }
   ],
@@ -3632,14 +3674,36 @@
   ],
   "reference": [
    {
+    "tool": "toolsets",
+    "args": {
+     "op": "enable",
+     "toolset": "data"
+    }
+   },
+   {
+    "tool": "data_query",
+    "args": {
+     "op": "curve",
+     "asset": "/Game/Data/C_DamageFalloff"
+    }
+   },
+   {
     "tool": "data_edit",
     "args": {
      "op": "curve_keys",
-     "path": "/Game/Data/C_DamageFalloff",
-     "keys": [
+     "asset": "/Game/Data/C_DamageFalloff",
+     "points": [
+      [
+       0,
+       1
+      ],
       [
        2000,
        0.5
+      ],
+      [
+       5000,
+       1
       ]
      ]
     }

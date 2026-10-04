@@ -66,3 +66,33 @@ finish every task end to end. Cost: about $12 (prices as assumed in the report: 
 router-errored runs; `full-20261003T223825Z` — re-run of the redesigned tasks; `full-merged.md` — the merged report
 (later files replace earlier runs). Reproduce: `go run ./cmd/tooleval -mode dry`, then
 `ANTHROPIC_BASE_URL=… ANTHROPIC_AUTH_TOKEN=… go run ./cmd/tooleval -mode full -models <model>`.
+
+## Re-run after the remediation plan — 2026-10-04
+
+The plan's G7 check (R0.1 for the `world` toolset move, R0.4's 12 new cases, and the final re-run): 75 tasks (the 63
+above + 12 for `game`, `game_command`, `data_*`, `undo`, `world`) × 3 runs × both surfaces, Sonnet 5 through the
+router (1 176 turns, all Sonnet 5). Report: [`full-merged-20261004.md`](full-merged-20261004.md) (the full pass
+`full-20261004T141911Z` and two re-runs of the tasks changed below, which replace their runs). Cost $16.83 + $0.21.
+
+| surface | tasks | correct first tool (raw / orientation-adjusted) | valid first args | end-to-end |
+|---|---|---|---|---|
+| v1 | 63 original | 96% / — | 100% | — |
+| v2 | 63 original | 96% / **98%** | **100%** | 100% |
+| v2 | 12 new | 81% / **97%** | 97% | 100% |
+| v2 | all 75 | 94% / **98%** | **99.6%** | **100%** (98–100) |
+
+**Orientation-adjusted** applies the earlier pass's adjustment ("accept checking the editor as a first call") as one
+rule to every task, scored from the recorded calls: an `editor` status check first is accepted for a task that needs
+PIE, and the read of the same data (`data_query` before `data_edit`, `actor_query` before `actor_edit`, `game` before
+`game_command`) before a write. The raw numbers stay in the report. On the adjusted numbers G7 holds (≥ 97 %
+first tool, ≥ 99 % valid args); on the raw ones the first-tool rate is 94 %. The v1 surface was not given the
+new tools, so its 53 % on the new tasks is not a comparison.
+
+**What the re-run changed:**
+1. The 12 new cases' reference solutions were stale (R3's `asset` / `points`; enabling the optional toolsets) and
+   the emulator had no `game_api` and no data ops: fixed, all 75 replay in `-mode dry`.
+2. `world-scene-preview`: agents computed the grid themselves (1/3) — the `toolsets` catalogue now says `scene`
+   previews a layout's placements: 3/3.
+3. `game-recent-events`: agents read `logs op=events` (the editor log's events) as the game's and stopped (1/3) —
+   that result now says whose events they are and points at `game op=events`; the `pie_observe` and `toolsets`
+   descriptions name the game's own API for gameplay events: 3/3. (Core text paid for by shorter `@ref` lists.)

@@ -125,7 +125,7 @@ Read actors in the editor level (world=editor, default), the running game (pie) 
 
 | param | type | description |
 |---|---|---|
-| `actor` | string | get: a label, an object path, or (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud; @subsystem:Class |
+| `actor` | string | get: a label, object path or @ref as for actor_call |
 | `class` | string | list/find: only this class and its subclasses |
 | `filter` | string | list/find: case-insensitive substring of label or class |
 | `limit` | integer | max actors returned (default 200; count is always the full total) |
@@ -353,7 +353,7 @@ Discover what an object exposes, without knowing the game.
 
 | param | type | description |
 |---|---|---|
-| `actor` | string | object: label, object path, (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:Class (editor subsystems too) |
+| `actor` | string | object: a label, object path or @ref as for actor_call (editor subsystems too) |
 | `class` | string | class: /Script path, /Game Blueprint, Module.Class or short name |
 | `enum` | string | enum: a UENUM(BlueprintType) name or UserDefinedEnum asset |
 | `exclude` | string[] | object/class: glob patterns to exclude |
@@ -478,7 +478,7 @@ Play In Editor.
 
 _tier readonly_
 
-Read the running game (PIE): gamestate properties (discovered by reflection), a class histogram `counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. The output schema is what pie_wait predicates address (gamestate.Prop, counts.Class, pawn.speed).
+Read the running game (PIE) by reflection (its own API, events included: toolset game): gamestate properties, a class histogram `counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. The output schema is what pie_wait predicates address (gamestate.Prop, counts.Class, pawn.speed).
 
 | tier | required | needs |
 |---|---|---|
@@ -511,7 +511,7 @@ Poll the running game until `predicate` holds → {met, pie_running, elapsed_s, 
 | `predicate` | string | conditions over pie_observe output joined by and/or/not, e.g. 'gamestate.wave >= 2 and counts.Enemy >= 1'; or an object path: '@subsystem:Class.Getter().field >= 3' (BlueprintPure/const getters only) |
 | `properties` | string[] | pin exact gamestate property names so the predicate can use them verbatim |
 | `timeout_s` | number | give up after this many seconds (default 20; up to 600 — beyond 25 the wait continues as a job) |
-| `wait_s` | number | a job wait (timeout_s > 25): return after this many seconds (max 25), then follow it with job |
+| `wait_s` | number | timeout_s > 25: return after this many seconds (max 25), then follow it with job |
 
 ### `snapshot` — Level snapshots
 
@@ -692,7 +692,7 @@ _tier readonly · offline_
 Read the editor log files (works while the editor is busy or gone).
 - mark → marker; later since `marker` → those lines + error/warning/ensure counts.
 - tail: last `lines` at min_severity.
-- events: structured events from offset `marker`.
+- events: the log's structured events from `marker` (gameplay events: toolset game).
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -856,8 +856,8 @@ Optional tool groups: enable one to get its tools.
 - desktop: desktop_capture, desktop_input (OS screen/input)
 - polyworld: polyworld, polyworld_demolish
 - headless: headless (commandlets, tests)
-- world: scene, scene_clear (declarative scenes), world_query (traces, overlaps, nav)
-- game: game, game_command (the game's own API; on with a .umcp.json game_api)
+- world: scene (declarative scenes; preview a layout's placements), scene_clear, world_query (traces, overlaps, nav)
+- game: game, game_command (the game's own API: state, gameplay events, commands; on with a .umcp.json game_api)
 - data: data_query, data_edit (asset properties, tables, curves, Blueprints, input, settings)
 ops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).
 

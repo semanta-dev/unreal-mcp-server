@@ -147,7 +147,7 @@
         "additionalProperties": false,
         "properties": {
           "actor": {
-            "description": "get: a label, an object path, or (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud; @subsystem:Class",
+            "description": "get: a label, object path or @ref as for actor_call",
             "type": "string"
           },
           "class": {
@@ -1793,7 +1793,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Read the editor log files (works while the editor is busy or gone).\n- mark → marker; later since `marker` → those lines + error/warning/ensure counts.\n- tail: last `lines` at min_severity.\n- events: structured events from offset `marker`.",
+      "description": "Read the editor log files (works while the editor is busy or gone).\n- mark → marker; later since `marker` → those lines + error/warning/ensure counts.\n- tail: last `lines` at min_severity.\n- events: the log's structured events from `marker` (gameplay events: toolset game).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1943,7 +1943,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read the running game (PIE): gamestate properties (discovered by reflection), a class histogram `counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. The output schema is what pie_wait predicates address (gamestate.Prop, counts.Class, pawn.speed).",
+      "description": "Read the running game (PIE) by reflection (its own API, events included: toolset game): gamestate properties, a class histogram `counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. The output schema is what pie_wait predicates address (gamestate.Prop, counts.Class, pawn.speed).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2026,7 +2026,7 @@
             "type": "number"
           },
           "wait_s": {
-            "description": "a job wait (timeout_s \u003e 25): return after this many seconds (max 25), then follow it with job",
+            "description": "timeout_s \u003e 25: return after this many seconds (max 25), then follow it with job",
             "type": "number"
           }
         },
@@ -2360,7 +2360,7 @@
         "additionalProperties": false,
         "properties": {
           "actor": {
-            "description": "object: label, object path, (PIE) @gamestate @pawn @controller @gameinstance @playerstate[:n] @hud, or @subsystem:Class (editor subsystems too)",
+            "description": "object: a label, object path or @ref as for actor_call (editor subsystems too)",
             "type": "string"
           },
           "class": {
@@ -2738,7 +2738,7 @@
         "idempotentHint": true,
         "openWorldHint": false
       },
-      "description": "Optional tool groups: enable one to get its tools.\n- design: design_audit (feel, decision, style… audits), design_explore\n- ui: widget_edit (author UMG trees)\n- desktop: desktop_capture, desktop_input (OS screen/input)\n- polyworld: polyworld, polyworld_demolish\n- headless: headless (commandlets, tests)\n- world: scene, scene_clear (declarative scenes), world_query (traces, overlaps, nav)\n- game: game, game_command (the game's own API; on with a .umcp.json game_api)\n- data: data_query, data_edit (asset properties, tables, curves, Blueprints, input, settings)\nops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).",
+      "description": "Optional tool groups: enable one to get its tools.\n- design: design_audit (feel, decision, style… audits), design_explore\n- ui: widget_edit (author UMG trees)\n- desktop: desktop_capture, desktop_input (OS screen/input)\n- polyworld: polyworld, polyworld_demolish\n- headless: headless (commandlets, tests)\n- world: scene (declarative scenes; preview a layout's placements), scene_clear, world_query (traces, overlaps, nav)\n- game: game, game_command (the game's own API: state, gameplay events, commands; on with a .umcp.json game_api)\n- data: data_query, data_edit (asset properties, tables, curves, Blueprints, input, settings)\nops: list | enable / disable `toolset` | describe `tool` (per-op tier, async, needs; none: enabled tools, cockpit, rollback ladder).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
