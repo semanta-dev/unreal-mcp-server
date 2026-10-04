@@ -317,3 +317,19 @@ func TestCalledOpAlternatives(t *testing.T) {
 		t.Fatal("a single op still matches only itself")
 	}
 }
+
+// "word" on an object searches its strings: aesir_hud_wave reads live_tree's
+// widgets[].nodes[].text (the check read a top-level "text" that live_tree never had).
+func TestWordSearchesNestedStrings(t *testing.T) {
+	m := map[string]any{"widgets": []any{map[string]any{"class": "WBP_Wave_C", "nodes": []any{
+		map[string]any{"name": "Label", "text": "AMMO 30/30"}, map[string]any{"name": "WaveText", "text": "WAVE 3"}}}}}
+	if !expectHolds(m, expectation{Path: "widgets", Op: "word", Value: 3.0}) {
+		t.Fatal("WAVE 3 inside widgets should match 3")
+	}
+	if expectHolds(m, expectation{Path: "widgets", Op: "word", Value: 4.0}) {
+		t.Fatal("no 4 anywhere")
+	}
+	if !expectHolds(map[string]any{"text": "WAVE 1"}, expectation{Path: "text", Op: "word", Value: 1.0}) {
+		t.Fatal("a plain string still matches")
+	}
+}

@@ -612,7 +612,7 @@
           },
           "expect": [
             {
-              "path": "text",
+              "path": "widgets",
               "op": "word",
               "value_from": "state.wave"
             }

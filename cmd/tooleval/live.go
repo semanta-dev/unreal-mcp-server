@@ -358,9 +358,10 @@ func expectHolds(m map[string]any, e expectation) bool {
 		}
 		return eq == (e.Op == "eq")
 	case "word":
-		// a whole word/number of a string ("WAVE 3" has 3; "100 HP" has no 1)
-		s, ok := got.(string)
-		if !ok || e.Value == nil {
+		// a whole word/number of a string ("WAVE 3" has 3; "100 HP" has no 1); of an
+		// object or list, of any string in it (live_tree's widgets[].nodes[].text)
+		s := strings.Join(stringLeaves(got), "\n")
+		if s == "" || e.Value == nil {
 			return false
 		}
 		want := fmt.Sprint(e.Value)
@@ -1156,4 +1157,30 @@ func rebuildRequired(done map[string]any) bool {
 	}
 	b, _ := done["rebuild_required"].(bool)
 	return b
+}
+
+// stringLeaves lists every string in a decoded JSON value, depth first.
+func stringLeaves(v any) []string {
+	switch t := v.(type) {
+	case string:
+		return []string{t}
+	case []any:
+		var out []string
+		for _, x := range t {
+			out = append(out, stringLeaves(x)...)
+		}
+		return out
+	case map[string]any:
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		var out []string
+		for _, k := range keys {
+			out = append(out, stringLeaves(t[k])...)
+		}
+		return out
+	}
+	return nil
 }
