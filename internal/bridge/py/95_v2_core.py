@@ -284,6 +284,42 @@ def _undoable(name, label, *actors):
 
 _MCP_TX_PREFIX = "MCP: "  # every server edit's transaction title starts with it (_undoable, _transaction)
 
+# The server's editor edits since this module loaded, oldest first: ("tx", title) for an
+# edit that made an undo step, ("untracked", op) for one that did not. undo steps only
+# through "tx" entries: undoing past an untracked edit would revert an older edit
+# underneath it (and the undo buffer cannot see the untracked one).
+_MCP_EDITS = []
+_MCP_REDO = []
+
+# Ops that change the editor without an undo transaction (asset edits, imports, game
+# commands, console and recipes). World ops count only outside PIE (in PIE they change
+# the transient game world, not the level).
+_UNTRACKED_EDIT_OPS = frozenset(("asset_create", "asset_edit", "asset_reimport", "import_assets", "datatable_import",
+                                 "widget_compose", "widget_compile", "set_world_gamemode", "live_coding_compile"))
+_UNTRACKED_WORLD_OPS = frozenset(("company_build", "company_road", "company_demolish", "console", "apply_level_recipe"))
+
+
+def _note_edit(kind, what):
+    _MCP_EDITS.append((kind, what))
+    del _MCP_EDITS[:-256]
+    del _MCP_REDO[:]
+
+
+def _note_op(op, args):
+    """Record a successful op in the edit journal (called by the dispatcher)."""
+    if op == "open_level":
+        del _MCP_EDITS[:]  # a new map starts a new undo buffer
+        del _MCP_REDO[:]
+    elif op in _UNTRACKED_EDIT_OPS or (op in _UNTRACKED_WORLD_OPS and not _pie_running()):
+        _note_edit("untracked", op)
+
+
+def _op_note_edit(args):
+    """The server reports an untracked edit made outside the companion's ops (the python
+    tool runs code directly)."""
+    _note_edit("untracked", str(args.get("op") or "python"))
+    return {"noted": True}
+
 
 def _op_editor_undo(args):
     """Undo (or redo) the editor's next transaction — only when the server made it:
@@ -292,13 +328,27 @@ def _op_editor_undo(args):
     on the game thread (no edit can land between them); PIE refuses it."""
     redo = bool(args.get("redo"))
     lib = _need_plugin(3, "undo")
-    raw = lib.redo_if_titled(_MCP_TX_PREFIX) if redo else lib.undo_if_titled(_MCP_TX_PREFIX)
-    res = json.loads(raw)
     verb = "redo" if redo else "undo"
+    journal, other = (_MCP_REDO, _MCP_EDITS) if redo else (_MCP_EDITS, _MCP_REDO)
+    expected = _MCP_TX_PREFIX
+    if journal:
+        kind, what = journal[-1]
+        if kind != "tx":
+            raise _V2Error("CONFLICT", "the server's last edit (%s) has no undo step: %s now would revert an older edit "
+                           "underneath it — roll back with snapshot_restore or git_revert instead" % (what, verb),
+                           untracked=what)
+        expected = what  # the exact step the server made last: a hand-made undo/redo shows as a mismatch
+    raw = lib.redo_if_titled(expected) if redo else lib.undo_if_titled(expected)
+    res = json.loads(raw)
     title = res.get("title", "")
     if res.get("ok"):
+        if journal:
+            other.append(journal.pop())
         return {("redone" if redo else "undone"): title}
     reason = res.get("reason")
+    if reason == "transaction_active":
+        raise _V2Error("EDITOR_BUSY", "an editor transaction is in progress (a drag or an edit in a dialog): try again "
+                       "when it ends", reason="transaction_active")
     if reason == "pie":
         raise _V2Error("PRECONDITION", "%s is refused while PIE runs (it would rewind the editor world under the game): "
                        "stop PIE first" % verb, reason="pie")

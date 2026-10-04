@@ -71,6 +71,9 @@ func (w *World) editorUndo(args map[string]any) (any, *OpError) {
 		return nil, &OpError{Code: "PRECONDITION", Message: "nothing to undo/redo"}
 	}
 	t := (*from)[len(*from)-1]
+	if op, ok := strings.CutPrefix(t.title, "untracked:"); ok {
+		return nil, &OpError{Code: "CONFLICT", Message: "the server's last edit (" + op + ") has no undo step", Details: map[string]any{"untracked": op}}
+	}
 	if !strings.HasPrefix(t.title, "MCP: ") {
 		return nil, &OpError{Code: "CONFLICT", Message: "the next step is not the server's: " + t.title, Details: map[string]any{"title": t.title}}
 	}
@@ -94,6 +97,13 @@ func (w *World) Install(e *Emulator) {
 	e.Handle("editor_status", w.editorStatus)
 	e.Handle("editor_ping", w.editorPing)
 	e.Handle("editor_undo", w.editorUndo)
+	e.Handle("note_edit", func(args map[string]any) (any, *OpError) {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		op, _ := args["op"].(string)
+		w.record("untracked:"+op, func() {}, func() {})
+		return map[string]any{"noted": true}, nil
+	})
 	e.Handle("list_actors", w.listActorsV1)
 	e.Handle("actor_query", w.actorQuery)
 	e.Handle("actor_spawn", w.actorSpawn)
@@ -275,7 +285,7 @@ func (w *World) actorSpawn(args map[string]any) (any, *OpError) {
 		}
 	}
 	w.editor[a.Path] = a
-	w.record("MCP: spawn "+label, func() { delete(w.editor, a.Path) }, func() { w.editor[a.Path] = a })
+	w.record("MCP: spawn "+class, func() { delete(w.editor, a.Path) }, func() { w.editor[a.Path] = a })
 	return map[string]any{"world": "editor", "spawned": view(a, "editor"), "property_errors": []any{}}, nil
 }
 

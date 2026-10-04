@@ -147,7 +147,11 @@ def _op_editor_ping(args):
         pie = bool(les.is_in_play_in_editor())
     except Exception:
         pass
-    return {"ok": True, "version": _MCP2_BRIDGE_VERSION, "pie": pie, "plugin_api": _plugin_api(), "t": time.time()}
+    try:
+        plugin_api = _plugin_api()
+    except Exception:
+        plugin_api = -1  # a broken plugin build: report it, never fail the liveness probe
+    return {"ok": True, "version": _MCP2_BRIDGE_VERSION, "pie": pie, "plugin_api": plugin_api, "t": time.time()}
 
 
 def _op_cockpit_info(args):

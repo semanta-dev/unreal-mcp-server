@@ -86,6 +86,12 @@ static FString MCPStepIfTitled(const FString& Prefix, bool bRedo)
 		// Undo during PIE would rewind the editor world under a running game.
 		return MCPResult(false, FString(), TEXT("pie"));
 	}
+	if (GEditor->IsTransactionActive())
+	{
+		// CanUndo is false while a transaction is open (a drag, a dialog edit): say so
+		// rather than "nothing to undo".
+		return MCPResult(false, FString(), TEXT("transaction_active"));
+	}
 	const bool bCan = bRedo ? Trans->CanRedo() : Trans->CanUndo();
 	if (!bCan)
 	{

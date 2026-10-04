@@ -46,7 +46,10 @@ func (r *scriptedRunner) RunCommand(_ context.Context, code string, mode uexec.E
 	}
 	if mode == uexec.ModeExecFile && strings.HasPrefix(body, "_mcp2_dispatch(") {
 		op, args := splitDispatch(body)
-		result := r.dispatch(op, args)
+		var result any
+		if r.dispatch != nil { // a runner scripted for raw snippets only answers ops with null
+			result = r.dispatch(op, args)
+		}
 		env, _ := json.Marshal(map[string]any{"ok": true, "result": result})
 		if r.fail != nil {
 			if code, msg, details := r.fail(op); code != "" {

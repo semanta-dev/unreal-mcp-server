@@ -161,7 +161,7 @@ describe) and **`data_edit`** (Mutating: `set_properties` on any asset, `table_u
 | R5.1 | **Event recorder in the plugin** (C++, never Python on the game thread): `UMCPEventRecorder` binds the engine hooks of the §5 matrix (world `OnActorSpawned`, per-actor `OnTakeAnyDamage`/`OnDestroyed` bound at spawn **and on every actor already in the world when recording starts** — placed nests, the core, the player; all bindings removed on disable and at PIE end), stamps world time, and writes a bounded ring buffer (drop count reported); the companion drains it per recorder tick (`DrainEvents(cursor)`) and merges game-journal events (G.1/G.2 `GetEventsSince`) into the playtest timeline; a plugin-buffer drop or a journal `gap` (G.6) becomes a **timeline gap** marker, and an audit or telemetry rubric over a range with a gap returns `insufficient_evidence`. Off unless the scenario enables it; `Needs: plugin>=8`, older plugin ⇒ engine-hook rows `unavailable` (audits then `insufficient_evidence`) | live Aesir playtest timeline has hit/kill/death/VFX/SFX events; drop count 0 on a 5-minute wave run; damage to a placed (pre-existing) actor is recorded; no bindings remain after PIE end |
 | R5.2 | Audits read a playtest result directly (`design_audit kind=feel source=<result>`) | live feel + decision audits on Aesir |
 | R5.3 | Telemetry rubric kinds `histogram`, `rate`, `time_between` (time-to-kill, deaths by cause, waves per minute) | eval tests + live |
-| R5.4 | Perf pass: `playtest op=run perf=true` — CsvProfiler with the recorder off, then `analyze perf`; rubric reads `perf.p95_frame_ms`; overhead of R5.1 measured here | live |
+| R5.4 | Perf pass: `playtest op=run perf=true` — CsvProfiler with the recorder off, then `analyze perf`; rubric reads `perf_csv.p95_frame_ms` (the CsvProfiler pass's own namespace — `perf.*` is rejected by the R0.7 lint); overhead of R5.1 measured here | live |
 | R5.5 | Seeded batches: `playtest op=batch seeds=[…]` (async), aggregate verdicts + variance; balance through the game's own headless tests (`headless op=tests`, e.g. poly-world `BalanceSweepTests`) | live batch of 5 seeds |
 
 ### R6 — Rollback (≈ 3 d; trimmed)
@@ -204,6 +204,7 @@ An audit whose evidence has no source for a game returns `insufficient_evidence`
 | `toolsets` description/enum: `world`, `game`, `data` entries (+ "game: unavailable" reason field) | +330 |
 | Core text renaming moved tools as "toolset `world`" (R0.1) | +80 |
 | **Net** | **≈ −1 800 → ~43.2 KB** |
+| *Measured after R0 (46 tools / 34 core)* | *41 818 B core (−3 165 B vs v2.0.2's 44 983 B); all toolsets 61 188 B* |
 
 New optional toolsets: `game` (`game`, `game_command`), `data` (`data_query`, `data_edit`), `world` (moved tools).
 Count pins: **50 tools / 34 core** after the plan (from 45 / 36). All toolsets ≤ 75 000 B (est. ~66 KB). Each phase

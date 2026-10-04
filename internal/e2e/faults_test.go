@@ -132,10 +132,25 @@ func TestDesignAuditRefusesMissingEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.WriteFile(frame, buf.Bytes(), 0o644)
-	os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(`{"source":"game_scene"}`), 0o644)
-	e := errorOf(t, h.call(t, "design_audit", map[string]any{"kind": "luminance", "input": map[string]any{"frame_paths": []any{frame}}}))
-	if d, _ := e["details"].(map[string]any); e["code"] != "PRECONDITION" || fmt.Sprint(d["missing"]) != "[source_exposure]" {
-		t.Fatalf("game_scene frames without source_exposure = %v", e)
+	lum := func(input map[string]any) map[string]any {
+		return errorOf(t, h.call(t, "design_audit", map[string]any{"kind": "luminance", "input": input}))
+	}
+	missing := func(e map[string]any) string {
+		d, _ := e["details"].(map[string]any)
+		return fmt.Sprintf("%v %v", e["code"], d["missing"])
+	}
+	// No manifest beside the frames: their exposure is unknown, so the caller says where
+	// they came from (fail closed).
+	if got := missing(lum(map[string]any{"frame_paths": []any{frame}})); got != "PRECONDITION [source]" {
+		t.Fatalf("frames without a manifest = %s", got)
+	}
+	if got := missing(lum(map[string]any{"frame_paths": []any{frame}, "source": "game_scene"})); got != "PRECONDITION [source_exposure]" {
+		t.Fatalf("declared game_scene frames without source_exposure = %s", got)
+	}
+	// The plugin's game_scene recorder writes this manifest (MCPCaptureSubsystem::BuildManifestJson): no "source".
+	os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(`{"dir":"x","session":"s","backend":"plugin","frame_count":1,"frames":[]}`), 0o644)
+	if got := missing(lum(map[string]any{"frame_paths": []any{frame}})); got != "PRECONDITION [source_exposure]" {
+		t.Fatalf("plugin game_scene frames without source_exposure = %s", got)
 	}
 	res := structured(t, h.call(t, "design_audit", map[string]any{"kind": "luminance",
 		"input": map[string]any{"frame_paths": []any{frame}, "source_exposure": "auto"}}))

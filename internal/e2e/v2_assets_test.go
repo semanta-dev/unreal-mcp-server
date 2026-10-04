@@ -186,12 +186,18 @@ func TestUndoOnlyStepsTheServersEdits(t *testing.T) {
 	}
 	before := count()
 	h.call(t, "actor_edit", map[string]any{"op": "spawn", "world": "editor", "class": "/Script/Engine.Actor", "label": "Undoable"})
-	if res := structured(t, h.call(t, "undo", map[string]any{"op": "undo"})); res["undone"] != "MCP: spawn Undoable" || count() != before {
+	if res := structured(t, h.call(t, "undo", map[string]any{"op": "undo"})); res["undone"] != "MCP: spawn /Script/Engine.Actor" || count() != before {
 		t.Fatalf("undo = %v (actors %d, want %d)", res, count(), before)
 	}
-	if res := structured(t, h.call(t, "undo", map[string]any{"op": "redo"})); res["redone"] != "MCP: spawn Undoable" || count() != before+1 {
+	if res := structured(t, h.call(t, "undo", map[string]any{"op": "redo"})); res["redone"] != "MCP: spawn /Script/Engine.Actor" || count() != before+1 {
 		t.Fatalf("redo = %v", res)
 	}
+	// A python run makes no undo step: undoing now would revert the spawn underneath it.
+	h.call(t, "python", map[string]any{"op": "run", "code": "pass"})
+	if e := errorOf(t, h.call(t, "undo", map[string]any{"op": "undo"})); e["code"] != "CONFLICT" || count() != before+1 {
+		t.Fatalf("undo after an untracked python edit = %v", e)
+	}
+	h.world.UserEdit("MCP: spawn later") // (fresh transaction on top)
 	h.world.UserEdit("Move Actor")
 	e := errorOf(t, h.call(t, "undo", map[string]any{"op": "undo"}))
 	if d, _ := e["details"].(map[string]any); e["code"] != "CONFLICT" || d["title"] != "Move Actor" || count() != before+1 {

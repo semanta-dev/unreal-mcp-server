@@ -5,6 +5,7 @@ _OPS = {
     "actor_spawn": _op_actor_spawn,
     "actor_delete": _op_actor_delete,
     "editor_undo": _op_editor_undo,
+    "note_edit": _op_note_edit,
     "actor_transform": _op_actor_transform,
     "actor_set_properties": _op_actor_set_properties,
     "actor_call": _op_actor_call,
@@ -153,6 +154,7 @@ def _mcp2_dispatch(op, b64args):
             _emit({"ok": False, "error": str(result["error"]), "code": code,
                    "retryable": code in _RETRYABLE_CODES, "details": result.get("details")})
             return
+        _note_op(op, args)
         _emit({"ok": True, "result": result})
     except _V2Error as e:  # a coded failure: no traceback (not a Python bug)
         _emit({"ok": False, "error": str(e), "code": e.code,

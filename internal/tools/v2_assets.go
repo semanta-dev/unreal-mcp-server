@@ -319,6 +319,7 @@ func assetImport(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 		if len(imported) == 0 && len(failed) > 0 {
 			return nil, withLog(envelope.New(envelope.OperationFailed, "no file imported").WithDetail("failed", failed), out)
 		}
+		out["undoable"] = false
 		return &spec.Result{Data: out, Summary: fmt.Sprintf("imported %d, failed %d", len(imported), len(failed))}, nil
 	case "reimport":
 		out, err := v2Op(ctx, c, "asset_reimport", map[string]any{"asset_path": in.Asset})

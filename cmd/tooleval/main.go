@@ -94,27 +94,23 @@ func main() {
 		for n := range projects {
 			names = append(names, n)
 		}
-		if errs := lintGameTasks(gts, names, 3, 8); len(errs) > 0 && *mode == "live-lint" {
+		// Structure errors are always fatal; the coverage rules apply to the whole file,
+		// so a -only subset is linted for structure alone.
+		minGoal, minMulti := 3, 8
+		if *only != "" {
+			minGoal, minMulti = 0, 0
+		}
+		gts, err = selectGameTasks(gts, *only)
+		must(err)
+		if errs := lintGameTasks(gts, names, minGoal, minMulti); len(errs) > 0 {
 			for _, e := range errs {
 				fmt.Println(e)
 			}
 			os.Exit(1)
-		} else if *mode == "live-lint" {
+		}
+		if *mode == "live-lint" {
 			fmt.Printf("%d game tasks: OK\n", len(gts))
 			return
-		}
-		if *only != "" {
-			keep := map[string]bool{}
-			for _, id := range strings.Split(*only, ",") {
-				keep[id] = true
-			}
-			var sel []*gameTask
-			for _, t := range gts {
-				if keep[t.ID] {
-					sel = append(sel, t)
-				}
-			}
-			gts = sel
 		}
 		cl := apiClient(*keyFile)
 		o := liveOpts{server: *server, serverArgs: strings.Fields(*serverArgs), projects: projects, ports: kv(*portsFlag),

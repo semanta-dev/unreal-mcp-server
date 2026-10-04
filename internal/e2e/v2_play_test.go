@@ -215,3 +215,15 @@ func TestPieWaitReturnsWhenPIEStops(t *testing.T) {
 		t.Fatalf("wait after PIE stopped = %v", res)
 	}
 }
+
+// TestMovedWorldToolsNeedTheirToolset (R0.1): scene, scene_clear and world_query left
+// core; without toolset world a call is PRECONDITION with the enable hint.
+func TestMovedWorldToolsNeedTheirToolset(t *testing.T) {
+	h := startHarness(t, harnessOpts{})
+	for _, tool := range []string{"scene", "scene_clear", "world_query"} {
+		e := errorOf(t, h.call(t, tool, map[string]any{"op": "preview"}))
+		if e["code"] != "PRECONDITION" || !strings.Contains(fmt.Sprint(e["hint"]), "toolset=world") {
+			t.Fatalf("%s without toolset world = %v", tool, e)
+		}
+	}
+}

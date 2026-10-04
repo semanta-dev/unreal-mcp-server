@@ -96,6 +96,11 @@ func everyOp(t *testing.T, native bool) {
 					h.world.StartPIE()
 					defer h.world.StopPIE()
 				}
+				if cell == "undo/undo" {
+					// Earlier cells (python, asset edits) made untracked edits, after which
+					// undo correctly refuses: give it a fresh server step to undo.
+					h.call(t, "actor_edit", map[string]any{"op": "spawn", "world": "editor", "class": "/Script/Engine.Actor", "label": "UndoMe"})
+				}
 				args := opArgs(sp, op, dir, png)
 				res := h.call(t, name, args)
 				cells++

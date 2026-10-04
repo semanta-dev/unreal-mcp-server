@@ -122,3 +122,56 @@ def test_editor_undo_maps_the_plugin_verdicts(v2, ue):
         assert not env["ok"] and env["code"] == code, (reason, env)
     ue.MCPCoreLibrary = _NS(get_plugin_api_version=lambda: 2)
     assert call(v2, "editor_undo", {})["code"] == "PLUGIN_MISSING"
+
+
+def test_undo_journal_refuses_to_step_past_untracked_edits(v2, ue):
+    # Reviewer R0 #7: an edit with no undo step (asset edit, python, console) sits on top
+    # of the server's last transaction; undoing would revert that older transaction
+    # underneath it, so the companion refuses. The journal also passes the exact title.
+    m = v2["_mcp2"]
+    del m._MCP_EDITS[:]
+    del m._MCP_REDO[:]
+    seen = []
+
+    def step(prefix):
+        seen.append(prefix)
+        return '{"ok": true, "title": "%s"}' % prefix
+    ue.MCPCoreLibrary = _NS(get_plugin_api_version=lambda: 3, undo_if_titled=step, redo_if_titled=step)
+    m._pie_running = lambda: False
+    m._note_edit("tx", "MCP: spawn A")
+    m._note_op("asset_edit", {})
+    env = call(v2, "editor_undo", {})
+    assert env["code"] == "CONFLICT" and env["details"]["untracked"] == "asset_edit", env
+    assert seen == []
+    m._note_edit("tx", "MCP: spawn B")
+    assert call(v2, "editor_undo", {})["result"] == {"undone": "MCP: spawn B"}
+    assert seen == ["MCP: spawn B"]  # the exact step, not just the prefix
+    assert call(v2, "editor_undo", {"redo": True})["result"] == {"redone": "MCP: spawn B"}
+    # A python run (reported by the server) blocks undo the same way.
+    assert call(v2, "note_edit", {"op": "python"})["ok"]
+    assert call(v2, "editor_undo", {})["code"] == "CONFLICT"
+    # Opening a level starts a new undo buffer; in PIE, world ops don't touch the level.
+    m._note_op("open_level", {})
+    assert m._MCP_EDITS == []
+    m._pie_running = lambda: True
+    m._note_op("console", {})
+    assert m._MCP_EDITS == []
+    # An empty journal (module reinstalled) falls back to the prefix check.
+    assert call(v2, "editor_undo", {})["ok"] and seen[-1] == "MCP: "
+
+
+def test_transaction_records_a_journal_step(v2, ue):
+    m = v2["_mcp2"]
+    del m._MCP_EDITS[:]
+    with m._transaction("MCP: scene arena"):
+        pass
+    assert m._MCP_EDITS == [("tx", "MCP: scene arena")]
+
+
+def test_editor_ping_survives_a_broken_plugin(v2, ue):
+    # Reviewer R0 #12: a plugin whose handshake raises must not make the editor look dead.
+    def boom():
+        raise RuntimeError("bad plugin")
+    ue.MCPCoreLibrary = _NS(get_plugin_api_version=boom)
+    env = call(v2, "editor_ping", {})
+    assert env["ok"] and env["result"]["plugin_api"] == -1

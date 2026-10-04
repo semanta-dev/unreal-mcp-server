@@ -181,7 +181,7 @@ Call a UFUNCTION on an actor in the running game (PIE) and return its result. Wi
 
 _tier destructive_
 
-Step the editor's undo buffer (editor world; refused during PIE). Acts only when the next step is the server's own (title "MCP: …"): a human's edit on top is CONFLICT and nothing changes. Covers actor_edit, scene, snapshot_restore; asset_create/asset_edit/widget_edit are not undoable (undoable:false — use git_revert).
+Step the editor's undo buffer (editor world; refused during PIE). Acts only when the next step is the server's own (title "MCP: …"): a human's edit on top is CONFLICT and nothing changes. Covers actor_edit, scene, snapshot_restore. Results with undoable:false (asset, widget, python, console edits) make no undo step: after one, undo is CONFLICT (it would revert an older edit underneath) — use snapshot_restore or git_revert.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -900,7 +900,7 @@ Deterministic design audits over evidence you already captured (offline, read-on
 - decision: {points: [...]} — decision points of a play session (no recorder source yet: you build them)
 - feel: {events: [...], within_ms? (120), max_fx_per_event? (4)} — gameplay events with VFX/SFX/camera response times (no recorder source yet: you build them)
 - in_motion: {samples: [...]} — motion samples (a playtest timeline's tracked actors)
-- luminance: {frame_paths: [...], source_exposure?} — captured frames; game_scene frames need source_exposure
+- luminance: {frame_paths: [...], source?, source_exposure?} — captured frames (source needed without a capture manifest); game_scene frames need source_exposure
 - novelty: {trace, max_dead_stretch?} — new elements over a session (you build the trace)
 - primitive: {scene: {level, actors: [...]}} — a level's actors (actor_query)
 - render: {config, timeline? | timeline_path?} — DefaultEngine.ini map settings, optionally a playtest timeline

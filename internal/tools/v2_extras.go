@@ -263,7 +263,7 @@ var designAudits = map[string]struct {
 		auditOf(func(in audioAuditIn) any { return audit.AudioAuditDefault(in.Track, in.Events) })},
 	"utilization": {"{inventory}", "a pack's assets and the subset the build references",
 		auditOf(func(in assetUtilizationIn) any { return audit.Utilization(in.Inventory) })},
-	"luminance": {"{frame_paths: [...], source_exposure?}", "captured frames; game_scene frames need source_exposure",
+	"luminance": {"{frame_paths: [...], source?, source_exposure?}", "captured frames (source needed without a capture manifest); game_scene frames need source_exposure",
 		luminanceAudit},
 	"style": {"{frame_paths: [...]}", "captured frames (capture, screenshot)",
 		framesAudit(visual.AnalyzeStyleFrames)},
@@ -389,6 +389,7 @@ func framesAudit[R any](f func([]audit.Frame) ([]R, R, error)) func([]byte) (any
 func luminanceAudit(raw []byte) (any, error) {
 	var in struct {
 		FramePaths     []string `json:"frame_paths"`
+		Source         string   `json:"source"`
 		SourceExposure string   `json:"source_exposure"`
 	}
 	if err := strictDecode(raw, &in); err != nil {
@@ -397,7 +398,16 @@ func luminanceAudit(raw []byte) (any, error) {
 	if len(in.FramePaths) == 0 {
 		return nil, insufficientEvidence([]string{"frame_paths"}, "no frames")
 	}
-	if captureSources(in.FramePaths)["game_scene"] && in.SourceExposure == "" {
+	sources, unknown := captureSources(in.FramePaths)
+	if unknown && in.Source == "" {
+		// Fail closed: without a capture manifest the frames' exposure is unknown.
+		return nil, insufficientEvidence([]string{"source"}, "some frames have no capture manifest beside them: "+
+			"say where they came from (source: pie_highres | scene_capture | game_scene | screenshot)")
+	}
+	if in.Source != "" {
+		sources[in.Source] = true
+	}
+	if sources["game_scene"] && in.SourceExposure == "" {
 		return nil, insufficientEvidence([]string{"source_exposure"}, "game_scene frames use the capture's own "+
 			"exposure, not the game's: state it in source_exposure (e.g. \"auto\", \"manual EV 1.5\"), or audit "+
 			"frames captured with source=pie_highres")
@@ -414,10 +424,13 @@ func luminanceAudit(raw []byte) (any, error) {
 }
 
 // captureSources reads the capture manifest beside the frames (capture writes one per
-// session directory) and returns the capture sources it names.
-func captureSources(paths []string) map[string]bool {
+// session directory) and returns the sources found, and whether any frame's directory
+// has no readable manifest. The Python recorder writes "source"; the plugin's
+// game_scene recorder writes "backend": "plugin" and no source.
+func captureSources(paths []string) (map[string]bool, bool) {
 	out := map[string]bool{}
 	seen := map[string]bool{}
+	unknown := false
 	for _, p := range paths {
 		dir := filepath.Dir(p)
 		if seen[dir] {
@@ -426,16 +439,25 @@ func captureSources(paths []string) map[string]bool {
 		seen[dir] = true
 		b, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
 		if err != nil {
+			unknown = true
 			continue
 		}
 		var m struct {
-			Source string `json:"source"`
+			Source  string `json:"source"`
+			Backend string `json:"backend"`
 		}
-		if json.Unmarshal(b, &m) == nil && m.Source != "" {
+		switch {
+		case json.Unmarshal(b, &m) != nil:
+			unknown = true
+		case m.Backend == "plugin":
+			out["game_scene"] = true
+		case m.Source != "":
 			out[m.Source] = true
+		default:
+			unknown = true
 		}
 	}
-	return out
+	return out, unknown
 }
 
 type designAuditIn struct {

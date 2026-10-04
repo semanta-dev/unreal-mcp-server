@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -83,6 +84,16 @@ func Lint(specs []*Spec) []string {
 					add("%s op=%q: declared %s but reaches %s (worst %s); declare ≥ %s or Reject its escalating args",
 						s.Name, op.Name, op.Tier, py, w, w)
 				}
+				if p.Plugin > 0 && neededPlugin(op.Needs) < p.Plugin {
+					add("%s op=%q: reaches %s, which needs plugin API %d: declare Needs \"plugin>=%d\"", s.Name, op.Name, py, p.Plugin, p.Plugin)
+				}
+			}
+		}
+		for i := range s.Ops {
+			for _, n := range s.Ops[i].Needs {
+				if !needsVocab[n] && !pluginNeed.MatchString(n) {
+					add("%s op=%q: unknown Needs %q (want pie, plugin, plugin>=N, navmesh, project or engine)", s.Name, s.Ops[i].Name, n)
+				}
 			}
 		}
 		if hasDanger && hasLow {
@@ -91,6 +102,24 @@ func Lint(specs []*Spec) []string {
 	}
 	sort.Strings(v)
 	return v
+}
+
+var (
+	needsVocab = map[string]bool{"pie": true, "plugin": true, "navmesh": true, "project": true, "engine": true}
+	pluginNeed = regexp.MustCompile(`^plugin>=([1-9][0-9]*)$`)
+)
+
+// neededPlugin is the plugin API an op's Needs declares (0 when none).
+func neededPlugin(needs []string) int {
+	best := 0
+	for _, n := range needs {
+		if m := pluginNeed.FindStringSubmatch(n); m != nil {
+			if v, _ := strconv.Atoi(m[1]); v > best {
+				best = v
+			}
+		}
+	}
+	return best
 }
 
 // rejectsEscalations reports whether op's base tier covers p's base tier and op

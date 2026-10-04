@@ -120,6 +120,9 @@ type toolCall struct {
 	Tool  string         `json:"tool"`
 	Args  map[string]any `json:"args"`
 	Error string         `json:"error,omitempty"` // envelope code when the call failed
+	// Job is the job an async call started; JobState its final state (live eval).
+	Job      string `json:"job,omitempty"`
+	JobState string `json:"job_state,omitempty"`
 }
 
 // evaluate returns the failed checks (empty = success).

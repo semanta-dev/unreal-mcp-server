@@ -5,8 +5,8 @@
 Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN.md)).
 
 ### Behaviour changes
-- `scene`, `scene_clear` and `world_query` moved from core to the new optional toolset **`world`** (core is now 33
-  tools, ~40.7 KB, leaving room for the plan's additions). Enable it with `toolsets op=enable toolset=world`, a
+- `scene`, `scene_clear` and `world_query` moved from core to the new optional toolset **`world`** (the move
+  freed ~4.3 KB of core tools/list for the plan's additions; `TestToolListBudgets` pins the counts). Enable it with `toolsets op=enable toolset=world`, a
   project's `.umcp.json` `"toolsets": ["world"]`, or `-toolsets world`; calling a moved tool without it returns
   `PRECONDITION` with that hint.
 - `playtest op=run`: a crash or a failed setup step / beat now **fails** the run even when the rubric passes (the
@@ -25,8 +25,10 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
 ### Added
 - **`undo`** (core, destructive): `op=undo|redo` steps the editor's undo buffer only when the next step is the
   server's own edit (titled `MCP: …`); a human's edit on top is `CONFLICT` with its title and nothing changes; refused
-  during PIE. The title check and the step are one plugin call. `asset_create`, `asset_edit` and `widget_edit` results
-  say `undoable: false` (they open no transaction — roll back with `git_revert`).
+  during PIE. The title check and the step are one plugin call. Edits that make no undo step (`asset_create`,
+  `asset_edit`, `asset_import`, `widget_edit`, `python`, `console`, `level op=set_world_gamemode`) say
+  `undoable: false`, and after one `undo` is `CONFLICT` (it would revert an older edit underneath) — roll back with
+  `snapshot_restore` or `git_revert`.
 - **Plugin API handshake**: the UnrealMCP plugin reports its API version (`UMCPCoreLibrary::GetPluginApiVersion`, now
   3); `editor op=health` returns `plugin_api` and takes `expect_plugin`; ops that need a newer plugin fail with
   `PRECONDITION` (`editor_code: PLUGIN_MISSING`, `details.needed`/`have`). API 3 also adds `IsPureOrConst`,

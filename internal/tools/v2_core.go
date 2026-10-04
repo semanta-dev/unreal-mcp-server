@@ -224,7 +224,7 @@ type pythonIn struct {
 func pythonSpec() *spec.Spec {
 	ops := []spec.OpSpec{
 		{Name: "run", Summary: "execute Python (or evaluate one expression)", Tier: spec.Exec, Timeout: sync25,
-			Required: []string{"code"}, Rejects: []string{"path", "clean_slate", "save"}},
+			Required: []string{"code"}, Rejects: []string{"path", "clean_slate", "save"}, Reaches: []string{"note_edit"}},
 		{Name: "recipe", Summary: "run a level-recipe file (clean_slate=true wipes the level first)", Tier: spec.Exec, Timeout: sync25,
 			Required: []string{"path"}, Rejects: []string{"code", "evaluate"}, Reaches: []string{"apply_level_recipe"}},
 	}
@@ -250,14 +250,19 @@ func pythonSpec() *spec.Spec {
 			if err != nil {
 				return nil, err
 			}
+			// Python may change the level with no undo step: the companion's undo journal
+			// must know, so a later undo does not revert an older edit underneath it.
+			noteEdit := func() { _, _ = v2Op(context.WithoutCancel(ctx), c, "note_edit", map[string]any{"op": "python"}) }
 			if in.Evaluate {
 				v, err := b.Eval(ctx, in.Code)
 				if err != nil {
 					return nil, pythonFailure(err)
 				}
-				return &spec.Result{Data: map[string]any{"value": v}, Summary: v}, nil
+				noteEdit()
+				return &spec.Result{Data: map[string]any{"value": v, "undoable": false}, Summary: v}, nil
 			}
 			res, err := b.RunPython(ctx, in.Code, uexec.ModeExecFile)
+			noteEdit() // even a failed script may have changed things before it raised
 			if err != nil {
 				return nil, err
 			}
@@ -265,7 +270,7 @@ func pythonSpec() *spec.Spec {
 			if !res.Success {
 				return nil, envelope.New(envelope.PythonError, "the script raised an error").WithDetail("output", out)
 			}
-			return &spec.Result{Data: map[string]any{"output": out}, Summary: out}, nil
+			return &spec.Result{Data: map[string]any{"output": out, "undoable": false}, Summary: out}, nil
 		},
 	}
 }
@@ -308,6 +313,7 @@ func consoleSpec() *spec.Spec {
 				lines = append(lines, strings.TrimRight(e.Output, "\r\n"))
 			}
 			out["output"] = lines
+			out["undoable"] = false // a console command makes no undo step
 			summary := fmt.Sprintf("ran %q in %s", in.Command, in.World)
 			if len(lines) > 0 {
 				summary += ":\n" + strings.Join(lines, "\n")
@@ -359,7 +365,11 @@ func levelSpec() *spec.Spec {
 				return &spec.Result{Data: out, Summary: "saved all dirty packages"}, err
 			}
 			out, err := v2Op(ctx, c, "set_world_gamemode", map[string]any{"class_path": in.Class})
-			return &spec.Result{Data: out, Summary: "world GameMode set to " + in.Class}, err
+			if err != nil {
+				return nil, err
+			}
+			out["undoable"] = false
+			return &spec.Result{Data: out, Summary: "world GameMode set to " + in.Class}, nil
 		},
 	}
 }
@@ -458,7 +468,8 @@ func undoSpec() *spec.Spec {
 		Name: "undo", Title: "Undo the server's edits", Toolset: spec.Core, Timeout: sync15, Max: sync28, Ops: ops,
 		Description: "Step the editor's undo buffer (editor world; refused during PIE). Acts only when the next step is " +
 			"the server's own (title \"MCP: …\"): a human's edit on top is CONFLICT and nothing changes. Covers actor_edit, " +
-			"scene, snapshot_restore; asset_create/asset_edit/widget_edit are not undoable (undoable:false — use git_revert).",
+			"scene, snapshot_restore. Results with undoable:false (asset, widget, python, console edits) make no undo step: " +
+			"after one, undo is CONFLICT (it would revert an older edit underneath) — use snapshot_restore or git_revert.",
 		Schema: spec.SchemaFor[undoIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			out, err := v2Op(ctx, c, "editor_undo", map[string]any{"redo": c.Op.Name == "redo"})

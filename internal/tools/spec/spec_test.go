@@ -162,11 +162,14 @@ func TestLintRules(t *testing.T) {
 		{Name: "unk", Max: time.Second, Ops: []OpSpec{{Tier: Mutating, Reaches: []string{"no_such_op"}}}},
 		{Name: "dup_a", Description: "same words", Max: time.Second, Ops: []OpSpec{{Tier: ReadOnly}}},
 		{Name: "dup_b", Description: "same words", Max: time.Second, Ops: []OpSpec{{Tier: ReadOnly}}},
+		{Name: "badneeds", Description: "needs typo", Max: time.Second, Ops: []OpSpec{{Tier: ReadOnly, Needs: []string{"plugn"}}}},
+		{Name: "undoer", Description: "undoes", Max: time.Second, Ops: []OpSpec{{Tier: Destructive, Reaches: []string{"editor_undo"}, Needs: []string{"plugin>=2"}}}},
 		{Name: "autowrite", Max: time.Second, Ops: []OpSpec{{Tier: Mutating}},
 			Schema: &jsonschema.Schema{Type: "object", Properties: map[string]*jsonschema.Schema{"world": {Type: "string", Enum: []any{"editor", "auto"}}}}},
 	}
 	v := strings.Join(Lint(bad), "\n")
-	for _, want := range []string{"BadName: tool name", "slow op=\"\": sync op", "mixed: destructive/exec op mixed", "under op=\"\": declared mutating but reaches widget_compose", "unclassified python op", "autowrite: world=auto on a mutating tool", "dup_b: same description as dup_a", "slow: empty description"} {
+	for _, want := range []string{"BadName: tool name", "slow op=\"\": sync op", "mixed: destructive/exec op mixed", "under op=\"\": declared mutating but reaches widget_compose", "unclassified python op", "autowrite: world=auto on a mutating tool", "dup_b: same description as dup_a", "slow: empty description",
+		`badneeds op="": unknown Needs "plugn"`, `undoer op="": reaches editor_undo, which needs plugin API 3`} {
 		if !strings.Contains(v, want) {
 			t.Errorf("lint missed %q in:\n%s", want, v)
 		}

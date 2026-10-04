@@ -1,18 +1,42 @@
 {
-  "prelude": "import json, os\nimport unreal\n\ndef _gw():\n    return unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_game_world()\n\ndef _sub(cls_name):\n    w = _gw()\n    c = getattr(unreal, cls_name, None)\n    if not (w and c):\n        return None\n    return unreal.MCPCoreLibrary.find_game_subsystem(w, c.static_class())\n\ndef _gs():\n    w = _gw()\n    return unreal.GameplayStatics.get_game_state(w) if w else None\n\ndef _count(cls_name):\n    w = _gw()\n    c = getattr(unreal, cls_name, None)\n    if not (w and c):\n        return 0\n    return len(unreal.GameplayStatics.get_all_actors_of_class(w, c))\n\ndef _rows(path):\n    dt = unreal.load_asset(path)\n    if not dt:\n        return {}\n    return {r.get('Name'): r for r in json.loads(unreal.DataTableFunctionLibrary.export_data_table_to_json_string(dt))}\n\ndef _base_path():\n    return os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir()), 'gameeval_baseline.json')\n\ndef _save_base(d):\n    with open(_base_path(), 'w') as f:\n        json.dump(d, f)\n\ndef _base():\n    try:\n        with open(_base_path()) as f:\n            return json.load(f)\n    except Exception:\n        return {}\n\ndef _pw_snapshot():\n    s = _sub('PolyWorldAgentSubsystem')\n    if not s:\n        return {}\n    f = getattr(s, 'peek_snapshot_json', None) or s.get_snapshot_json\n    return json.loads(f())\n\ndef _aesir_snapshot():\n    s = _sub('AesirAgentSubsystem')\n    return json.loads(s.get_snapshot_json()) if s else {}\n\ndef _events(cls_name):\n    s = _sub(cls_name)\n    return json.loads(s.get_events_since(0)).get('events', []) if s else []\n\ndef RESULT(d):\n    print('RESULT ' + json.dumps(d, default=str))\n",
+  "prelude": "import json, os\nimport unreal\n\ndef _gw():\n    return unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_game_world()\n\ndef _sub(cls_name):\n    w = _gw()\n    c = getattr(unreal, cls_name, None)\n    if not (w and c):\n        return None\n    return unreal.MCPCoreLibrary.find_game_subsystem(w, c.static_class())\n\ndef _gs():\n    w = _gw()\n    return unreal.GameplayStatics.get_game_state(w) if w else None\n\ndef _count(cls_name):\n    w = _gw()\n    c = getattr(unreal, cls_name, None)\n    if not (w and c):\n        return 0\n    return len(unreal.GameplayStatics.get_all_actors_of_class(w, c))\n\ndef _rows(path):\n    dt = unreal.load_asset(path)\n    if not dt:\n        return {}\n    return {r.get('Name'): r for r in json.loads(unreal.DataTableFunctionLibrary.export_data_table_to_json_string(dt))}\n\ndef _base_path():\n    return os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir()), 'gameeval_baseline.json')\n\ndef _save_base(d):\n    with open(_base_path(), 'w') as f:\n        json.dump(d, f)\n\ndef _base():\n    try:\n        with open(_base_path()) as f:\n            return json.load(f)\n    except Exception:\n        return {}\n\ndef _pw_snapshot():\n    s = _sub('PolyWorldAgentSubsystem')\n    if not s:\n        return {}\n    f = getattr(s, 'peek_snapshot_json', None) or s.get_snapshot_json\n    return json.loads(f())\n\ndef _aesir_snapshot():\n    s = _sub('AesirAgentSubsystem')\n    return json.loads(s.get_snapshot_json()) if s else {}\n\ndef _events(cls_name):\n    s = _sub(cls_name)\n    return json.loads(s.get_events_since(0)).get('events', []) if s else []\n\ndef RESULT(d):\n    print('RESULT ' + json.dumps(d, default=str))\n\nimport glob, statistics\n\ndef _mcp_saved(*parts):\n    return os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir()), 'MCP', *parts)\n\ndef _newest(pattern):\n    files = glob.glob(pattern)\n    return max(files, key=os.path.getmtime) if files else None\n\ndef _latest_playtest():\n    # R5 contract: playtest op=run writes <capture session>/playtest.json with its events\n    p = _newest(_mcp_saved('capture', '*', 'playtest.json'))\n    return json.load(open(p)) if p else {}\n\ndef _latest_batch():\n    # R5 contract: playtest op=batch writes Saved/MCP/playtest/batch-<id>.json\n    p = _newest(_mcp_saved('playtest', 'batch-*.json'))\n    return json.load(open(p)) if p else {}\n",
   "tasks": [
     {
       "id": "aesir_wave_status",
       "goal": "G2",
       "project": "aesir",
       "prompt": "Start the game in the editor (Play In Editor) and tell me which wave it is and how many enemies remain. Use the game's own interface, not Python.",
-      "requires": ["G", "R1"],
+      "requires": [
+        "G",
+        "R1"
+      ],
       "no_python": true,
       "checks": [
-        {"name": "state", "probe": "gs = _gs()\nRESULT({'pie': _gw() is not None, 'wave': gs.get_editor_property('wave_number') if gs else None, 'enemies': gs.get_editor_property('enemies_remaining') if gs else None})",
-         "expect": [{"path": "pie", "op": "eq", "value": true}]},
-        {"name": "used_game_api", "called": {"tool": "game", "op": "snapshot"}},
-        {"name": "answer_wave", "answer": {"from": "state.wave", "tolerance": 0}}
+        {
+          "name": "state",
+          "probe": "gs = _gs()\nRESULT({'pie': _gw() is not None, 'wave': gs.get_editor_property('wave_number') if gs else None, 'enemies': gs.get_editor_property('enemies_remaining') if gs else None})",
+          "expect": [
+            {
+              "path": "pie",
+              "op": "eq",
+              "value": true
+            }
+          ]
+        },
+        {
+          "name": "used_game_api",
+          "called": {
+            "tool": "game",
+            "op": "snapshot"
+          }
+        },
+        {
+          "name": "answer_wave",
+          "answer": {
+            "from": "state.wave",
+            "tolerance": 0
+          }
+        }
       ]
     },
     {
@@ -20,13 +44,35 @@
       "goal": "G2",
       "project": "aesir",
       "prompt": "In play, start the next wave immediately instead of waiting for the intermission timer, then confirm that enemies are on the field.",
-      "requires": ["G", "R1"],
+      "requires": [
+        "G",
+        "R1"
+      ],
       "no_python": true,
       "multi_step": true,
       "checks": [
-        {"name": "wave", "probe": "gs = _gs()\nRESULT({'wave': gs.get_editor_property('wave_number') if gs else 0, 'enemies': _count('EnemyCharacter')})",
-         "expect": [{"path": "wave", "op": "gte", "value": 1}, {"path": "enemies", "op": "gte", "value": 1}]},
-        {"name": "commanded", "called": {"tool": "game_command"}}
+        {
+          "name": "wave",
+          "probe": "gs = _gs()\nRESULT({'wave': gs.get_editor_property('wave_number') if gs else 0, 'enemies': _count('EnemyCharacter')})",
+          "expect": [
+            {
+              "path": "wave",
+              "op": "gte",
+              "value": 1
+            },
+            {
+              "path": "enemies",
+              "op": "gte",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "name": "commanded",
+          "called": {
+            "tool": "game_command"
+          }
+        }
       ]
     },
     {
@@ -34,12 +80,29 @@
       "goal": "G2",
       "project": "polyworld",
       "prompt": "Start PolyWorld in the editor and report the company's current capital and net worth, as the game reports them.",
-      "requires": ["G", "R1"],
+      "requires": [
+        "G",
+        "R1"
+      ],
       "no_python": true,
       "checks": [
-        {"name": "snap", "probe": "s = _pw_snapshot()\nRESULT({'capital': s.get('capital'), 'net_worth': s.get('net_worth')})",
-         "expect": [{"path": "capital", "op": "exists"}]},
-        {"name": "answer_capital", "answer": {"from": "snap.capital", "tolerance": 1}}
+        {
+          "name": "snap",
+          "probe": "s = _pw_snapshot()\nRESULT({'capital': s.get('capital'), 'net_worth': s.get('net_worth')})",
+          "expect": [
+            {
+              "path": "capital",
+              "op": "exists"
+            }
+          ]
+        },
+        {
+          "name": "answer_capital",
+          "answer": {
+            "from": "snap.capital",
+            "tolerance": 1
+          }
+        }
       ]
     },
     {
@@ -47,19 +110,57 @@
       "goal": "G2",
       "project": "polyworld",
       "prompt": "In PolyWorld (playing in the editor), advance the simulation by 10 cycles and tell me the company's profit per cycle afterwards.",
-      "requires": ["G", "R1"],
+      "requires": [
+        "G",
+        "R1"
+      ],
       "no_python": true,
       "multi_step": true,
       "setup": [
-        {"tool": "pie", "args": {"op": "start", "wait": true}},
-        {"tool": "python", "args": {"op": "run", "code": "_save_base({'cycle': _pw_snapshot().get('cycle', 0)})\nRESULT({'ok': True})"}}
+        {
+          "tool": "pie",
+          "args": {
+            "op": "start",
+            "wait": true
+          }
+        },
+        {
+          "tool": "python",
+          "args": {
+            "op": "run",
+            "code": "_save_base({'cycle': _pw_snapshot().get('cycle', 0)})\nRESULT({'ok': True})"
+          }
+        }
       ],
       "checks": [
-        {"name": "snap", "probe": "s = _pw_snapshot()\nRESULT({'cycle': s.get('cycle', 0), 'start': _base().get('cycle', 0), 'profit': s.get('profit_per_cycle')})",
-         "expect": [{"path": "profit", "op": "exists"}]},
-        {"name": "advanced", "probe": "s = _pw_snapshot()\nRESULT({'delta': s.get('cycle', 0) - _base().get('cycle', 0)})",
-         "expect": [{"path": "delta", "op": "gte", "value": 10}]},
-        {"name": "answer_profit", "answer": {"from": "snap.profit", "tolerance": 1}}
+        {
+          "name": "snap",
+          "probe": "s = _pw_snapshot()\nRESULT({'cycle': s.get('cycle', 0), 'start': _base().get('cycle', 0), 'profit': s.get('profit_per_cycle')})",
+          "expect": [
+            {
+              "path": "profit",
+              "op": "exists"
+            }
+          ]
+        },
+        {
+          "name": "advanced",
+          "probe": "s = _pw_snapshot()\nRESULT({'delta': s.get('cycle', 0) - _base().get('cycle', 0)})",
+          "expect": [
+            {
+              "path": "delta",
+              "op": "gte",
+              "value": 10
+            }
+          ]
+        },
+        {
+          "name": "answer_profit",
+          "answer": {
+            "from": "snap.profit",
+            "tolerance": 1
+          }
+        }
       ]
     },
     {
@@ -67,12 +168,31 @@
       "goal": "G3",
       "project": "aesir",
       "prompt": "Play Aesir as a player would: start a wave, then aim at the nearest enemy with the mouse and shoot it until it dies. No cheats, no console commands, no spawning or editing actors.",
-      "requires": ["G", "R2"],
+      "requires": [
+        "G",
+        "R2"
+      ],
       "multi_step": true,
       "checks": [
-        {"name": "kills", "probe": "ev = _events('AesirAgentSubsystem')\nRESULT({'player_kills': len([e for e in ev if e.get('kind') == 'kill' and e.get('by_player')])})",
-         "expect": [{"path": "player_kills", "op": "gte", "value": 1}]},
-        {"name": "aimed", "called": {"tool": "pie", "op": "input", "min": 2}}
+        {
+          "name": "kills",
+          "probe": "ev = _events('AesirAgentSubsystem')\nRESULT({'player_kills': len([e for e in ev if e.get('kind') == 'kill' and e.get('by_player')])})",
+          "expect": [
+            {
+              "path": "player_kills",
+              "op": "gte",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "name": "aimed",
+          "called": {
+            "tool": "pie",
+            "op": "input",
+            "min": 2
+          }
+        }
       ]
     },
     {
@@ -80,15 +200,48 @@
       "goal": "G3",
       "project": "aesir",
       "prompt": "While playing Aesir, switch to the shotgun the way a player would (keyboard), fire it once, and tell me how much shotgun ammo is left.",
-      "requires": ["G", "R2"],
+      "requires": [
+        "G",
+        "R2"
+      ],
       "multi_step": true,
       "checks": [
-        {"name": "weapon", "probe": "p = _aesir_snapshot().get('player', {})\nRESULT({'weapon': p.get('weapon'), 'ammo': p.get('ammo'), 'max': p.get('max_ammo')})",
-         "expect": [{"path": "weapon", "op": "contains", "value": "Shotgun"}]},
-        {"name": "fired", "probe": "p = _aesir_snapshot().get('player', {})\nRESULT({'spent': (p.get('max_ammo') or 0) - (p.get('ammo') or 0)})",
-         "expect": [{"path": "spent", "op": "gte", "value": 1}]},
-        {"name": "keyboard", "called": {"tool": "pie", "op": "input"}},
-        {"name": "answer_ammo", "answer": {"from": "weapon.ammo", "tolerance": 0}}
+        {
+          "name": "weapon",
+          "probe": "p = _aesir_snapshot().get('player', {})\nRESULT({'weapon': p.get('weapon'), 'ammo': p.get('ammo'), 'max': p.get('max_ammo')})",
+          "expect": [
+            {
+              "path": "weapon",
+              "op": "contains",
+              "value": "Shotgun"
+            }
+          ]
+        },
+        {
+          "name": "fired",
+          "probe": "p = _aesir_snapshot().get('player', {})\nRESULT({'spent': (p.get('max_ammo') or 0) - (p.get('ammo') or 0)})",
+          "expect": [
+            {
+              "path": "spent",
+              "op": "gte",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "name": "keyboard",
+          "called": {
+            "tool": "pie",
+            "op": "input"
+          }
+        },
+        {
+          "name": "answer_ammo",
+          "answer": {
+            "from": "weapon.ammo",
+            "tolerance": 0
+          }
+        }
       ]
     },
     {
@@ -96,16 +249,46 @@
       "goal": "G3",
       "project": "polyworld",
       "prompt": "Play PolyWorld as a player would, with the mouse only: pick a building from the build menu and place it on a free tile next to a road in the home city.",
-      "requires": ["G", "R2"],
+      "requires": [
+        "G",
+        "R2"
+      ],
       "multi_step": true,
       "setup": [
-        {"tool": "pie", "args": {"op": "start", "wait": true}},
-        {"tool": "python", "args": {"op": "run", "code": "_save_base({'buildings': len(_pw_snapshot().get('buildings', []))})\nRESULT({'ok': True})"}}
+        {
+          "tool": "pie",
+          "args": {
+            "op": "start",
+            "wait": true
+          }
+        },
+        {
+          "tool": "python",
+          "args": {
+            "op": "run",
+            "code": "_save_base({'buildings': len(_pw_snapshot().get('buildings', []))})\nRESULT({'ok': True})"
+          }
+        }
       ],
       "checks": [
-        {"name": "placed", "probe": "RESULT({'delta': len(_pw_snapshot().get('buildings', [])) - _base().get('buildings', 0)})",
-         "expect": [{"path": "delta", "op": "gte", "value": 1}]},
-        {"name": "clicked", "called": {"tool": "pie", "op": "cursor"}}
+        {
+          "name": "placed",
+          "probe": "RESULT({'delta': len(_pw_snapshot().get('buildings', [])) - _base().get('buildings', 0)})",
+          "expect": [
+            {
+              "path": "delta",
+              "op": "gte",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "name": "clicked",
+          "called": {
+            "tool": "pie",
+            "op": "cursor"
+          }
+        }
       ]
     },
     {
@@ -113,19 +296,62 @@
       "goal": "G4",
       "project": "aesir",
       "prompt": "Make wave 2 spawn 20% more enemies (round up), and prove the change with a playtest of wave 2.",
-      "requires": ["G", "R3"],
+      "requires": [
+        "G",
+        "R3"
+      ],
       "multi_step": true,
       "setup": [
-        {"tool": "python", "args": {"op": "run", "code": "r = _rows('/Game/Data/DT_Waves').get('Wave_02', {})\n_save_base({'count': r.get('EnemyCount', 0)})\nRESULT({'ok': True})"}}
+        {
+          "tool": "python",
+          "args": {
+            "op": "run",
+            "code": "r = _rows('/Game/Data/DT_Waves').get('Wave_02', {})\n_save_base({'count': r.get('EnemyCount', 0)})\nRESULT({'ok': True})"
+          }
+        }
       ],
       "checks": [
-        {"name": "row", "probe": "import math\nr = _rows('/Game/Data/DT_Waves').get('Wave_02', {})\nRESULT({'count': r.get('EnemyCount', 0), 'want': math.ceil(_base().get('count', 0) * 1.2)})",
-         "expect": [{"path": "count", "op": "gte", "value": 1}]},
-        {"name": "exactly_20pct", "probe": "import math\nr = _rows('/Game/Data/DT_Waves').get('Wave_02', {})\nRESULT({'diff': r.get('EnemyCount', 0) - math.ceil(_base().get('count', 0) * 1.2)})",
-         "expect": [{"path": "diff", "op": "eq", "value": 0}]},
-        {"name": "other_rows_untouched", "probe": "rows = _rows('/Game/Data/DT_Waves')\nRESULT({'rows': len(rows)})",
-         "expect": [{"path": "rows", "op": "gte", "value": 5}]},
-        {"name": "proved", "called": {"tool": "playtest", "op": "run", "after": "data_edit"}}
+        {
+          "name": "row",
+          "probe": "import math\nr = _rows('/Game/Data/DT_Waves').get('Wave_02', {})\nRESULT({'count': r.get('EnemyCount', 0), 'want': math.ceil(_base().get('count', 0) * 1.2)})",
+          "expect": [
+            {
+              "path": "count",
+              "op": "gte",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "name": "exactly_20pct",
+          "probe": "import math\nr = _rows('/Game/Data/DT_Waves').get('Wave_02', {})\nRESULT({'diff': r.get('EnemyCount', 0) - math.ceil(_base().get('count', 0) * 1.2)})",
+          "expect": [
+            {
+              "path": "diff",
+              "op": "eq",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "name": "other_rows_untouched",
+          "probe": "rows = _rows('/Game/Data/DT_Waves')\nRESULT({'rows': len(rows)})",
+          "expect": [
+            {
+              "path": "rows",
+              "op": "gte",
+              "value": 5
+            }
+          ]
+        },
+        {
+          "name": "proved",
+          "called": {
+            "tool": "playtest",
+            "op": "run",
+            "after": "data_edit"
+          }
+        }
       ]
     },
     {
@@ -133,10 +359,32 @@
       "goal": "G4",
       "project": "aesir",
       "prompt": "Change the weapon damage falloff curve so damage drops to 50% at 2000 units, keeping full damage at 0.",
-      "requires": ["G", "R3"],
+      "requires": [
+        "G",
+        "R3"
+      ],
       "checks": [
-        {"name": "curve", "probe": "c = unreal.load_asset('/Game/Data/C_DamageFalloff')\nRESULT({'at0': c.get_float_value(0.0) if c else None, 'at2000': c.get_float_value(2000.0) if c else None})",
-         "expect": [{"path": "at2000", "op": "gte", "value": 0.45}, {"path": "at2000", "op": "lte", "value": 0.55}, {"path": "at0", "op": "gte", "value": 0.95}]}
+        {
+          "name": "curve",
+          "probe": "c = unreal.load_asset('/Game/Data/C_DamageFalloff')\nRESULT({'at0': c.get_float_value(0.0) if c else None, 'at2000': c.get_float_value(2000.0) if c else None})",
+          "expect": [
+            {
+              "path": "at2000",
+              "op": "gte",
+              "value": 0.45
+            },
+            {
+              "path": "at2000",
+              "op": "lte",
+              "value": 0.55
+            },
+            {
+              "path": "at0",
+              "op": "gte",
+              "value": 0.95
+            }
+          ]
+        }
       ]
     },
     {
@@ -144,15 +392,41 @@
       "goal": "G4",
       "project": "aesir",
       "prompt": "Increase the player's damage by 25% in the game's tuning data asset, then run a short playtest and tell me whether enemies die faster than before.",
-      "requires": ["G", "R3", "R5"],
+      "requires": [
+        "G",
+        "R3",
+        "R5"
+      ],
       "multi_step": true,
       "setup": [
-        {"tool": "python", "args": {"op": "run", "code": "a = unreal.load_asset('/Game/Data/DA_AesirTuning')\n_save_base({'mul': a.get_editor_property('player_damage_multiplier') if a else None})\nRESULT({'ok': True})"}}
+        {
+          "tool": "python",
+          "args": {
+            "op": "run",
+            "code": "a = unreal.load_asset('/Game/Data/DA_AesirTuning')\n_save_base({'mul': a.get_editor_property('player_damage_multiplier') if a else None})\nRESULT({'ok': True})"
+          }
+        }
       ],
       "checks": [
-        {"name": "tuned", "probe": "a = unreal.load_asset('/Game/Data/DA_AesirTuning')\nv = a.get_editor_property('player_damage_multiplier') if a else 0\nRESULT({'ratio': round(v / (_base().get('mul') or 1), 3)})",
-         "expect": [{"path": "ratio", "op": "eq", "value": 1.25}]},
-        {"name": "played", "called": {"tool": "playtest", "op": "run", "after": "data_edit"}}
+        {
+          "name": "tuned",
+          "probe": "a = unreal.load_asset('/Game/Data/DA_AesirTuning')\nv = a.get_editor_property('player_damage_multiplier') if a else 0\nRESULT({'ratio': round(v / (_base().get('mul') or 1), 3)})",
+          "expect": [
+            {
+              "path": "ratio",
+              "op": "eq",
+              "value": 1.25
+            }
+          ]
+        },
+        {
+          "name": "played",
+          "called": {
+            "tool": "playtest",
+            "op": "run",
+            "after": "data_edit"
+          }
+        }
       ]
     },
     {
@@ -160,11 +434,28 @@
       "goal": "G4",
       "project": "aesir",
       "prompt": "According to the game's wave table, how many enemies does wave 5 spawn?",
-      "requires": ["G", "R3"],
+      "requires": [
+        "G",
+        "R3"
+      ],
       "checks": [
-        {"name": "row", "probe": "RESULT({'count': _rows('/Game/Data/DT_Waves').get('Wave_05', {}).get('EnemyCount')})",
-         "expect": [{"path": "count", "op": "exists"}]},
-        {"name": "answer_count", "answer": {"from": "row.count", "tolerance": 0}}
+        {
+          "name": "row",
+          "probe": "RESULT({'count': _rows('/Game/Data/DT_Waves').get('Wave_05', {}).get('EnemyCount')})",
+          "expect": [
+            {
+              "path": "count",
+              "op": "exists"
+            }
+          ]
+        },
+        {
+          "name": "answer_count",
+          "answer": {
+            "from": "row.count",
+            "tolerance": 0
+          }
+        }
       ]
     },
     {
@@ -172,14 +463,43 @@
       "goal": "G4",
       "project": "aesir",
       "prompt": "Rebind the Dash action to the E key in the game's input mapping, then verify in play that pressing E makes the player dash.",
-      "requires": ["G", "R2", "R3"],
+      "requires": [
+        "G",
+        "R2",
+        "R3"
+      ],
       "multi_step": true,
       "checks": [
-        {"name": "mapped", "probe": "imc = unreal.load_asset('/Game/Input/IMC_Aesir')\nkeys = [str(m.get_editor_property('key').get_editor_property('key_name')) for m in imc.get_editor_property('mappings') if m.get_editor_property('action') and m.get_editor_property('action').get_name() == 'IA_Dash'] if imc else []\nRESULT({'keys': keys})",
-         "expect": [{"path": "keys", "op": "contains", "value": "E"}]},
-        {"name": "dashed", "probe": "RESULT({'dashes': len([e for e in _events('AesirAgentSubsystem') if e.get('kind') == 'dash'])})",
-         "expect": [{"path": "dashes", "op": "gte", "value": 1}]},
-        {"name": "pressed", "called": {"tool": "pie", "op": "input", "after": "data_edit"}}
+        {
+          "name": "mapped",
+          "probe": "imc = unreal.load_asset('/Game/Input/IMC_Aesir')\nkeys = [str(m.get_editor_property('key').get_editor_property('key_name')) for m in imc.get_editor_property('mappings') if m.get_editor_property('action') and m.get_editor_property('action').get_name() == 'IA_Dash'] if imc else []\nRESULT({'keys': keys})",
+          "expect": [
+            {
+              "path": "keys",
+              "op": "contains",
+              "value": "E"
+            }
+          ]
+        },
+        {
+          "name": "dashed",
+          "probe": "RESULT({'dashes': len([e for e in _events('AesirAgentSubsystem') if e.get('kind') == 'dash'])})",
+          "expect": [
+            {
+              "path": "dashes",
+              "op": "gte",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "name": "pressed",
+          "called": {
+            "tool": "pie",
+            "op": "input",
+            "after": "data_edit"
+          }
+        }
       ]
     },
     {
@@ -187,12 +507,30 @@
       "goal": "G5",
       "project": "aesir",
       "prompt": "Add a HUD readout that shows the number of enemies remaining, bound to the game's state, and show me a screenshot of it in play.",
-      "requires": ["G", "R4"],
+      "requires": [
+        "G",
+        "R4"
+      ],
       "multi_step": true,
       "checks": [
-        {"name": "bound", "probe": "ar = unreal.AssetRegistryHelpers.get_asset_registry()\nfound = []\nfor a in ar.get_assets(unreal.ARFilter(class_paths=[unreal.TopLevelAssetPath('/Script/UMGEditor', 'WidgetBlueprint')], package_paths=['/Game'], recursive_paths=True)):\n    bp = unreal.load_asset(str(a.package_name))\n    gc = unreal.load_object(None, str(a.package_name) + '.' + str(a.asset_name) + '_C')\n    cdo = unreal.get_default_object(gc) if gc else None\n    try:\n        b = cdo.get_editor_property('bindings') if cdo else []\n    except Exception:\n        b = []\n    if any('enemies_remaining' in str(x).lower() or 'enemiesremaining' in str(x).lower() for x in b):\n        found.append(str(a.package_name))\nRESULT({'widgets': found})",
-         "expect": [{"path": "widgets.0", "op": "exists"}]},
-        {"name": "shown", "called": {"tool": "screenshot", "op": "pie", "after": "widget_edit"}}
+        {
+          "name": "bound",
+          "probe": "ar = unreal.AssetRegistryHelpers.get_asset_registry()\nfound = []\nfor a in ar.get_assets(unreal.ARFilter(class_paths=[unreal.TopLevelAssetPath('/Script/UMGEditor', 'WidgetBlueprint')], package_paths=['/Game'], recursive_paths=True)):\n    bp = unreal.load_asset(str(a.package_name))\n    gc = unreal.load_object(None, str(a.package_name) + '.' + str(a.asset_name) + '_C')\n    cdo = unreal.get_default_object(gc) if gc else None\n    try:\n        b = cdo.get_editor_property('bindings') if cdo else []\n    except Exception:\n        b = []\n    if any('enemies_remaining' in str(x).lower() or 'enemiesremaining' in str(x).lower() for x in b):\n        found.append(str(a.package_name))\nRESULT({'widgets': found})",
+          "expect": [
+            {
+              "path": "widgets.0",
+              "op": "exists"
+            }
+          ]
+        },
+        {
+          "name": "shown",
+          "called": {
+            "tool": "screenshot",
+            "op": "pie",
+            "after": "widget_edit"
+          }
+        }
       ]
     },
     {
@@ -200,11 +538,54 @@
       "goal": "G5",
       "project": "aesir",
       "prompt": "Show the current wave number in the top-left corner of the HUD while playing. Mount it in play and verify with a screenshot that it shows the right number.",
-      "requires": ["G", "R4"],
+      "requires": [
+        "G",
+        "R4"
+      ],
       "multi_step": true,
       "checks": [
-        {"name": "mounted", "called": {"tool": "widget_query", "op": "mount"}},
-        {"name": "shown", "called": {"tool": "screenshot", "op": "pie", "after": "widget_query/mount"}}
+        {
+          "name": "state",
+          "probe": "gs = _gs()\nRESULT({'wave': gs.get_editor_property('wave_number') if gs else None})",
+          "expect": [
+            {
+              "path": "wave",
+              "op": "gte",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "name": "hud",
+          "call": {
+            "tool": "widget_query",
+            "args": {
+              "op": "live_tree"
+            }
+          },
+          "expect": [
+            {
+              "path": "text",
+              "op": "contains",
+              "value_from": "state.wave"
+            }
+          ]
+        },
+        {
+          "name": "mounted",
+          "called": {
+            "tool": "widget_query",
+            "op": "mount"
+          }
+        },
+        {
+          "name": "shown",
+          "called": {
+            "tool": "screenshot",
+            "op": "pie",
+            "after": "widget_query/mount"
+          }
+        }
       ]
     },
     {
@@ -212,12 +593,28 @@
       "goal": "G5",
       "project": "aesir",
       "prompt": "Create a Game Over screen widget with a title, the final score bound to the game state, and a Restart button. Render it so I can see it.",
-      "requires": ["R4"],
+      "requires": [
+        "R4"
+      ],
       "multi_step": true,
       "checks": [
-        {"name": "widget", "probe": "ar = unreal.AssetRegistryHelpers.get_asset_registry()\nnames = [str(a.asset_name) for a in ar.get_assets(unreal.ARFilter(class_paths=[unreal.TopLevelAssetPath('/Script/UMGEditor', 'WidgetBlueprint')], package_paths=['/Game'], recursive_paths=True))]\nRESULT({'gameover': [n for n in names if 'gameover' in n.lower().replace('_', '')]})",
-         "expect": [{"path": "gameover.0", "op": "exists"}]},
-        {"name": "rendered", "called": {"tool": "widget_query", "op": "render"}}
+        {
+          "name": "widget",
+          "probe": "ar = unreal.AssetRegistryHelpers.get_asset_registry()\nnames = [str(a.asset_name) for a in ar.get_assets(unreal.ARFilter(class_paths=[unreal.TopLevelAssetPath('/Script/UMGEditor', 'WidgetBlueprint')], package_paths=['/Game'], recursive_paths=True))]\nRESULT({'gameover': [n for n in names if 'gameover' in n.lower().replace('_', '')]})",
+          "expect": [
+            {
+              "path": "gameover.0",
+              "op": "exists"
+            }
+          ]
+        },
+        {
+          "name": "rendered",
+          "called": {
+            "tool": "widget_query",
+            "op": "render"
+          }
+        }
       ]
     },
     {
@@ -225,12 +622,44 @@
       "goal": "G6",
       "project": "aesir",
       "prompt": "Run a 30-second playtest of wave 1 with gameplay event recording on, then run a feel audit on that recording and tell me the median delay between a hit and its visual feedback, in milliseconds.",
-      "requires": ["G", "R5"],
+      "requires": [
+        "G",
+        "R5"
+      ],
       "multi_step": true,
       "checks": [
-        {"name": "played", "called": {"tool": "playtest", "op": "run"}},
-        {"name": "audited", "called": {"tool": "design_audit", "after": "playtest/run"}},
-        {"name": "answer_ms", "answer": {"regex": "\\d+(\\.\\d+)?\\s*ms"}}
+        {
+          "name": "played",
+          "called": {
+            "tool": "playtest",
+            "op": "run"
+          }
+        },
+        {
+          "name": "audited",
+          "called": {
+            "tool": "design_audit",
+            "after": "playtest/run"
+          }
+        },
+        {
+          "name": "latency",
+          "probe": "ev = _latest_playtest().get('events', [])\nd = [(e['visual_t'] - e['t']) * 1000.0 for e in ev if e.get('kind') == 'hit' and e.get('visual_t')]\nRESULT({'hits': len(d), 'median_ms': statistics.median(d) if d else None})",
+          "expect": [
+            {
+              "path": "hits",
+              "op": "gte",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "name": "answer_ms",
+          "answer": {
+            "from": "latency.median_ms",
+            "tolerance": 1
+          }
+        }
       ]
     },
     {
@@ -238,23 +667,84 @@
       "goal": "G6",
       "project": "aesir",
       "prompt": "Measure the rifle's average time-to-kill against standard enemies over a 60-second playtest, from recorded events, and report it in seconds.",
-      "requires": ["G", "R5"],
+      "requires": [
+        "G",
+        "R5"
+      ],
       "multi_step": true,
       "checks": [
-        {"name": "played", "called": {"tool": "playtest", "op": "run"}},
-        {"name": "answer_s", "answer": {"regex": "\\d+(\\.\\d+)?\\s*(s|sec|seconds)\\b"}}
+        {
+          "name": "played",
+          "called": {
+            "tool": "playtest",
+            "op": "run"
+          }
+        },
+        {
+          "name": "ttk",
+          "probe": "ev = _latest_playtest().get('events', [])\nfirst = {}\nfor e in ev:\n    if e.get('kind') == 'hit' and 'rifle' in str(e.get('data', {}).get('weapon', '')).lower():\n        first.setdefault(e.get('target'), e['t'])\nttk = [e['t'] - first[e.get('target')] for e in ev if e.get('kind') == 'kill' and e.get('target') in first]\nRESULT({'kills': len(ttk), 'ttk_s': sum(ttk) / len(ttk) if ttk else None})",
+          "expect": [
+            {
+              "path": "kills",
+              "op": "gte",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "name": "answer_s",
+          "answer": {
+            "from": "ttk.ttk_s",
+            "tolerance": 0.05
+          }
+        }
       ]
     },
     {
       "id": "aesir_batch_variance",
       "goal": "G6",
       "project": "aesir",
-      "prompt": "Run five seeded playtests of the first two waves and tell me how much the time to clear wave 1 varies between them (min, max).",
-      "requires": ["G", "R5"],
+      "prompt": "Run five seeded playtests of the first two waves and tell me the fastest and slowest time to clear wave 1 between them, in seconds.",
+      "requires": [
+        "G",
+        "R5"
+      ],
       "multi_step": true,
       "checks": [
-        {"name": "batched", "called": {"tool": "playtest", "op": "batch"}},
-        {"name": "answer_range", "answer": {"regex": "\\d+(\\.\\d+)?.{0,40}\\d+(\\.\\d+)?"}}
+        {
+          "name": "batched",
+          "called": {
+            "tool": "playtest",
+            "op": "batch"
+          }
+        },
+        {
+          "name": "clears",
+          "probe": "b = _latest_batch()\nc = [r['waves'][0]['clear_s'] for r in b.get('runs', []) if r.get('waves')]\nRESULT({'runs': len(c), 'min': min(c) if c else None, 'max': max(c) if c else None})",
+          "expect": [
+            {
+              "path": "runs",
+              "op": "gte",
+              "value": 5
+            }
+          ]
+        },
+        {
+          "name": "answer_min",
+          "answer": {
+            "from": "clears.min",
+            "key": "min",
+            "tolerance": 0.05
+          }
+        },
+        {
+          "name": "answer_max",
+          "answer": {
+            "from": "clears.max",
+            "key": "max",
+            "tolerance": 0.05
+          }
+        }
       ]
     },
     {
@@ -264,11 +754,28 @@
       "prompt": "Run the saved playtest scenario Scenarios/smoke_beats.json and tell me plainly whether the game passed it.",
       "requires": [],
       "setup": [
-        {"tool": "python", "args": {"op": "run", "code": "d = os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()), 'Scenarios')\nos.makedirs(d, exist_ok=True)\nopen(os.path.join(d, 'smoke_beats.json'), 'w').write(json.dumps({'schema': 'scenario/v1', 'name': 'smoke_beats', 'mode': 'pie', 'level': '/Game/Maps/L_Arena', 'duration_s': 6, 'interval_s': 0.5, 'beats': [{'at_s': 1, 'exec': {'target': 'NoSuchSpawner', 'ufunction': 'StartWave'}}], 'rubric': [{'id': 'frames', 'kind': 'nonzero_count', 'path': 'counts.AesirCharacter'}]}))\nRESULT({'ok': True})"}}
+        {
+          "tool": "python",
+          "args": {
+            "op": "run",
+            "code": "d = os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()), 'Scenarios')\nos.makedirs(d, exist_ok=True)\nopen(os.path.join(d, 'smoke_beats.json'), 'w').write(json.dumps({'schema': 'scenario/v1', 'name': 'smoke_beats', 'mode': 'pie', 'level': '/Game/Maps/L_Arena', 'duration_s': 6, 'interval_s': 0.5, 'beats': [{'at_s': 1, 'exec': {'target': 'NoSuchSpawner', 'ufunction': 'StartWave'}}], 'rubric': [{'id': 'frames', 'kind': 'nonzero_count', 'path': 'counts.AesirCharacter'}]}))\nRESULT({'ok': True})"
+          }
+        }
       ],
       "checks": [
-        {"name": "ran", "called": {"tool": "playtest", "op": "run"}},
-        {"name": "answer_fail", "answer": {"regex": "(?i)\\b(fail|failed|did not pass|didn't pass)\\b"}}
+        {
+          "name": "ran",
+          "called": {
+            "tool": "playtest",
+            "op": "run"
+          }
+        },
+        {
+          "name": "answer_fail",
+          "answer": {
+            "regex": "(?i)^FAIL$"
+          }
+        }
       ]
     },
     {
@@ -276,17 +783,46 @@
       "goal": "G2",
       "project": "polyworld",
       "prompt": "In PolyWorld (playing in the editor), place a straight road of at least 4 cells that connects to the home city's existing roads, using the game's own commands.",
-      "requires": ["G", "R1"],
+      "requires": [
+        "G",
+        "R1"
+      ],
       "no_python": true,
       "multi_step": true,
       "setup": [
-        {"tool": "pie", "args": {"op": "start", "wait": true}},
-        {"tool": "python", "args": {"op": "run", "code": "c = [x for x in _pw_snapshot().get('cities', []) if x.get('founded')]\n_save_base({'roads': c[0].get('road_cell_count', 0) if c else 0})\nRESULT({'ok': True})"}}
+        {
+          "tool": "pie",
+          "args": {
+            "op": "start",
+            "wait": true
+          }
+        },
+        {
+          "tool": "python",
+          "args": {
+            "op": "run",
+            "code": "c = [x for x in _pw_snapshot().get('cities', []) if x.get('founded')]\n_save_base({'roads': c[0].get('road_cell_count', 0) if c else 0})\nRESULT({'ok': True})"
+          }
+        }
       ],
       "checks": [
-        {"name": "roads", "probe": "c = [x for x in _pw_snapshot().get('cities', []) if x.get('founded')]\nRESULT({'delta': (c[0].get('road_cell_count', 0) if c else 0) - _base().get('roads', 0)})",
-         "expect": [{"path": "delta", "op": "gte", "value": 4}]},
-        {"name": "commanded", "called": {"tool": "game_command"}}
+        {
+          "name": "roads",
+          "probe": "c = [x for x in _pw_snapshot().get('cities', []) if x.get('founded')]\nRESULT({'delta': (c[0].get('road_cell_count', 0) if c else 0) - _base().get('roads', 0)})",
+          "expect": [
+            {
+              "path": "delta",
+              "op": "gte",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "name": "commanded",
+          "called": {
+            "tool": "game_command"
+          }
+        }
       ]
     }
   ]

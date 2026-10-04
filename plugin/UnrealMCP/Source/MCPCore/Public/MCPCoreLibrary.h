@@ -40,7 +40,7 @@ public:
 
 	/** Undo (or redo) the next transaction ONLY if its title starts with Prefix: the
 	 *  check and the undo run in one game-thread call, so no edit can land between them.
-	 *  Returns JSON {"ok": bool, "title": "...", "reason"?: "empty|title_mismatch|pie|failed"}. */
+	 *  Returns JSON {"ok": bool, "title": "...", "reason"?: "empty|title_mismatch|pie|transaction_active|failed"}. */
 	UFUNCTION(BlueprintCallable, Category = "MCP|Core")
 	static FString UndoIfTitled(const FString& Prefix);
 

@@ -9,6 +9,7 @@ def _transaction(label):
         yield None
         return
     with tx(label) as t:
+        _note_edit("tx", label)
         yield t
 
 

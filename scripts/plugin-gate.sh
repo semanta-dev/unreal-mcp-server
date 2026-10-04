@@ -19,6 +19,12 @@ log="${3:-/dev/stderr}"
 engine="${UMCP_ENGINE:-D:/Unreal/Engine/UE_5.7}"
 group="${UMCP_GROUP:-239.0.0.42:6799}"
 addr="${UMCP_COMMAND_ADDR:-127.0.0.1:6791}"
+# The gate replaces the project's plugin source and rebuilds it: only on a scratch copy,
+# marked by an empty .umcp-scratch file at its root (never the real project).
+if [ ! -f "$proj/.umcp-scratch" ]; then
+  echo "[plugin-gate] refusing: $proj has no .umcp-scratch marker (run the gate on a scratch copy)" >&2
+  exit 2
+fi
 
 go build -o dist/unreal-mcp.exe ./cmd/unreal-mcp
 go build -o dist/mcpcall.exe ./cmd/mcpcall
@@ -43,7 +49,15 @@ trap 'rm -f "$calls"' EXIT
 } > "$calls"
 out="$(dist/mcpcall.exe -timeout 30m -- dist/unreal-mcp.exe -project "$proj" -engine "$engine" -group "$group" \
   -command-addr "$addr" -log-format text -log-level warn < "$calls" 2>&1)"
-printf '%s\n' "$out" >> "$log"
+# The concise log (committed with the phase): the build's final job state, the editor's
+# final launch state and the health check, not every poll. Job ids are job-1 (build) and
+# job-2 (ensure_open): the server process is fresh, so they are deterministic.
+{
+  echo "# plugin-gate $(date -u +%Y-%m-%dT%H:%M:%SZ) project=$proj expect_plugin=$api"
+  printf '%s\n' "$out" | grep '"job_id":"job-1"' | tail -1
+  printf '%s\n' "$out" | grep '"job_id":"job-2"' | tail -1
+  printf '%s\n' "$out" | grep '"tool":"editor"' | tail -1
+} >> "$log"
 health="$(printf '%s\n' "$out" | grep '"tool":"editor"' | tail -1)"
 if printf '%s' "$health" | grep -q '"healthy":true' && printf '%s' "$health" | grep -q "\"plugin_api\":$api[,}]"; then
   echo "[plugin-gate] PASS: $proj reports plugin API $api"
