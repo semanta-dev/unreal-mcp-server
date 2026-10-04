@@ -36,6 +36,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "MCP|Core")
 	static void SeedRandomStreams(int32 Seed);
 
+	/** Plugin API 9: why Python's set_editor_property(Name) on Object would be refused —
+	 *  the same check (PropertyAccessUtil::CanSetPropertyValue with the editor's read-only
+	 *  flags) — or "" when it would be allowed. Name: the reflected name, or its Python
+	 *  spelling (case and underscores ignored) when that is unambiguous. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Core")
+	static FString WhyNotSettable(UObject* Object, const FString& Name);
+
+	/** Plugin API 9: the object type (1..32, ObjectTypeQuery N) of the project's collision
+	 *  object channel named ChannelName (Project Settings > Collision), or 0 when no
+	 *  object channel has that name. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Core")
+	static int32 ObjectTypeByChannelName(const FString& ChannelName);
+
 	/** The title of the transaction Ctrl+Z would undo next ("" when there is none). */
 	UFUNCTION(BlueprintCallable, Category = "MCP|Core")
 	static FString PeekUndoTitle();

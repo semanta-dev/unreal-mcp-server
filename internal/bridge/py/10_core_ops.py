@@ -102,8 +102,12 @@ def _op_level_revert(args):
     if _pie_running():
         raise _V2Error("PRECONDITION", "stop PIE first (reverting the level would end it)")
     world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
-    level = args.get("level_path") or (world.get_path_name() if world else "")
-    pkg = level.split(".", 1)[0]
+    open_pkg = (world.get_path_name() if world else "").split(".", 1)[0]
+    pkg = (args.get("level_path") or open_pkg).split(".", 1)[0]
+    if pkg != open_pkg:
+        # Loading another level here would be "open without saving", not a revert.
+        raise _V2Error("BAD_VALUE", "revert reloads the open level (%s), not %s: open another level with level op=open"
+                       % (open_pkg or "none", pkg))
     if not pkg.startswith("/Game/") or not unreal.EditorAssetLibrary.does_asset_exist(pkg):
         raise _V2Error("PRECONDITION", "%s was never saved: there is nothing on disk to revert to" % (pkg or "the level"))
     maps, content = _dirty_packages()

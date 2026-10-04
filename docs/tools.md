@@ -526,7 +526,7 @@ Put back transforms and properties with snapshot_restore.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
-| `take` | ephemeral | record every actor's path, class, tags, transform (+ properties) |  | editor, project |
+| `take` | ephemeral | record every actor's path, class, tags, transform (+ properties) |  | editor, project, plugin>=9 for properties |
 | `diff` | readonly | added / removed / moved / retagged / changed between two snapshots (or now) | name | editor, project |
 | `list` | readonly | stored snapshots |  | editor, project |
 | `digest` | readonly | deterministic hash of actor or instance transforms |  | editor |
@@ -1125,7 +1125,7 @@ Spatial questions (world=editor default, pie, auto; results echo it).
 | op | tier | does | required | needs |
 |---|---|---|---|---|
 | `line_trace` | readonly | is the line from start to end blocked, and by what | start, end | editor |
-| `sphere_overlap` | readonly | actors overlapping a sphere (of object_types) | center | editor |
+| `sphere_overlap` | readonly | actors overlapping a sphere (of object_types) | center | editor, plugin>=9 for project channels |
 | `nav_path` | readonly | can the AI walk from start to end | start, end | editor, navmesh |
 | `project_point` | readonly | is the point on the navmesh | point | editor, navmesh |
 | `instances_count` | readonly | ISM/HISM instance counts by mesh |  | editor |
@@ -1137,7 +1137,7 @@ Spatial questions (world=editor default, pie, auto; results echo it).
 | `end` | number[] | line_trace/nav_path: [x, y, z] |
 | `limit` | integer | instances_list: max instances (default 8192; truncated:true when cut) |
 | `mesh` | string | instances_*: only components whose mesh path contains this |
-| `object_types` | string[] | sphere_overlap: world_static \| world_dynamic \| pawn \| physics_body \| vehicle \| destructible (default: these six) \| object_type_query_N (a project channel) |
+| `object_types` | string[] | sphere_overlap: world_static \| world_dynamic \| pawn \| physics_body \| vehicle \| destructible (default: these six), or a project object channel by name |
 | `op` | string | one of: line_trace, sphere_overlap, nav_path, project_point, instances_count, instances_list |
 | `point` | number[] | project_point: [x, y, z] |
 | `radius` | number | sphere_overlap: radius (default 100) |

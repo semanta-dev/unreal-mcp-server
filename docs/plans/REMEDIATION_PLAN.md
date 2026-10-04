@@ -240,6 +240,7 @@ Plugin API versions — one bump per phase that changes the plugin; each op decl
 | 6 | R3 | `GetCurveKeysJson` / `SetCurveKeysJson`, `DescribeBlueprintJson` (R0.2 spike rows 5–6); after the R3 review: `CheckMemberName`, `RemoveMemberVariable`, `SetConfigDefaultsJson` (API 6 was not released before them) |
 | 7 | R4 | `UMCPHUDWidget` `FloatToText` / `FloatToPercent` / `BoolToVisibility` (silently ignored before) and `FormatText` with a `MaxPath`; mount and live tree arrived in API 4, the UI screenshot uses the existing `include_ui` capture |
 | 8 | R5 | `UMCPEventRecorder` (engine damage / spawn / destroy events), `SeedRandomStreams`; HUD binding states `index`, `max_zero` |
+| 9 | R6 | `WhyNotSettable` (a snapshot property is checked to be settable at take), `ObjectTypeByChannelName` (sphere_overlap by a project channel's name) |
 
 ## 9. Sequencing and effort
 

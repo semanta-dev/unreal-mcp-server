@@ -388,12 +388,14 @@ _VALUE_TYPES = {"digital": "BOOLEAN", "bool": "BOOLEAN", "axis1d": "AXIS1D", "ax
 
 
 def _registry_class(path):
-    """The class name of the asset at a package path, from the asset registry (nothing is
-    loaded), or None when there is none."""
+    """The class (path, name) of the asset at a package path, from the asset registry
+    (the asset is not loaded), or None when there is none."""
     name = path.rsplit("/", 1)[-1]
     for ad in unreal.AssetRegistryHelpers.get_asset_registry().get_assets_by_package_name(path) or []:
         if str(ad.get_editor_property("asset_name")) == name:
-            return str(ad.get_editor_property("asset_class_path").get_editor_property("asset_name"))
+            cp = ad.get_editor_property("asset_class_path")
+            return "%s.%s" % (cp.get_editor_property("package_name"), cp.get_editor_property("asset_name")), \
+                str(cp.get_editor_property("asset_name"))
     return None
 
 
@@ -439,12 +441,15 @@ def _op_data_input_mapping(args):
         raise _V2Error("BAD_VALUE", "value_type must be one of %s (got %r)" % (", ".join(_VALUE_TYPES), vt))
     if args.get("dry_run"):
         creates = []
-        for p, want in ((action_path, "InputAction"), (context_path, "InputMappingContext")):
+        for p, want, want_name in ((action_path, unreal.InputAction, "InputAction"),
+                                   (context_path, unreal.InputMappingContext, "InputMappingContext")):
             have = _registry_class(p)
             if have is None:
                 creates.append(p)
-            elif have != want:  # what the real call refuses
-                raise _V2Error("BAD_VALUE", "%s is a %s, not a %s" % (p, have, want))
+                continue
+            cls = unreal.load_class(None, have[0])  # the class, not the asset
+            if cls is None or not unreal.MathLibrary.class_is_child_of(cls, want):  # what the real call refuses
+                raise _V2Error("BAD_VALUE", "%s is a %s, not a %s" % (p, have[1], want_name))
         return {"dry_run": True, "action": action_path, "context": context_path, "keys": [str(k) for k in keys],
                 "creates": creates}
     action, made_action = _input_asset(action_path, unreal.InputAction)

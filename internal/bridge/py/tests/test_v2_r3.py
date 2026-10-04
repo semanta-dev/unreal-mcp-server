@@ -386,13 +386,22 @@ def test_add_variable_and_input_mapping_dry_runs(v2, ue):
     assert call(v2, "data_add_variable", {"asset": "/Game/R3/BP", "name": "health", "type": "int", "dry_run": True})["code"] == "CONFLICT"
     ue.Key = Key
     ue.InputLibrary = _NS(key_is_valid=lambda k: k.name in ("LeftShift", "E"))
-    registry = {"/Game/Input/IMC_Aesir": "InputMappingContext"}
+    registry = {"/Game/Input/IMC_Aesir": "InputMappingContext", "/Game/Input/IA_Sub": "MyInputAction"}
+    ia = ue.add_class("InputAction", "/Script/EnhancedInput.InputAction")
+    ue.add_class("InputMappingContext", "/Script/EnhancedInput.InputMappingContext")
+    sub = ue.add_class("MyInputAction", "/Script/Game.MyInputAction")
+    sub.parent = ia  # a subclass passes, as it does in the real call
+    ue.InputAction, ue.InputMappingContext = ia, ue.classes["/Script/EnhancedInput.InputMappingContext"]
+    pkgs = {"InputMappingContext": "/Script/EnhancedInput", "MyInputAction": "/Script/Game"}
+
+    def class_path(name):
+        return _NS(get_editor_property=lambda k: pkgs[name] if k == "package_name" else name)
 
     def by_package(pkg):
         if pkg not in registry:
             return []
         return [_NS(get_editor_property=lambda k, pkg=pkg: pkg.rsplit("/", 1)[-1] if k == "asset_name"
-                    else _NS(get_editor_property=lambda _k, pkg=pkg: registry[pkg]))]
+                    else class_path(registry[pkg]))]
 
     ue.AssetRegistryHelpers = _NS(get_asset_registry=lambda: _NS(get_assets_by_package_name=by_package))
     env = call(v2, "data_input_mapping", {"action": "/Game/Input/IA_Dash", "context": "/Game/Input/IMC_Aesir",
@@ -402,6 +411,9 @@ def test_add_variable_and_input_mapping_dry_runs(v2, ue):
     env = call(v2, "data_input_mapping", {"action": "/Game/Input/IMC_Aesir", "context": "/Game/Input/IMC_Aesir",
                                           "keys": ["LeftShift"], "dry_run": True})
     assert env["code"] == "BAD_VALUE" and "not a InputAction" in env["error"], env
+    env = call(v2, "data_input_mapping", {"action": "/Game/Input/IA_Sub", "context": "/Game/Input/IMC_Aesir",
+                                          "keys": ["LeftShift"], "dry_run": True})
+    assert env["ok"] and env["result"]["creates"] == [], env
     env = call(v2, "data_input_mapping", {"action": "/Game/Input/IA_Dash", "context": "/Game/Input/IMC_Aesir",
                                           "keys": ["LeftShfit"], "dry_run": True})
     assert env["code"] == "BAD_VALUE"

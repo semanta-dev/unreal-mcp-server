@@ -521,11 +521,16 @@ type worldQueryIn struct {
 	End    []float64 `json:"end,omitempty" jsonschema:"line_trace/nav_path: [x, y, z]"`
 	Center []float64 `json:"center,omitempty" jsonschema:"sphere_overlap: [x, y, z]"`
 	Radius float64   `json:"radius,omitempty" jsonschema:"sphere_overlap: radius (default 100)"`
-	Types  []string  `json:"object_types,omitempty" jsonschema:"sphere_overlap: world_static | world_dynamic | pawn | physics_body | vehicle | destructible (default: these six) | object_type_query_N (a project channel)"`
+	Types  []string  `json:"object_types,omitempty" jsonschema:"sphere_overlap: world_static | world_dynamic | pawn | physics_body | vehicle | destructible (default: these six), or a project object channel by name"`
 	Point  []float64 `json:"point,omitempty" jsonschema:"project_point: [x, y, z]"`
 	Tag    string    `json:"tag,omitempty" jsonschema:"instances_*: only ISM/HISM components with this component tag"`
 	Mesh   string    `json:"mesh,omitempty" jsonschema:"instances_*: only components whose mesh path contains this"`
 	Limit  int       `json:"limit,omitempty" jsonschema:"instances_list: max instances (default 8192; truncated:true when cut)"`
+}
+
+func withNeeds(o spec.OpSpec, needs ...string) spec.OpSpec {
+	o.Needs = append(o.Needs, needs...)
+	return o
 }
 
 func worldQuerySpec() *spec.Spec {
@@ -539,7 +544,7 @@ func worldQuerySpec() *spec.Spec {
 	}
 	ops := []spec.OpSpec{
 		q("line_trace", "is the line from start to end blocked, and by what", "world_query", "start", "end"),
-		q("sphere_overlap", "actors overlapping a sphere (of object_types)", "world_query", "center"),
+		withNeeds(q("sphere_overlap", "actors overlapping a sphere (of object_types)", "world_query", "center"), "plugin>=9 for project channels"),
 		navq("nav_path", "can the AI walk from start to end", "world_query", "start", "end"),
 		navq("project_point", "is the point on the navmesh", "world_query", "point"),
 		q("instances_count", "ISM/HISM instance counts by mesh", "instances_count"),
@@ -598,7 +603,7 @@ type snapshotIn struct {
 
 func snapshotSpec() *spec.Spec {
 	ops := []spec.OpSpec{
-		{Name: "take", Summary: "record every actor's path, class, tags, transform (+ properties)", Tier: spec.Ephemeral, Idempotent: true, Reaches: []string{"snapshot_actors"}, Needs: []string{"project"}},
+		{Name: "take", Summary: "record every actor's path, class, tags, transform (+ properties)", Tier: spec.Ephemeral, Idempotent: true, Reaches: []string{"snapshot_actors"}, Needs: []string{"project", "plugin>=9 for properties"}},
 		{Name: "diff", Summary: "added / removed / moved / retagged / changed between two snapshots (or now)", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"name"}, Rejects: []string{"properties"}, Reaches: []string{"snapshot_actors"}, Needs: []string{"project"}},
 		{Name: "list", Summary: "stored snapshots", Tier: spec.ReadOnly, Idempotent: true, Rejects: []string{"properties"}, Needs: []string{"project"}},
 		{Name: "digest", Summary: "deterministic hash of actor or instance transforms", Tier: spec.ReadOnly, Idempotent: true, Rejects: []string{"properties"}, Reaches: []string{"snapshot_actors", "instances_list"}},
@@ -639,6 +644,17 @@ func currentSnapshot(ctx context.Context, c *spec.Call, name, classFilter string
 	}
 	_ = json.Unmarshal(raw, &extra)
 	if !strict {
+		// A diff shows a value it could not take now as that error, not as "gone".
+		for _, e := range extra.Errors {
+			for i := range f.Actors {
+				if f.Actors[i].Path == fmt.Sprint(e["path"]) {
+					if f.Actors[i].Props == nil {
+						f.Actors[i].Props = map[string]any{}
+					}
+					f.Actors[i].Props[fmt.Sprint(e["property"])] = map[string]any{"error": e["error"]}
+				}
+			}
+		}
 		return f, nil
 	}
 	if len(extra.Missing) > 0 {

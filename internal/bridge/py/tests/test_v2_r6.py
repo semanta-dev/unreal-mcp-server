@@ -41,6 +41,7 @@ def test_sphere_overlap_sees_every_object_type(v2, ue):
     env = call(v2, "world_query", {"kind": "sphere_overlap", "center": [0, 0, 0], "world": "pie", "object_types": ["pawn"]})
     r = env["result"]
     assert r["actors"] == ["Hero"] and asked[-1] == ["OT3"], env
+    ue.MCPCoreLibrary = _NS(get_plugin_api_version=lambda: 9, object_type_by_channel_name=lambda n: 0)
     env = call(v2, "world_query", {"kind": "sphere_overlap", "center": [0, 0, 0], "world": "pie", "object_types": ["pawns"]})
     assert env.get("code") == "BAD_VALUE" and "pawns" in env["error"], env
 
@@ -89,6 +90,9 @@ def types(ue):
     ue.EnumBase, ue.EGait, ue.Name, ue.Text, ue.Color, ue.LinearColor = EnumBase, EGait, NameT, TextT, Color, LinearColor
     ue.Vector2D = type("Vector2D", (), {})
     ue.pie_actors = None  # editor edits: no PIE
+    ue.not_settable = {}  # (label, property) -> why the engine would refuse a set
+    ue.MCPCoreLibrary = _NS(get_plugin_api_version=lambda: 9,
+                            why_not_settable=lambda a, n: ue.not_settable.get((a.get_actor_label(), n), ""))
     return ue
 
 
@@ -130,11 +134,19 @@ def test_take_refuses_what_would_not_come_back(v2, types):
     errs = {e["property"]: e["error"] for e in res["property_errors"]}
     assert set(errs) == {"Weird", "Bad", "Ghost"} and "props" not in res["actors"][0], res
     assert "finite" in errs["Bad"] and "Ghost" in errs
+    # A property the engine would not let a restore set (VisibleAnywhere, EditConst...).
+    a.props["Armor"] = 5.0
+    ue.not_settable[("Box", "Armor")] = "read-only (EditConst)"
+    res = call(v2, "snapshot_actors", {"properties": ["Armor"]})["result"]
+    assert res["property_errors"][0]["error"] == "cannot be set back: read-only (EditConst)", res
     # A read that fails for another reason than "no such property" is an error, not a skip.
     real = a.get_editor_property
     a.get_editor_property = lambda k: (_ for _ in ()).throw(Exception("access denied")) if k == "Secret" else real(k)
     res = call(v2, "snapshot_actors", {"properties": ["Secret"]})["result"]
     assert res["property_errors"][0]["error"].startswith("unreadable") and res["properties_missing"] == [], res
+    ue.MCPCoreLibrary = _NS(get_plugin_api_version=lambda: 8)
+    assert call(v2, "snapshot_actors", {"properties": ["Armor"]})["code"] == "PLUGIN_MISSING"
+    assert call(v2, "snapshot_actors", {})["ok"]  # without properties: no plugin needed
 
 
 def test_restore_is_all_or_nothing(v2, types):
@@ -152,12 +164,19 @@ def test_restore_is_all_or_nothing(v2, types):
     env = call(v2, "snapshot_restore", {"name": "s", "actors": snap})
     assert env["code"] == "EDITOR_ERROR" and "nothing was restored" in env["error"], env
     assert a.props == {"Health": 5.0, "bArmed": False} and (a.loc.x, a.loc.y) == (9, 9) and b.props["Health"] == 1.0
+    # A put-back that fails too is said (half-restored), never "nothing was restored".
+    real_set = a.set_editor_property
+    a.set_editor_property = lambda k, v: (_ for _ in ()).throw(Exception("locked")) if v == 5.0 else real_set(k, v)
+    env = call(v2, "snapshot_restore", {"name": "s", "actors": snap})
+    assert env["code"] == "EDITOR_ERROR" and "half-restored" in env["error"] and env["details"]["not_reverted"], env
+    a.set_editor_property = real_set
+    a.props["Health"] = 5.0
     # A stored value that cannot be rebuilt now (its object is gone): refused before any change.
     b.readonly.clear()
     snap[0]["props"]["Health"] = {"t": "object", "v": "/Game/Gone.Gone"}
     env = call(v2, "snapshot_restore", {"name": "s", "actors": snap})
     assert env["code"] == "PRECONDITION" and env["details"]["property_errors"][0]["property"] == "Health", env
-    assert a.props["Health"] == 5.0 and a.modified == 1  # only the failed transaction above touched it
+    assert a.props["Health"] == 5.0 and a.modified == 2  # only the two failed transactions above touched it
 
 
 def test_restore_refused_during_pie(v2, ue):
@@ -213,14 +232,16 @@ def test_level_revert_drops_unsaved_changes_of_a_saved_level(v2, ue):
     assert call(v2, "level_revert", {"level_path": "/Game/Maps/L_Arena"})["code"] == "PRECONDITION"
 
 
-def test_sphere_overlap_takes_a_project_channel(v2, ue):
+def test_sphere_overlap_takes_a_project_channel_by_name(v2, ue):
     ue.ObjectTypeQuery = _NS(**{"OBJECT_TYPE_QUERY%d" % i: "OT%d" % i for i in range(1, 33)})
     asked = []
     ue.SystemLibrary.sphere_overlap_actors = lambda w, c, r, types, cls, ig: asked.append(list(types)) or []
-    env = call(v2, "world_query", {"kind": "sphere_overlap", "center": [0, 0, 0], "world": "pie", "object_types": ["pawn", "object_type_query_9"]})
-    assert env["ok"] and asked[-1] == ["OT3", "OT9"], env
-    assert call(v2, "world_query", {"kind": "sphere_overlap", "center": [0, 0, 0], "world": "pie",
-                                    "object_types": ["object_type_query_40"]})["code"] == "BAD_VALUE"
+    # The project's collision settings: an object channel "Enemy" (type 7), a trace channel "Interact".
+    ue.MCPCoreLibrary = _NS(get_plugin_api_version=lambda: 9, object_type_by_channel_name=lambda n: {"Enemy": 7}.get(n, 0))
+    env = call(v2, "world_query", {"kind": "sphere_overlap", "center": [0, 0, 0], "world": "pie", "object_types": ["pawn", "Enemy"]})
+    assert env["ok"] and asked[-1] == ["OT3", "OT7"], env
+    env = call(v2, "world_query", {"kind": "sphere_overlap", "center": [0, 0, 0], "world": "pie", "object_types": ["Interact"]})
+    assert env["code"] == "BAD_VALUE" and "trace channel" in env["error"], env
 
 
 def test_only_implemented_dry_runs_skip_the_journal(v2, ue):
@@ -228,3 +249,13 @@ def test_only_implemented_dry_runs_skip_the_journal(v2, ue):
     del m._MCP_EDITS[:]
     m._note_op("widget_compose", {"dry_run": True})  # does not implement dry_run: a real edit
     assert m._MCP_EDITS == [("untracked", "widget_compose")]
+
+
+def test_revert_is_the_open_level_only(v2, ue):
+    ue.pie_actors = None
+    world = _NS(get_path_name=lambda: "/Game/Maps/L_Arena.L_Arena")
+    ue.UnrealEditorSubsystem = "UES"
+    real = ue.get_editor_subsystem
+    ue.get_editor_subsystem = lambda c: _NS(get_editor_world=lambda: world, get_game_world=lambda: None) if c == "UES" else real(c)
+    env = call(v2, "level_revert", {"level_path": "/Game/Maps/L_Other"})
+    assert env["code"] == "BAD_VALUE" and "open level" in env["error"], env

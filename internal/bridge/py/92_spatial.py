@@ -39,14 +39,16 @@ def _op_world_query(args):
         names = args.get("object_types") or list(_OBJECT_TYPES)
         nums = []
         for n in names:
-            m = re.match(r"^object_type_query_([0-9]+)$", str(n))
             if n in _OBJECT_TYPES:
                 nums.append(_OBJECT_TYPES[n])
-            elif m and 1 <= int(m.group(1)) <= 32:
-                nums.append(int(m.group(1)))  # a project's own object channel (7+, in its collision settings)
-            else:
-                raise _V2Error("BAD_VALUE", "object_types: unknown %r (the engine's: %s; a project channel: "
-                               "object_type_query_N)" % (n, ", ".join(_OBJECT_TYPES)))
+                continue
+            # A project object channel, by the name it has in Project Settings > Collision.
+            lib = _need_plugin(9, "a project object channel")
+            q = int(lib.object_type_by_channel_name(str(n)))
+            if q <= 0:
+                raise _V2Error("BAD_VALUE", "object_types: %r is not an engine object type (%s) nor a project object "
+                               "channel (a trace channel is not an object type)" % (n, ", ".join(_OBJECT_TYPES)))
+            nums.append(q)
         # Every type asked for — before, only WorldStatic: pawns, physics bodies and every
         # movable actor were invisible to the overlap.
         types = [getattr(unreal.ObjectTypeQuery, "OBJECT_TYPE_QUERY%d" % n) for n in nums]

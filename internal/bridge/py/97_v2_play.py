@@ -219,9 +219,10 @@ def _snap_restore_value(e):
 _SNAP_KINDS = "bools, numbers, strings, names, texts, enums, vectors, rotators, colors and object references"
 
 
-def _snap_props(a, names, path, missing, errors):
+def _snap_props(a, names, path, missing, errors, lib):
     """The actor's values of the properties it has (by reflected name), each checked to
-    rebuild into the same value now — not found out at restore time."""
+    rebuild into the same value and to be settable (the plugin asks the engine exactly what
+    set_editor_property will) — not found out at restore time."""
     out = {}
     for n in names:
         try:
@@ -247,6 +248,10 @@ def _snap_props(a, names, path, missing, errors):
         if not same:
             errors.append({"path": path, "property": n, "error": "%s cannot be restored: %s" % (type(v).__name__, why)})
             continue
+        not_settable = lib.why_not_settable(a, n)
+        if not_settable:
+            errors.append({"path": path, "property": n, "error": "cannot be set back: %s" % not_settable})
+            continue
         out[n] = e
     return out
 
@@ -257,6 +262,7 @@ def _op_snapshot_actors(args):
     world, name = _v2_world({"world": "editor"}, "editor")
     flt = (args.get("class_filter") or "").lower()
     names = [str(n) for n in args.get("properties") or []]
+    lib = _need_plugin(9, "snapshot properties (the engine is asked whether each can be set back)") if names else None
     missing, prop_errors = set(names), []
     out = []
     for a in _world_actors(world, name):
@@ -269,7 +275,7 @@ def _op_snapshot_actors(args):
                "tags": [str(t) for t in a.tags],
                "loc": [loc.x, loc.y, loc.z], "rot": [rot.pitch, rot.yaw, rot.roll], "scale": [sc.x, sc.y, sc.z]}
         if names:
-            props = _snap_props(a, names, row["path"], missing, prop_errors)
+            props = _snap_props(a, names, row["path"], missing, prop_errors, lib)
             if props:
                 row["props"] = props
         out.append(row)
@@ -345,8 +351,9 @@ def _op_snapshot_restore(args):
                 a.set_actor_scale3d(unreal.Vector(scale[0], scale[1], scale[2]))
             for k, v in vals.items():
                 try:
-                    before[3][k] = a.get_editor_property(k)
+                    old = a.get_editor_property(k)
                     a.set_editor_property(k, v)
+                    before[3][k] = old  # put back only what was actually changed
                     props_restored += 1
                 except Exception as ex:  # e.g. a read-only property
                     failure = {"path": t.get("path"), "property": k, "error": str(ex)}
@@ -354,20 +361,26 @@ def _op_snapshot_restore(args):
             if failure:
                 break
             restored += 1
+        not_reverted = []
         if failure:
             # All or nothing: put back what this restore changed, and leave no undo step.
             for a, (loc, rot, sc, props) in reversed(done):
                 for k, v in props.items():
                     try:
                         a.set_editor_property(k, v)
-                    except Exception:
-                        pass
+                    except Exception as ex:
+                        not_reverted.append({"path": _norm_path(a.get_path_name()), "property": k, "error": str(ex)})
                 a.set_actor_location(loc, False, False)
                 a.set_actor_rotation(rot, False)
                 a.set_actor_scale3d(sc)
             if tx is not None:
                 tx.cancel()
     if failure:
+        if not_reverted:
+            raise _V2Error("EDITOR_ERROR", "%s %s could not be set (%s), and putting back what the restore had changed "
+                           "failed for %d value(s): those actors are half-restored (no undo step; nothing saved)"
+                           % (failure["path"], failure["property"], failure["error"], len(not_reverted)),
+                           property_errors=[failure], not_reverted=not_reverted)
         raise _V2Error("EDITOR_ERROR", "%s %s could not be set (%s): nothing was restored or saved"
                        % (failure["path"], failure["property"], failure["error"]), property_errors=[failure])
     # A class-filtered snapshot only speaks for the actors its filter selects.

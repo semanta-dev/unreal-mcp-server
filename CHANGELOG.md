@@ -162,8 +162,8 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
   - `snapshot op=take properties=[…]` also records those properties of every actor that has them, each with its
     type (bools, numbers — ints past 2^53 kept exact —, strings, names, texts — the display string, not a
     localization key —, enums, vectors, rotators, colors, object references); a property no actor in scope has, a
-    value that would not rebuild into the same value (a NaN, an enum Python cannot reach, an unreadable property) is
-    refused at take. `diff` reports `changed`; `snapshot_restore` sets them back with the transforms — every stored
+    value that would not rebuild into the same value (a NaN, an enum Python cannot reach, an unreadable property) or
+    that the engine would not let a restore set (read-only, defaults-only — plugin API 9 asks it) is refused at take. `diff` reports `changed`; `snapshot_restore` sets them back with the transforms — every stored
     value rebuilt first, then all of it or nothing (a value the engine refuses, e.g. a read-only property, puts back
     everything the restore changed and leaves no undo step); refused during PIE.
   - `level op=open save=false` never saves: refused while the open level has unsaved changes (loading drops them —
@@ -174,7 +174,7 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
     classes checked from the asset registry): the same checks as the real call, the change reported, nothing written;
     not `settings` / `curve_keys` (the plugin checks those while writing). A dry run is no edit for `undo`.
   - `world_query sphere_overlap object_types` — default the six engine object channels (pawns were invisible: only
-    WorldStatic was asked), a project channel as `object_type_query_N`; hits list path and class.
+    WorldStatic was asked), or a project object channel by its name (plugin API 9); hits list path and class.
 
 ### Fixed
 - `world=editor` during PIE found no editor world on UE 5.7 (`get_editor_world()` is None while PIE runs): it is now

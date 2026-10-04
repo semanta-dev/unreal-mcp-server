@@ -3034,7 +3034,7 @@
             "type": "string"
           },
           "object_types": {
-            "description": "sphere_overlap: world_static | world_dynamic | pawn | physics_body | vehicle | destructible (default: these six) | object_type_query_N (a project channel)",
+            "description": "sphere_overlap: world_static | world_dynamic | pawn | physics_body | vehicle | destructible (default: these six), or a project object channel by name",
             "items": {
               "type": "string"
             },
