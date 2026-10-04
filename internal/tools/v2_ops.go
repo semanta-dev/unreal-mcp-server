@@ -57,7 +57,7 @@ func jobSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "job", Title: "Background jobs", Toolset: spec.Core, Offline: true, Timeout: sync28, Max: sync28, Ops: ops,
-		Description: "Follow async work (build, playtest, editor_lifecycle, git_revert, headless: {job_id, state} unless wait_s).\n- status: state, last progress, result or error.\n- wait: up to wait_s (default 25), streaming progress.\n- cancel.\n- list: this project's jobs (any of its sessions can poll them).",
+		Description: "Follow async work (build, playtest, editor_lifecycle, git_revert, headless).\n- status: state, last progress, result or error.\n- wait: up to wait_s (default 25), streaming progress.\n- cancel.\n- list: this project's jobs (any of its sessions can poll them).",
 		Schema:      spec.SchemaFor[jobIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces:    []string{"job_status", "job_cancel"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {

@@ -370,7 +370,7 @@ _tier mutating · offline_
 
 Edit Config/*.ini directly (no editor; idempotent; the editor reads most at startup).
 - set_default_gamemode `class`.
-- input_action `name` `key` modifiers.
+- input_action `name` `key` modifiers (legacy; Enhanced Input: data_edit).
 - input_axis `name` `key` `scale`.
 - gameplay_tag `tag` `comment`.
 
@@ -487,7 +487,7 @@ Play In Editor.
 
 _tier readonly_
 
-Read the running game (PIE) by reflection (its own API, events included: toolset game): gamestate properties, a class histogram `counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. pie_wait predicates address its output (gamestate.Prop, counts.Class, pawn.speed).
+Read the running game (PIE) by reflection (its own API, events too: toolset game): gamestate properties, a class histogram `counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. pie_wait predicates address its output (gamestate.Prop, counts.Class, pawn.speed).
 
 | tier | required | needs |
 |---|---|---|
@@ -675,7 +675,7 @@ Listen to the running game (PIE only, UnrealMCP plugin).
 
 _tier ephemeral · offline_
 
-Follow async work (build, playtest, editor_lifecycle, git_revert, headless: {job_id, state} unless wait_s).
+Follow async work (build, playtest, editor_lifecycle, git_revert, headless).
 - status: state, last progress, result or error.
 - wait: up to wait_s (default 25), streaming progress.
 - cancel.

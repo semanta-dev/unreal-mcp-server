@@ -1719,7 +1719,7 @@
         "idempotentHint": true,
         "openWorldHint": false
       },
-      "description": "Follow async work (build, playtest, editor_lifecycle, git_revert, headless: {job_id, state} unless wait_s).\n- status: state, last progress, result or error.\n- wait: up to wait_s (default 25), streaming progress.\n- cancel.\n- list: this project's jobs (any of its sessions can poll them).",
+      "description": "Follow async work (build, playtest, editor_lifecycle, git_revert, headless).\n- status: state, last progress, result or error.\n- wait: up to wait_s (default 25), streaming progress.\n- cancel.\n- list: this project's jobs (any of its sessions can poll them).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1952,7 +1952,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read the running game (PIE) by reflection (its own API, events included: toolset game): gamestate properties, a class histogram `counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. pie_wait predicates address its output (gamestate.Prop, counts.Class, pawn.speed).",
+      "description": "Read the running game (PIE) by reflection (its own API, events too: toolset game): gamestate properties, a class histogram `counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. pie_wait predicates address its output (gamestate.Prop, counts.Class, pawn.speed).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2227,7 +2227,7 @@
         "destructiveHint": false,
         "openWorldHint": false
       },
-      "description": "Edit Config/*.ini directly (no editor; idempotent; the editor reads most at startup).\n- set_default_gamemode `class`.\n- input_action `name` `key` modifiers.\n- input_axis `name` `key` `scale`.\n- gameplay_tag `tag` `comment`.",
+      "description": "Edit Config/*.ini directly (no editor; idempotent; the editor reads most at startup).\n- set_default_gamemode `class`.\n- input_action `name` `key` modifiers (legacy; Enhanced Input: data_edit).\n- input_axis `name` `key` `scale`.\n- gameplay_tag `tag` `comment`.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

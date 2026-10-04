@@ -349,7 +349,7 @@ func pieObserveSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "pie_observe", Title: "Observe the running game", Toolset: spec.Core, Timeout: sync15, Max: sync28,
 		Ops: []spec.OpSpec{{Tier: spec.ReadOnly, Idempotent: true, Reaches: []string{"pie_observe"}, Needs: []string{"pie"}}},
-		Description: "Read the running game (PIE) by reflection (its own API, events included: toolset game): gamestate properties, a class histogram " +
+		Description: "Read the running game (PIE) by reflection (its own API, events too: toolset game): gamestate properties, a class histogram " +
 			"`counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. " +
 			"pie_wait predicates address its output (gamestate.Prop, counts.Class, pawn.speed).",
 		Schema:   spec.SchemaFor[pieObserveIn](nil),

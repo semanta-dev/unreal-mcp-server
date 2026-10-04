@@ -413,7 +413,7 @@ func projectConfigSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "project_config", Title: "Project config (.ini)", Toolset: spec.Core, Offline: true, Timeout: sync8, Max: sync8, Ops: ops,
-		Description: "Edit Config/*.ini directly (no editor; idempotent; the editor reads most at startup).\n- set_default_gamemode `class`.\n- input_action `name` `key` modifiers.\n- input_axis `name` `key` `scale`.\n- gameplay_tag `tag` `comment`.",
+		Description: "Edit Config/*.ini directly (no editor; idempotent; the editor reads most at startup).\n- set_default_gamemode `class`.\n- input_action `name` `key` modifiers (legacy; Enhanced Input: data_edit).\n- input_axis `name` `key` `scale`.\n- gameplay_tag `tag` `comment`.",
 		Schema:      spec.SchemaFor[projectConfigIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces:    []string{"set_gamemode", "input_action", "input_axis", "gameplay_tag_add"},
 		Handler:     projectConfig,
