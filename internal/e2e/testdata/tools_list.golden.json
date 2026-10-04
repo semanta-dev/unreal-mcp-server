@@ -826,7 +826,7 @@
             "type": "string"
           },
           "class": {
-            "description": "settings: the settings class, e.g. /Script/Engine.RendererSettings",
+            "description": "settings: the settings class, e.g. /Script/EngineSettings.GeneralProjectSettings",
             "type": "string"
           },
           "context": {

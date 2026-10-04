@@ -344,11 +344,12 @@ def _op_data_add_variable(args):
     taken = auth.check_member_name(bp, unreal.Name(name))
     if taken:
         raise _V2Error("CONFLICT", "%s: %s" % (path, taken))
+    before = {v.get("name") for v in json.loads(auth.describe_blueprint_json(bp, False)).get("variables") or []}
     if not L.add_member_variable(bp, unreal.Name(name), pin):
         raise _V2Error("EDITOR_ERROR", "%s could not add %s" % (path, name))
     after = [v.get("name") for v in json.loads(auth.describe_blueprint_json(bp, False)).get("variables") or []]
     if name not in after:
-        stray = [v for v in after if v.lower().startswith(name.lower() + "_")]
+        stray = [v for v in after if v not in before]  # only what this add created (never a look-alike)
         for v in stray:  # undo the half-applied add before reporting it
             auth.remove_member_variable(bp, unreal.Name(v))
         raise _V2Error("EDITOR_ERROR", "%s: the engine did not add a variable named %s (removed %s)" % (path, name, stray or "nothing"))

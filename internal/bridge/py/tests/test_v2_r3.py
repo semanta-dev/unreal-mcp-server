@@ -344,3 +344,11 @@ def test_add_variable_refuses_during_pie(v2, ue):
     ue.pie_actors = []
     env = call(v2, "data_add_variable", {"asset": "/Game/R3/BP", "name": "Armor", "type": "int"})
     assert env["code"] == "PRECONDITION", env
+
+
+def test_stray_cleanup_never_touches_a_look_alike(v2, ue):
+    # Armor_Max existed before; the engine renames the new Armor to Armor_0: only Armor_0 goes.
+    state = {"variables": [{"name": "Armor_Max"}], "components": [], "functions": [], "events": []}
+    removed = _bp_fixture(ue, state, rename=lambda n: n + "_0")
+    env = call(v2, "data_add_variable", {"asset": "/Game/R3/BP", "name": "Armor", "type": "int"})
+    assert env["code"] == "EDITOR_ERROR" and removed == ["Armor_0"], (env, removed)

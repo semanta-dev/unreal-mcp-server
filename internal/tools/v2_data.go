@@ -60,7 +60,7 @@ func dataQueryHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 type dataEditIn struct {
 	Op               string         `json:"op" jsonschema:"set_properties | settings | table_upsert | table_delete | curve_keys | add_variable | input_mapping"`
 	Asset            string         `json:"asset,omitempty" jsonschema:"the asset (not settings / input_mapping)"`
-	Class            string         `json:"class,omitempty" jsonschema:"settings: the settings class, e.g. /Script/Engine.RendererSettings"`
+	Class            string         `json:"class,omitempty" jsonschema:"settings: the settings class, e.g. /Script/EngineSettings.GeneralProjectSettings"`
 	Properties       map[string]any `json:"properties,omitempty" jsonschema:"set_properties: {property: value} on a non-Blueprint asset (Blueprints: asset_edit); settings: on the class default"`
 	Rows             map[string]any `json:"rows,omitempty" jsonschema:"table_upsert: {row name: {field: value}}; fields not given keep their values"`
 	RowNames         []string       `json:"row_names,omitempty" jsonschema:"table_delete: the rows to delete (all exist, or nothing is deleted)"`

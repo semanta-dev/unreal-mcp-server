@@ -1256,7 +1256,7 @@ Edit game data; each op saves. set_properties (any non-Blueprint asset), setting
 |---|---|---|
 | `action` | string | input_mapping: the InputAction asset, e.g. /Game/Input/IA_Dash (created if missing) |
 | `asset` | string | the asset (not settings / input_mapping) |
-| `class` | string | settings: the settings class, e.g. /Script/Engine.RendererSettings |
+| `class` | string | settings: the settings class, e.g. /Script/EngineSettings.GeneralProjectSettings |
 | `context` | string | input_mapping: the InputMappingContext asset (created if missing) |
 | `default` |  | add_variable: the default value |
 | `expose_on_spawn` | boolean | add_variable: a spawn parameter |

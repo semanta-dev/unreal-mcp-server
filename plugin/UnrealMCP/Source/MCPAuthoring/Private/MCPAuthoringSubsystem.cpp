@@ -722,7 +722,8 @@ FString UMCPAuthoringSubsystem::CheckMemberName(UBlueprint* Blueprint, FName Nam
 	{
 		return TEXT("not a Blueprint");
 	}
-	FKismetNameValidator Validator(Blueprint);
+	// Scoped to the skeleton class, as FindUniqueKismetName (which renames a clash) is.
+	FKismetNameValidator Validator(Blueprint, NAME_None, Blueprint->SkeletonGeneratedClass);
 	switch (Validator.IsValid(Name))
 	{
 	case EValidatorResult::Ok: return FString();
@@ -759,6 +760,13 @@ FString UMCPAuthoringSubsystem::SetConfigDefaultsJson(UClass* SettingsClass, con
 		Out->SetStringField(TEXT("error"), TEXT("not a config (settings) class"));
 		return MCPJsonToString(Out);
 	}
+	if (!SettingsClass->HasAnyClassFlags(CLASS_DefaultConfig))
+	{
+		// A per-user config class: a Default*.ini write would land in the wrong layer.
+		Out->SetBoolField(TEXT("ok"), false);
+		Out->SetStringField(TEXT("error"), TEXT("a per-user config class (not defaultconfig): its settings do not belong in the project's Default*.ini"));
+		return MCPJsonToString(Out);
+	}
 	TSharedPtr<FJsonObject> In;
 	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(PropertiesJson);
 	if (!FJsonSerializer::Deserialize(Reader, In) || !In.IsValid())
@@ -778,20 +786,30 @@ FString UMCPAuthoringSubsystem::SetConfigDefaultsJson(UClass* SettingsClass, con
 			E->SetStringField(TEXT("error"), Message);
 			Errors.Add(MakeShared<FJsonValueObject>(E));
 		};
-		FProperty* Prop = nullptr;
+		// Every property the name could mean (case and underscores ignored; a bool's b
+		// prefix optional, as Python spells it) — never the first of several.
+		TArray<FProperty*> Matches;
 		for (TFieldIterator<FProperty> It(SettingsClass); It; ++It)
 		{
-			if (MCPNormName(It->GetName()) == MCPNormName(Pair.Key))
+			const FString Norm = MCPNormName(It->GetName());
+			const bool bBoolAlias = CastField<FBoolProperty>(*It) && Norm.StartsWith(TEXT("b")) && Norm.Mid(1) == MCPNormName(Pair.Key);
+			if (Norm == MCPNormName(Pair.Key) || bBoolAlias)
 			{
-				Prop = *It;
-				break;
+				Matches.AddUnique(*It);
 			}
 		}
-		if (!Prop)
+		if (Matches.Num() != 1)
 		{
-			Error(FString::Printf(TEXT("%s has no property %s"), *SettingsClass->GetName(), *Pair.Key));
+			FString Names;
+			for (const FProperty* M : Matches)
+			{
+				Names += (Names.IsEmpty() ? TEXT("") : TEXT(", ")) + M->GetName();
+			}
+			Error(Matches.Num() == 0 ? FString::Printf(TEXT("%s has no property %s"), *SettingsClass->GetName(), *Pair.Key)
+				: FString::Printf(TEXT("%s could mean %s: use the exact name"), *Pair.Key, *Names));
 			continue;
 		}
+		FProperty* Prop = Matches[0];
 		if (!Prop->HasAnyPropertyFlags(CPF_Config) || !Prop->HasAnyPropertyFlags(CPF_Edit) || Prop->HasAnyPropertyFlags(CPF_EditConst))
 		{
 			Error(FString::Printf(TEXT("%s is not an editable config property"), *Prop->GetName()));
