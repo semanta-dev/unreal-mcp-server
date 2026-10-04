@@ -507,10 +507,10 @@ func reset(ctx context.Context, s *liveSession, tag string) error {
 }
 
 // runLive runs one task once: reset, setup, the agent loop, then the probes.
-func runLive(ctx context.Context, cl *client, o liveOpts, t *gameTask, run int, logf *os.File) liveResult {
+func runLive(ctx context.Context, cl *client, o liveOpts, t *gameTask, run int, logf *os.File) (r liveResult) {
 	start := time.Now()
-	r := liveResult{Task: t.ID, Goal: t.Goal, HeldOut: t.HeldOut, Run: run, Model: o.model}
-	defer func() { r.Seconds = time.Since(start).Seconds() }()
+	r = liveResult{Task: t.ID, Goal: t.Goal, HeldOut: t.HeldOut, Run: run, Model: o.model}
+	defer func() { r.Seconds = time.Since(start).Seconds() }() // named result: the deferred write lands
 	s, err := startLiveSession(ctx, o, t.Project, logf)
 	if err != nil {
 		r.Err, r.Aborted = "server: "+err.Error(), "error"
