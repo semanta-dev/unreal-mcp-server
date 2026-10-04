@@ -517,7 +517,7 @@ func widgetQuerySpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "widget_query", Title: "Inspect UMG widgets", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
 		Description: "Inspect UMG widgets.\n- tree: a WidgetBlueprint's tree + digest.\n- describe: the palette, or one class's props and slot type.\n- render: a UserWidget class as a PNG (MCPAuthoring module).\n" +
-			"In PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text; a HUD's bindings with their state — path_unreadable is a typo).",
+			"In PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text; a HUD's bindings with their state — path_unreadable is a typo; source_null is normal before the pawn is possessed).",
 		Schema:   spec.SchemaFor[widgetQueryIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces: []string{"widget_tree", "widget_describe", "widget_render"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {

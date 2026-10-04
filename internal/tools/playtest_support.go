@@ -52,6 +52,9 @@ func reportToJSON(r eval.Report) map[string]any {
 		if c.Evidence != nil {
 			m["evidence"] = map[string]any{"frame": c.Evidence.FrameIndex, "t": c.Evidence.TWorld, "value": c.Evidence.Value}
 		}
+		if c.Insufficient {
+			m["insufficient"] = true
+		}
 		checks[i] = m
 	}
 	return map[string]any{"verdict": r.Verdict, "checks": checks}

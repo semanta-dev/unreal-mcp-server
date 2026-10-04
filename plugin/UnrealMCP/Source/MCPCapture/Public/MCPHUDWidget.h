@@ -89,7 +89,8 @@ public:
 	/** Each value binding's state on the last tick (plugin API 7), JSON [{widget, field, path,
 	 *  state}]: ok | source_null (the source does not exist now, e.g. before possession) |
 	 *  path_unreadable (no numeric/bool property or zero-arg getter at path — a typo) |
-	 *  max_unreadable | widget_missing | pending (not ticked yet). A binding fails silently
+	 *  max_unreadable | max_zero (a ratio over 0, written as 0) | widget_missing | pending (not
+	 *  ticked yet); index = the position in FieldSourceBindings (plugin API 8). A binding fails silently
 	 *  in the HUD; this is how it shows. */
 	UFUNCTION(BlueprintCallable, Category = "MCP") FString GetBindingStatesJson() const;
 

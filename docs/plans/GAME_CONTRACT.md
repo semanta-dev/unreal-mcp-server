@@ -36,7 +36,11 @@ declared in the project's `.umcp.json` `game_api` (R1.4). Every function is a `U
 ## Server outputs the eval probes read (R5 contract)
 
 - `playtest op=run` writes `<capture session dir>/playtest.json` (`Saved/MCP/capture/<session>/`) with the verdict,
-  rubric and the merged event timeline `events: [{t, kind, actor?, target?, by_player, data?, visual_t?}]`.
+  rubric and (scenario `record_events: true`) the merged event timeline `events: [{t, kind, actor?, target?,
+  by_player, data?, visual_t?, source}]` — `source` engine (`damage`, `point_damage`, `spawned`, `destroyed`; plugin
+  API 8), journal (this API's events) or server (the playtest's `input` / `game_command` beats) — with
+  `event_window`, `event_gaps` and `event_sources`. The engine source names actors by object name (`GetName()`),
+  as Aesir's journal does — a game whose journal uses other names does not join with it.
 - `playtest op=batch` writes `Saved/MCP/playtest/batch-<id>.json` with `runs: [{seed, verdict, waves: [{wave,
   clear_s}]}]`.
 - Definitions (the feel audit and telemetry kinds use the same ones): **hit-to-visual latency** = `visual_t − t` of

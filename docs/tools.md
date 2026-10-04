@@ -416,7 +416,7 @@ Inspect UMG widgets.
 - tree: a WidgetBlueprint's tree + digest.
 - describe: the palette, or one class's props and slot type.
 - render: a UserWidget class as a PNG (MCPAuthoring module).
-In PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text; a HUD's bindings with their state — path_unreadable is a typo).
+In PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text; a HUD's bindings with their state — path_unreadable is a typo; source_null is normal before the pawn is possessed).
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -762,11 +762,12 @@ The project's git repo (no editor).
 
 _tier exec_
 
-Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, verdict_reasons?, timeline} plus a contact sheet image via wait_s / job. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.
+Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, verdict_reasons?, timeline, events?, playtest_path} plus a contact sheet image via wait_s / job. record_events: the engine + game-journal event timeline (in playtest.json). op=batch seeds=[…]: a run per seed + the spread. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
-| `run` | exec, async | play a scenario: frames + state + beats + rubric verdict |  | editor, plugin>=3 for game_command beats, plugin>=5 for cursor/ui_click/axis beats |
+| `run` | exec, async | play a scenario: frames + state + beats + rubric verdict |  | editor, plugin>=3 for game_command beats, plugin>=5 for cursor/ui_click/axis beats, plugin>=8 for engine events |
+| `batch` | exec, async | a run per seed (engine RNG seeded) + the spread | seeds | editor, plugin>=8 |
 
 | param | type | description |
 |---|---|---|
@@ -777,9 +778,11 @@ Validate that the game works (async job). op=run plays a scenario/v1 (`path` or 
 | `include` | string[] | run: observed property include globs |
 | `json` | string | run: the scenario as inline JSON (instead of path) |
 | `max_frames` | integer | run: frame cap (default 96) |
-| `op` | string | one of: run |
+| `op` | string | one of: run, batch |
 | `path` | string | run: a scenario/v1 .json file |
+| `perf` | boolean | replay under CsvProfiler (no capture/recorder) → perf_csv.* |
 | `properties` | string[] | run: exact observed properties |
+| `seeds` | integer[] | batch: one run per seed (≤ 20) |
 | `wait_s` | number | run: wait up to this many seconds (max 25) before returning the job |
 
 ### `editor_lifecycle` — Editor process
@@ -918,8 +921,8 @@ _tier readonly · offline_
 
 Deterministic design audits over evidence you already captured (offline, read-only) → a report with pass/fail findings; missing evidence is PRECONDITION (insufficient_evidence), never a pass. `kind`: `input` — evidence:
 - audio: {track: [...], events: [...]} — the audio envelope (audio op=capture_stop) and the gameplay events it should answer
-- decision: {points: [...]} — decision points of a play session (no recorder source yet: you build them)
-- feel: {events: [...], within_ms? (120), max_fx_per_event? (4)} — gameplay events with VFX/SFX/camera response times (no recorder source yet: you build them)
+- decision: {points: [...]} | {source, verbs?, available?, min_gap_s? (0.5), from_t?, to_t?} — decision points: the player's actions in a playtest result (source = its playtest_path; record_events) or yours
+- feel: {events: [...] | source, event_kinds? (hit), within_ms? (120), max_fx_per_event? (4), from_t?, to_t?} — gameplay events with VFX/SFX/camera responses: a playtest result's (source = its playtest_path; record_events) or yours
 - in_motion: {samples: [...]} — motion samples (a playtest timeline's tracked actors)
 - luminance: {frame_paths: [...], source?, source_exposure?} — captured frames (source needed without a capture manifest); game_scene frames need source_exposure
 - novelty: {trace, max_dead_stretch?} — new elements over a session (you build the trace)

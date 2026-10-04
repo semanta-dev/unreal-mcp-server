@@ -118,6 +118,37 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
   `screenshot op=pie ui=true` is the screen as the player sees it, UMG/Slate UI included — one frame taken by the
   plugin at the viewport's size, paused or not (HighResShot leaves the UI out).
 
+- **Judge with evidence** (R5, plugin API 8):
+  - **Event timeline**: a scenario with `record_events: true` records the run's gameplay events — the engine's own
+    (`damage`, `point_damage`, `spawned`, `destroyed`: the plugin's `UMCPEventRecorder`, a C++ ring buffer bound to
+    every actor already in the world and every one spawned, unbound at stop and at PIE end), the game journal's
+    (`game_api` `GetEventsSince`: hits, kills, deaths, VFX, SFX…) and the playtest's own beats (`input`,
+    `game_command`), merged by world time. Actors are named by object name in both sources, so they join (the
+    editor label is in `data`). A lost stretch — a ring overrun, a journal gap, a failed drain, PIE ending first — is
+    a gap; an older plugin or no `game_api` makes that source `unavailable` with the reason, never a failure.
+    `playtest` writes `<capture dir>/playtest.json` (verdict, rubric, `events`, `event_gaps`, `event_sources`) and
+    returns `playtest_path` and an `events` summary.
+  - **Rubric kinds over events** (`path: events.<kind>`): `rate` (per minute or second; min / max), `histogram`
+    (`by` actor / target / `data.<field>`; min_buckets, max_share, min_count) and `time_between` (from `from` events
+    matched by `by`, default target — time-to-kill is `events.kill` from `hit`; or between consecutive events; stat
+    p50 / p95 / mean / min / max). All take `by_player`, `from_t` / `to_t`; params are checked when the scenario is
+    parsed. A check whose window an unavailable source or a gap touches is not scored: it reports `insufficient`,
+    and the verdict is **`INSUFFICIENT_EVIDENCE`** (below FAIL, above WARN) unless something failed.
+  - **Audits from a playtest**: `design_audit kind=feel input={source: <playtest_path>}` audits each `hit` (or
+    `event_kinds`) for its visual (`visual_t`), audio (`sfx`) and camera (`camera_shake`) response and its VFX count;
+    `kind=decision` builds decision points from the player's actions in the game's record (held fire is one choice;
+    `verbs`, `available`, `min_gap_s`). A channel the run never journalled, a gap or an unavailable source is
+    `insufficient_evidence`.
+  - **Perf pass**: `playtest perf: true` replays the scenario under CsvProfiler with no capture and no recorder and
+    scores `perf_csv.*` (`p95_frame_ms`, `p50_frame_ms`, `p99_frame_ms`, `mean_frame_ms`, `max_frame_ms`,
+    `hitch_count`, `frames`; kinds `min` / `max`). With `record_events`, a second profiled pass runs the recorder and
+    reports `recorder_overhead_ms`.
+  - **Seeded batches**: `playtest op=batch seeds=[…]` (≤ 20) plays the scenario once per seed — the engine's random
+    streams seeded at each start (`UMCPCoreLibrary::SeedRandomStreams`), then the scenario's optional `seed_command`
+    (a game command taking `{seed}`) — and reports verdict counts, each check's outcomes, the mean / stdev / range of
+    what the checks measured, event counts and wave clear times; `Saved/MCP/playtest/batch-<id>.json` has every run.
+  - HUD binding states (R4) gain `index` and `max_zero` (a ratio over 0).
+
 ### Fixed
 - `world=editor` during PIE found no editor world on UE 5.7 (`get_editor_world()` is None while PIE runs): it is now
   the PIE map's source level.

@@ -27,6 +27,12 @@ type Scenario struct {
 	Setup        Setup         `json:"setup,omitempty"`
 	Beats        []Beat        `json:"beats,omitempty"`
 	Rubric       []RubricCheck `json:"rubric,omitempty"`
+	// RecordEvents turns on the gameplay event timeline (R5.1): the plugin's engine
+	// recorder (plugin >= 8) and the game's journal, merged into playtest.json.
+	RecordEvents bool `json:"record_events,omitempty"`
+	// SeedCommand: a game_command that takes {seed} — run at the start of each run of a
+	// seeded batch (R5.5), after the engine's random streams are seeded.
+	SeedCommand string `json:"seed_command,omitempty"`
 }
 
 // Setup arranges preconditions before play. Spawning into the game world is
@@ -237,6 +243,10 @@ func ParseScenario(data []byte) (*Scenario, []Diagnostic, error) {
 		if c.Kind == "" {
 			add("error", fmt.Sprintf("rubric[%d].kind", i), "check kind is required")
 		}
+		if EventKinds[c.Kind] && !s.RecordEvents {
+			add("warning", fmt.Sprintf("rubric[%d]", i), c.Kind+" reads the event timeline, which this scenario does not record "+
+				"(record_events: true): the check will report insufficient evidence")
+		}
 	}
 	diags = append(diags, LintRubric(s.Rubric)...)
 	return &s, diags, nil
@@ -255,12 +265,31 @@ func LintRubric(checks []RubricCheck) []Diagnostic {
 			diags = append(diags, Diagnostic{"error", field, "perf.* was removed: it timed the recorder (which its own captures " +
 				"slow down), not the game. Measure the game with a CsvProfiler capture (analyze op=perf); the recorder's tick " +
 				"is recorder.tick_ms (needs allow_perturbed: true)"})
+		case EventKinds[c.Kind]:
+			if msg := checkEventParams(c.Kind, c.Path, c.Params); msg != "" {
+				diags = append(diags, Diagnostic{"error", fmt.Sprintf("rubric[%d]", i), msg})
+			}
+		case root == "events":
+			diags = append(diags, Diagnostic{"error", field, "events.* is read by kind histogram, rate or time_between"})
+		case root == "perf_csv" && c.Kind != "min" && c.Kind != "max":
+			diags = append(diags, Diagnostic{"error", fmt.Sprintf("rubric[%d].kind", i), "perf_csv.* takes kind min or max (one value per run)"})
+		case root == "perf_csv" && !perfCSVField(strings.TrimPrefix(c.Path, "perf_csv.")):
+			diags = append(diags, Diagnostic{"error", field, "perf_csv reports " + strings.Join(PerfCSVFields, ", ")})
 		case root == "recorder" && !c.AllowPerturbed:
 			diags = append(diags, Diagnostic{"error", field, "recorder.* is the recorder's own tick timing, perturbed by " +
 				"capture — not the game's frame rate; set allow_perturbed: true to score it anyway"})
 		}
 	}
 	return diags
+}
+
+func perfCSVField(f string) bool {
+	for _, k := range PerfCSVFields {
+		if k == f {
+			return true
+		}
+	}
+	return false
 }
 
 // HasErrors reports whether any diagnostic is an error (vs a warning).

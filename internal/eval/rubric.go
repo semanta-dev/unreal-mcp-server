@@ -70,10 +70,14 @@ type CheckResult struct {
 	Passed   bool
 	Evidence *Evidence
 	Message  string
+	// Insufficient: the check's evidence may be incomplete (events not recorded, a
+	// source unavailable, a gap in its window, no perf pass) — it is not scored.
+	Insufficient bool
 }
 
 // Report is the aggregate result. Verdict is "FAIL" if any fail-severity check
-// failed, else "WARN" if any warn-severity check failed, else "PASS".
+// failed, else "INSUFFICIENT_EVIDENCE" if a fail- or warn-severity check could not
+// be scored, else "WARN" if any warn-severity check failed, else "PASS".
 type Report struct {
 	Checks  []CheckResult
 	Verdict string
@@ -82,9 +86,15 @@ type Report struct {
 // Evaluate runs every check in spec over the timeline and log summary and folds
 // the per-check severities into a single Verdict.
 func Evaluate(timeline []Sample, logs LogSummary, spec RubricSpec) Report {
+	return EvaluateInputs(Inputs{Timeline: timeline, Logs: logs}, spec)
+}
+
+// EvaluateInputs is Evaluate over everything a run recorded: frames, logs, the event
+// timeline and the perf pass.
+func EvaluateInputs(in Inputs, spec RubricSpec) Report {
 	rep := Report{}
 	for _, c := range spec.Checks {
-		rep.Checks = append(rep.Checks, evalCheck(timeline, logs, c))
+		rep.Checks = append(rep.Checks, evalCheck(in, c))
 	}
 	rep.Verdict = verdict(rep.Checks)
 	return rep
@@ -94,9 +104,13 @@ func Evaluate(timeline []Sample, logs LogSummary, spec RubricSpec) Report {
 // checks move the verdict; info-severity (and any unrecognized severity) checks
 // are advisory and never change it.
 func verdict(results []CheckResult) string {
-	anyFail, anyWarn := false, false
+	anyFail, anyWarn, anyInsufficient := false, false, false
 	for _, r := range results {
 		if r.Passed {
+			continue
+		}
+		if r.Insufficient {
+			anyInsufficient = anyInsufficient || r.Severity == sevFail || r.Severity == sevWarn
 			continue
 		}
 		switch r.Severity {
@@ -109,12 +123,18 @@ func verdict(results []CheckResult) string {
 	switch {
 	case anyFail:
 		return "FAIL"
+	case anyInsufficient:
+		return VerdictInsufficient
 	case anyWarn:
 		return "WARN"
 	default:
 		return "PASS"
 	}
 }
+
+// VerdictInsufficient: no check failed, but one that moves the verdict could not be
+// scored (R0.8: missing evidence is never a pass).
+const VerdictInsufficient = "INSUFFICIENT_EVIDENCE"
 
 const (
 	sevFail = "fail"
@@ -133,9 +153,22 @@ var timelineKinds = map[string]bool{
 // evalCheck dispatches one check to its reducer and returns a fully populated
 // CheckResult. Log checks and unknown kinds are handled before the timeline is
 // touched (they either ignore it or need a clear empty-timeline message).
-func evalCheck(timeline []Sample, logs LogSummary, c Check) CheckResult {
+func evalCheck(in Inputs, c Check) CheckResult {
+	timeline, logs := in.Timeline, in.Logs
 	res := CheckResult{ID: c.ID, Kind: c.Kind, Severity: normSeverity(c.Severity)}
 
+	if EventKinds[c.Kind] {
+		evalEventCheck(in.Events, c, &res)
+		return res
+	}
+	if strings.HasPrefix(c.Path, "perf_csv.") {
+		if c.Kind != "min" && c.Kind != "max" {
+			res.Message = "perf_csv.* takes kind min or max (one value per run)"
+			return res
+		}
+		evalPerfCSV(in.PerfCSV, c, &res)
+		return res
+	}
 	switch c.Kind {
 	case "log_zero":
 		evalLogZero(logs, c, &res)

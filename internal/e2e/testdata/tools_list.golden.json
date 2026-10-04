@@ -960,7 +960,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Deterministic design audits over evidence you already captured (offline, read-only) → a report with pass/fail findings; missing evidence is PRECONDITION (insufficient_evidence), never a pass. `kind`: `input` — evidence:\n- audio: {track: [...], events: [...]} — the audio envelope (audio op=capture_stop) and the gameplay events it should answer\n- decision: {points: [...]} — decision points of a play session (no recorder source yet: you build them)\n- feel: {events: [...], within_ms? (120), max_fx_per_event? (4)} — gameplay events with VFX/SFX/camera response times (no recorder source yet: you build them)\n- in_motion: {samples: [...]} — motion samples (a playtest timeline's tracked actors)\n- luminance: {frame_paths: [...], source?, source_exposure?} — captured frames (source needed without a capture manifest); game_scene frames need source_exposure\n- novelty: {trace, max_dead_stretch?} — new elements over a session (you build the trace)\n- primitive: {scene: {level, actors: [...]}} — a level's actors (actor_query)\n- render: {config, timeline? | timeline_path?} — DefaultEngine.ini map settings, optionally a playtest timeline\n- style: {frame_paths: [...]} — captured frames (capture, screenshot)\n- utilization: {inventory} — a pack's assets and the subset the build references\n- verb: {burst: [...], envelope} — a 60 fps burst of pawn/weapon state around one input (you build it)",
+      "description": "Deterministic design audits over evidence you already captured (offline, read-only) → a report with pass/fail findings; missing evidence is PRECONDITION (insufficient_evidence), never a pass. `kind`: `input` — evidence:\n- audio: {track: [...], events: [...]} — the audio envelope (audio op=capture_stop) and the gameplay events it should answer\n- decision: {points: [...]} | {source, verbs?, available?, min_gap_s? (0.5), from_t?, to_t?} — decision points: the player's actions in a playtest result (source = its playtest_path; record_events) or yours\n- feel: {events: [...] | source, event_kinds? (hit), within_ms? (120), max_fx_per_event? (4), from_t?, to_t?} — gameplay events with VFX/SFX/camera responses: a playtest result's (source = its playtest_path; record_events) or yours\n- in_motion: {samples: [...]} — motion samples (a playtest timeline's tracked actors)\n- luminance: {frame_paths: [...], source?, source_exposure?} — captured frames (source needed without a capture manifest); game_scene frames need source_exposure\n- novelty: {trace, max_dead_stretch?} — new elements over a session (you build the trace)\n- primitive: {scene: {level, actors: [...]}} — a level's actors (actor_query)\n- render: {config, timeline? | timeline_path?} — DefaultEngine.ini map settings, optionally a playtest timeline\n- style: {frame_paths: [...]} — captured frames (capture, screenshot)\n- utilization: {inventory} — a pack's assets and the subset the build references\n- verb: {burst: [...], envelope} — a 60 fps burst of pawn/weapon state around one input (you build it)",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2030,7 +2030,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, verdict_reasons?, timeline} plus a contact sheet image via wait_s / job. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
+      "description": "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, verdict_reasons?, timeline, events?, playtest_path} plus a contact sheet image via wait_s / job. record_events: the engine + game-journal event timeline (in playtest.json). op=batch seeds=[…]: a run per seed + the spread. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2071,7 +2071,8 @@
           },
           "op": {
             "enum": [
-              "run"
+              "run",
+              "batch"
             ],
             "type": "string"
           },
@@ -2079,10 +2080,21 @@
             "description": "run: a scenario/v1 .json file",
             "type": "string"
           },
+          "perf": {
+            "description": "replay under CsvProfiler (no capture/recorder) → perf_csv.*",
+            "type": "boolean"
+          },
           "properties": {
             "description": "run: exact observed properties",
             "items": {
               "type": "string"
+            },
+            "type": "array"
+          },
+          "seeds": {
+            "description": "batch: one run per seed (≤ 20)",
+            "items": {
+              "type": "integer"
             },
             "type": "array"
           },
@@ -2926,7 +2938,7 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Inspect UMG widgets.\n- tree: a WidgetBlueprint's tree + digest.\n- describe: the palette, or one class's props and slot type.\n- render: a UserWidget class as a PNG (MCPAuthoring module).\nIn PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text; a HUD's bindings with their state — path_unreadable is a typo).",
+      "description": "Inspect UMG widgets.\n- tree: a WidgetBlueprint's tree + digest.\n- describe: the palette, or one class's props and slot type.\n- render: a UserWidget class as a PNG (MCPAuthoring module).\nIn PIE: mount `class` on the game's screen / unmount; live_tree: the live widgets (geometry in viewport pixels, visibility, text; a HUD's bindings with their state — path_unreadable is a typo; source_null is normal before the pawn is possessed).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

@@ -25,11 +25,19 @@
 // 6: MCPAuthoring GetCurveKeysJson/SetCurveKeysJson, DescribeBlueprintJson (remediation R3).
 // 7: UMCPHUDWidget FloatToText/FloatToPercent/BoolToVisibility conversions (bool sources), FormatText with a MaxPath;
 //    UMCPHUDWidget GetBindingStatesJson; MCPCapture CaptureUIFrame (remediation R4).
-static constexpr int32 GMCPPluginApiVersion = 7;
+// 8: UMCPEventRecorder: engine damage / spawn / destroy events in a ring buffer; SeedRandomStreams;
+//    UMCPHUDWidget binding state max_zero and index (remediation R5).
+static constexpr int32 GMCPPluginApiVersion = 8;
 
 int32 UMCPCoreLibrary::GetPluginApiVersion()
 {
 	return GMCPPluginApiVersion;
+}
+
+void UMCPCoreLibrary::SeedRandomStreams(int32 Seed)
+{
+	FMath::RandInit(Seed);
+	FMath::SRandInit(Seed);
 }
 
 bool UMCPCoreLibrary::IsPureOrConst(UClass* Class, FName FunctionName)

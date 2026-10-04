@@ -39,6 +39,10 @@ type World struct {
 	Inputs []map[string]any
 	// WorldTimeScale is game seconds per real second (0 = 1; a paused game: tiny).
 	WorldTimeScale float64
+	// Events is what the events session (R5.1) reports.
+	Events       EventFixture
+	eventSources map[string]any
+	eventWhy     map[string]any
 	// PIEWorld is the running game world's path pie_time reports (a test changes it to
 	// model a map travel).
 	PIEWorld   string
@@ -176,6 +180,7 @@ func (w *World) Install(e *Emulator) {
 	e.Handle("actor_call", w.actorCall)
 	w.installAssets(e)
 	w.installPlay(e)
+	w.installEvents(e)
 }
 
 // StartPIE copies the editor actors into a PIE world (paths gain UEDPIE_0_).

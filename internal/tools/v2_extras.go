@@ -259,12 +259,12 @@ var designAudits = map[string]struct {
 }{
 	"primitive": {"{scene: {level, actors: [...]}}", "a level's actors (actor_query)",
 		auditOf(func(in primitiveAuditIn) any { return audit.Audit(in.Scene) })},
-	"decision": {"{points: [...]}", "decision points of a play session (no recorder source yet: you build them)",
-		auditOf(func(in decisionAuditIn) any { return audit.DecisionAudit(in.Points) })},
+	"decision": {"{points: [...]} | {source, verbs?, available?, min_gap_s? (0.5), from_t?, to_t?}", "decision points: the player's actions in a playtest result (source = its playtest_path; record_events) or yours",
+		withPlaytestSource(decisionFromPlaytest, auditOf(func(in decisionAuditIn) any { return audit.DecisionAudit(in.Points) }))},
 	"novelty": {"{trace, max_dead_stretch?}", "new elements over a session (you build the trace)",
 		auditOf(novelty)},
-	"feel": {"{events: [...], within_ms? (120), max_fx_per_event? (4)}", "gameplay events with VFX/SFX/camera response times (no recorder source yet: you build them)",
-		auditOf(feel)},
+	"feel": {"{events: [...] | source, event_kinds? (hit), within_ms? (120), max_fx_per_event? (4), from_t?, to_t?}", "gameplay events with VFX/SFX/camera responses: a playtest result's (source = its playtest_path; record_events) or yours",
+		withPlaytestSource(feelFromPlaytest, auditOf(feel))},
 	"verb": {"{burst: [...], envelope}", "a 60 fps burst of pawn/weapon state around one input (you build it)",
 		auditOf(func(in verbResponseIn) any { return audit.VerbResponse(in.Burst, in.Envelope) })},
 	"in_motion": {"{samples: [...]}", "motion samples (a playtest timeline's tracked actors)",
@@ -503,7 +503,11 @@ func designAuditSpec() *spec.Spec {
 			if err := c.Decode(&in); err != nil {
 				return nil, err
 			}
-			raw, _ := json.Marshal(projectPaths(c, in.Input))
+			input := projectPaths(c, in.Input)
+			if p, ok := input["source"].(string); ok && (in.Kind == "feel" || in.Kind == "decision") {
+				input["source"] = projectPath(c, p)
+			}
+			raw, _ := json.Marshal(input)
 			a := designAudits[in.Kind]
 			report, err := a.run(raw)
 			if err != nil {

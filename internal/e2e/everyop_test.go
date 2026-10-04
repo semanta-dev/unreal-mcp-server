@@ -207,6 +207,9 @@ func opArgs(sp *spec.Spec, op spec.OpSpec, dir, png string) map[string]any {
 	case "playtest":
 		args["json"] = `{"schema":"scenario/v1","name":"smoke","mode":"pie","duration_s":0.1,"interval_s":0.05}`
 		args["wait_s"] = 20.0
+		if op.Name == "batch" {
+			args["seeds"] = []any{1.0}
+		}
 	case "asset_import":
 		if op.Name == "datatable" {
 			args["json"] = "[]"

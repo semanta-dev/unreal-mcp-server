@@ -104,6 +104,7 @@ FString UMCPHUDWidget::GetBindingStatesJson() const
 	{
 		const FMCPFieldSourceBinding& B = FieldSourceBindings[i];
 		TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+		J->SetNumberField(TEXT("index"), i); // FieldSourceBindings position (tells duplicates apart)
 		J->SetStringField(TEXT("widget"), B.TargetWidget.ToString());
 		J->SetStringField(TEXT("field"), B.TargetField.ToString());
 		J->SetStringField(TEXT("path"), B.Path);
@@ -307,7 +308,7 @@ void UMCPHUDWidget::NativeTick(const FGeometry& MyGeometry, float DeltaTime)
 
 	// --- value pulls (health/ammo) ---
 	static const FName StOk(TEXT("ok")), StSourceNull(TEXT("source_null")), StPath(TEXT("path_unreadable")),
-		StMax(TEXT("max_unreadable")), StWidget(TEXT("widget_missing"));
+		StMax(TEXT("max_unreadable")), StMaxZero(TEXT("max_zero")), StWidget(TEXT("widget_missing"));
 	BindingStates.SetNum(FieldSourceBindings.Num());
 	for (int32 Bi = 0; Bi < FieldSourceBindings.Num(); ++Bi)
 	{
@@ -343,6 +344,10 @@ void UMCPHUDWidget::NativeTick(const FGeometry& MyGeometry, float DeltaTime)
 			if (!bMaxRead)
 			{
 				BindingStates[Bi] = StMax;
+			}
+			else if (MaxVal == 0.0)
+			{
+				BindingStates[Bi] = StMaxZero; // written as 0: "MaxHealth not set yet", not "health 0"
 			}
 			if (bMaxRead && MaxVal != 0.0)
 			{

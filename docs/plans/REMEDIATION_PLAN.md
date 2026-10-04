@@ -209,6 +209,7 @@ An audit whose evidence has no source for a game returns `insufficient_evidence`
 | *Measured after R2 (48 tools / 34 core)* | *43 808 B core; all toolsets 65 006 B* |
 | *Measured after R3 (50 tools / 34 core)* | *43 989 B core; all toolsets 68 506 B* |
 | *Measured after R4 (50 tools / 34 core)* | *44 542 B core; all toolsets 69 882 B* |
+| *Measured after R5 (50 tools / 34 core)* | *44 958 B core; all toolsets 70 473 B* |
 
 New optional toolsets: `game` (`game`, `game_command`), `data` (`data_query`, `data_edit`), `world` (moved tools).
 Count pins: **50 tools / 34 core** after the plan (from 45 / 36). All toolsets ≤ 75 000 B (est. ~66 KB). Each phase
@@ -238,7 +239,7 @@ Plugin API versions — one bump per phase that changes the plugin; each op decl
 | 5 | R2 | `InjectAxis` (per tick), `MoveCursor`/`ClickAt`/`DragCursor`/`ClickWidget` (a virtual Slate user routed down an explicit widget path; the player's input device), `SpawnInGame` |
 | 6 | R3 | `GetCurveKeysJson` / `SetCurveKeysJson`, `DescribeBlueprintJson` (R0.2 spike rows 5–6); after the R3 review: `CheckMemberName`, `RemoveMemberVariable`, `SetConfigDefaultsJson` (API 6 was not released before them) |
 | 7 | R4 | `UMCPHUDWidget` `FloatToText` / `FloatToPercent` / `BoolToVisibility` (silently ignored before) and `FormatText` with a `MaxPath`; mount and live tree arrived in API 4, the UI screenshot uses the existing `include_ui` capture |
-| 8 | R5 | `UMCPEventRecorder` |
+| 8 | R5 | `UMCPEventRecorder` (engine damage / spawn / destroy events), `SeedRandomStreams`; HUD binding states `index`, `max_zero` |
 
 ## 9. Sequencing and effort
 
@@ -292,7 +293,7 @@ merge.
 | Plugin API version contradictory | per-phase bumps 3–7 (§8 table); each op declares its phase's version |
 | `game_api` error blocks the session; `.umcp.json` rewritable | `game_api` errors local to the `game` toolset, `gate_policy` still applies (R1.4); `.umcp.json` protected + known limit (§10) |
 | `world` move unlisted breaking change | §8 behaviour change; R0.1 fixes core references and `V1Calls` notes; `toolsets` growth in the ledger (§6) |
-| Recorder location unspecified | `UMCPEventRecorder` in the plugin, ring buffer drained by the companion, API 7, rebuild gate (R5.1) |
+| Recorder location unspecified | `UMCPEventRecorder` in the plugin, ring buffer drained by the companion, API 8 (§8), rebuild gate (R5.1) |
 | R0 underestimated; parallelism; paid re-runs | R0 13 d, G 8 d (baseline), total ≈ 71 d, sequential; every non-pilot paid run asks the user (§2) |
 
 ## 13. CTO r3 findings → r4

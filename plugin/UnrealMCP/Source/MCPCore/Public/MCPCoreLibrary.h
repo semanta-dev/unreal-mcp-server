@@ -30,6 +30,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "MCP|Core")
 	static bool IsPureOrConst(UClass* Class, FName FunctionName);
 
+	/** Plugin API 8: seed the engine's global random streams (FMath::Rand / FRand /
+	 *  SRand) — what gameplay code that does not keep its own stream draws from. A seeded
+	 *  playtest batch (R5.5) calls it at the start of each run; frame timing still varies. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Core")
+	static void SeedRandomStreams(int32 Seed);
+
 	/** The title of the transaction Ctrl+Z would undo next ("" when there is none). */
 	UFUNCTION(BlueprintCallable, Category = "MCP|Core")
 	static FString PeekUndoTitle();

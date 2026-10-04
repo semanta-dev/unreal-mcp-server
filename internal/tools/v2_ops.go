@@ -565,19 +565,25 @@ type playtestIn struct {
 	Cols       int      `json:"cols,omitempty" jsonschema:"run: montage columns (default 8)"`
 	WaitS      float64  `json:"wait_s,omitempty" jsonschema:"run: wait up to this many seconds (max 25) before returning the job"`
 	BeatErrors string   `json:"beat_errors,omitempty" jsonschema:"run: fail (default: a failed setup step or beat fails the run) | warn"`
+	Perf       bool     `json:"perf,omitempty" jsonschema:"replay under CsvProfiler (no capture/recorder) → perf_csv.*"`
+	Seeds      []int    `json:"seeds,omitempty" jsonschema:"batch: one run per seed (≤ 20)"`
 }
+
+var playtestReaches = []string{"open_level", "pie_start", "pie_stop", "console", "actor_set_properties",
+	"capture_start", "capture_stop", "actor_call", "pie_observe", "observe_paths", "editor_ping",
+	"pie_input", "pie_cursor", "pie_ui_click", "pie_time", "game_read", "game_command", "events_start", "events_stop", "seed_random"}
 
 func playtestSpec() *spec.Spec {
 	ops := []spec.OpSpec{
 		{Name: "run", Summary: "play a scenario: frames + state + beats + rubric verdict", Tier: spec.Exec, Async: true,
-			Reaches: []string{"open_level", "pie_start", "pie_stop", "console", "actor_set_properties",
-				"capture_start", "capture_stop", "actor_call", "pie_observe", "observe_paths", "editor_ping",
-				"pie_input", "pie_cursor", "pie_ui_click", "pie_time", "game_read", "game_command"},
-			Needs: []string{"plugin>=3 for game_command beats", "plugin>=5 for cursor/ui_click/axis beats"}},
+			Reaches: playtestReaches[:len(playtestReaches)-1],
+			Rejects: []string{"seeds"}, Needs: []string{"plugin>=3 for game_command beats", "plugin>=5 for cursor/ui_click/axis beats", "plugin>=8 for engine events"}},
+		{Name: "batch", Summary: "a run per seed (engine RNG seeded) + the spread", Tier: spec.Exec, Async: true,
+			Required: []string{"seeds"}, Reaches: playtestReaches, Needs: []string{"plugin>=8"}},
 	}
 	return &spec.Spec{
 		Name: "playtest", Title: "Automated playtest", Toolset: spec.Core, Timeout: sync15, Max: sync28, Ops: ops,
-		Description: "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, verdict_reasons?, timeline} plus a contact sheet image via wait_s / job. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
+		Description: "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, verdict_reasons?, timeline, events?, playtest_path} plus a contact sheet image via wait_s / job. record_events: the engine + game-journal event timeline (in playtest.json). op=batch seeds=[…]: a run per seed + the spread. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
 		Schema:      spec.SchemaFor[playtestIn](map[string][]any{"op": spec.OpEnum(ops...), "beat_errors": {"fail", "warn"}}, "op"),
 		Replaces:    []string{"playtest_capture", "scenario_run"},
 		Handler:     playtestHandler,
@@ -611,6 +617,15 @@ func playtestHandler(_ context.Context, c *spec.Call) (*spec.Result, error) {
 	if eval.HasErrors(diags) {
 		return nil, envelope.New(envelope.InvalidArgument, "the scenario has errors").WithDetail("diagnostics", diags)
 	}
+	if c.Op.Name == "batch" && (len(in.Seeds) == 0 || len(in.Seeds) > maxSeeds) {
+		return nil, envelope.New(envelope.InvalidArgument, "batch takes 1 to %d seeds", maxSeeds)
+	}
+	if c.Op.Name == "batch" && sc.Mode == "editor" {
+		return nil, envelope.New(envelope.InvalidArgument, "a seeded batch plays the game: mode pie or simulate")
+	}
+	if in.Perf && sc.Mode == "editor" {
+		return nil, envelope.New(envelope.InvalidArgument, "perf profiles the game: mode pie or simulate")
+	}
 	if _, err := v2Bridge(c); err != nil {
 		return nil, err
 	}
@@ -619,14 +634,17 @@ func playtestHandler(_ context.Context, c *spec.Call) (*spec.Result, error) {
 		return nil, err
 	}
 	j := reg.Start(context.Background(), func(jctx context.Context, progress func(string)) (any, error) {
-		return runPlaytest(jctx, c, sc, in, progress)
+		if c.Op.Name == "batch" {
+			return runBatch(jctx, c, sc, in, progress)
+		}
+		return runPlaytest(jctx, c, sc, in, progress, nil)
 	})
 	return &spec.Result{Job: j}, nil
 }
 
 // runPlaytest is the one playtest orchestration (v1 had it twice: playtest_capture
 // and scenario_run).
-func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playtestIn, progress func(string)) (map[string]any, error) {
+func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playtestIn, progress func(string), seed *int) (map[string]any, error) {
 	mode := orStr(sc.Mode, "pie")
 	duration := orDefault(sc.DurationS, 20)
 	runStart := time.Now()
@@ -669,6 +687,9 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 			stop()
 			return crashed(err)
 		}
+		if seed != nil {
+			setupErrs = append(setupErrs, applySeed(ctx, c, sc, *seed)...)
+		}
 		if sc.TimeDilation > 0 && sc.TimeDilation != 1 {
 			_, _ = v2Op(ctx, c, "console", map[string]any{"command": fmt.Sprintf("slomo %g", sc.TimeDilation), "world": "pie"})
 		}
@@ -697,16 +718,36 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 		return crashed(err)
 	}
 	session, _ := started["session"].(string)
+	var timeline *eventTimeline
+	if sc.RecordEvents && playing {
+		if timeline, err = startEventTimeline(ctx, c, session); err != nil {
+			setupErrs = append(setupErrs, "record_events: "+err.Error())
+			progress(setupErrs[len(setupErrs)-1])
+		}
+	}
 	progress(fmt.Sprintf("recording %s for %.0fs", session, duration))
-	beatErrs := append(setupErrs, runBeatsV2(ctx, c, sc.Beats, duration, progress)...)
+	beatErrs := append(setupErrs, runBeatsV2(ctx, c, sc.Beats, duration, progress, timeline)...)
 
 	// Tear down on a detached context so a cancelled job still stops the recorder and PIE.
 	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
+	var events *eval.EventLog
+	var engineReport map[string]any
+	if timeline != nil {
+		if events, engineReport, err = timeline.stop(cctx, c); err != nil {
+			beatErrs = append(beatErrs, "record_events: the event session did not stop cleanly: "+err.Error())
+		}
+	}
 	b, _ := v2Bridge(c)
 	raw, stopErr := b.Call(cctx, "capture_stop", map[string]any{"session": session})
 	stop()
 	result := map[string]any{"scenario": sc.Name, "session": session}
+	if seed != nil {
+		result["seed"] = *seed
+	}
+	if events != nil {
+		result["events"] = eventSummary(events, engineReport)
+	}
 	if len(beatErrs) > 0 {
 		result["beat_errors"] = beatErrs
 	}
@@ -734,10 +775,38 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 	}
 	if len(cr.Frames) == 0 {
 		result["verdict"], result["error"] = "FAIL", "no frames were captured (was the world ticking? possessed play needs mode=pie)"
+		notePlaytestJSON(cr.Dir, result, events)
 		return result, nil
 	}
 	enrichVisual(cr.Dir, cr.Frames)
-	rep := eval.Evaluate(framesToSamples(cr.Frames), logSum, scenarioRubric(sc.Rubric))
+	var perfCSV map[string]float64
+	if in.Perf && playing {
+		values, csvPath, perrs, perr := perfPass(ctx, c, sc, duration, progress, false, seed)
+		beatErrs = append(beatErrs, perrs...)
+		if perr != nil {
+			result["perf_error"] = perr.Error()
+		} else {
+			perfCSV = values
+			pc := map[string]any{"values": values, "csv": csvPath}
+			if sc.RecordEvents {
+				// The event recorder's cost: the same run profiled with it on (R5.4).
+				with, withCSV, werrs, werr := perfPass(ctx, c, sc, duration, progress, true, seed)
+				beatErrs = append(beatErrs, werrs...)
+				if werr != nil {
+					pc["with_events_error"] = werr.Error()
+				} else {
+					pc["with_events"] = map[string]any{"values": with, "csv": withCSV}
+					pc["recorder_overhead_ms"] = map[string]float64{"mean": with["mean_frame_ms"] - values["mean_frame_ms"],
+						"p50": with["p50_frame_ms"] - values["p50_frame_ms"], "p95": with["p95_frame_ms"] - values["p95_frame_ms"]}
+				}
+			}
+			result["perf_csv"] = pc
+		}
+		if len(beatErrs) > 0 {
+			result["beat_errors"] = beatErrs
+		}
+	}
+	rep := eval.EvaluateInputs(eval.Inputs{Timeline: framesToSamples(cr.Frames), Logs: logSum, Events: events, PerfCSV: perfCSV}, scenarioRubric(sc.Rubric))
 	png, sidecar, err := montage(cr.Dir, cr.Frames, orDefaultInt(in.Cols, 8), true, failedFrameIndices(rep))
 	if err != nil {
 		return nil, err
@@ -754,7 +823,20 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 	if len(reasons) > 0 {
 		result["verdict_reasons"] = reasons
 	}
+	notePlaytestJSON(cr.Dir, result, events)
 	return result, nil
+}
+
+// notePlaytestJSON writes playtest.json beside the frames and names it in the result.
+func notePlaytestJSON(dir string, result map[string]any, events *eval.EventLog) {
+	if dir == "" {
+		return
+	}
+	if p, err := writePlaytestJSON(dir, result, events); err == nil {
+		result["playtest_path"] = p
+	} else {
+		result["playtest_path_error"] = err.Error()
+	}
 }
 
 // finalVerdict folds what the rubric cannot see into the verdict: a crash always fails
@@ -786,6 +868,8 @@ func finalVerdict(rubric string, beatErrs []string, crashed bool, beatMode strin
 func rank(v string) int {
 	switch v {
 	case "FAIL":
+		return 3
+	case eval.VerdictInsufficient:
 		return 2
 	case "WARN":
 		return 1
@@ -815,7 +899,7 @@ func beatTarget(t string) string {
 // collecting (not swallowing) beat failures. Beats are scheduled on the wall clock
 // (at_s) or on the game's clock (at_world_s, read with pie_time: paused time does not
 // count) — one clock per scenario (ParseScenario).
-func runBeatsV2(ctx context.Context, c *spec.Call, beats []eval.Beat, duration float64, progress func(string)) []string {
+func runBeatsV2(ctx context.Context, c *spec.Call, beats []eval.Beat, duration float64, progress func(string), timeline *eventTimeline) []string {
 	var errs []string
 	start := time.Now()
 	end := start.Add(secs(duration))
@@ -873,18 +957,23 @@ func runBeatsV2(ctx context.Context, c *spec.Call, beats []eval.Beat, duration f
 			}
 		}
 		if bt.Input != nil {
-			if err := runInputBeat(ctx, c, bt.Input); err != nil {
+			err := runInputBeat(ctx, c, bt.Input)
+			if err != nil {
 				fail(i, "input "+bt.Input.Kind(), err)
 			}
+			timeline.note(ctx, c, "input", true, beatData(map[string]any{"step": bt.Input.Kind(), "key": bt.Input.Key,
+				"action": bt.Input.Action, "widget": bt.Input.Widget, "beat": i}, err))
 		}
 		if g := bt.GameCommand; g != nil {
 			id := g.RequestID
 			if id == "" {
 				id = fmt.Sprintf("playtest-%s-beat%d", runID, i)
 			}
-			if _, err := runGameCommand(ctx, c, gameCommandIn{Name: g.Name, Args: g.Args, RequestID: id}); err != nil {
+			_, err := runGameCommand(ctx, c, gameCommandIn{Name: g.Name, Args: g.Args, RequestID: id})
+			if err != nil {
 				fail(i, "game_command "+g.Name, err)
 			}
+			timeline.note(ctx, c, "game_command", false, beatData(map[string]any{"name": g.Name, "request_id": id, "beat": i}, err))
 		}
 		if bt.WaitUntil != "" {
 			if ok, err := waitUntil(ctx, c, bt.WaitUntil, orDefault(bt.TimeoutS, 10)); err != nil {
@@ -896,6 +985,19 @@ func runBeatsV2(ctx context.Context, c *spec.Call, beats []eval.Beat, duration f
 	}
 	_ = sleepUntil(ctx, end)
 	return errs
+}
+
+// beatData drops empty fields and adds the beat's error, if any.
+func beatData(d map[string]any, err error) map[string]any {
+	for k, v := range d {
+		if v == "" {
+			delete(d, k)
+		}
+	}
+	if err != nil {
+		d["error"] = err.Error()
+	}
+	return d
 }
 
 // runInputBeat plays one input step through the same companion ops as pie op=input /
