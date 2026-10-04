@@ -1,0 +1,38 @@
+diff --git a/Source/PolyWorld/CityBuildWidget.cpp b/Source/PolyWorld/CityBuildWidget.cpp
+index a752ae1..3acac26 100644
+--- a/Source/PolyWorld/CityBuildWidget.cpp
++++ b/Source/PolyWorld/CityBuildWidget.cpp
+@@ -23,6 +23,8 @@
+ #include "PolyWorldGameInstance.h"
+ #include "PolyWorldSaveGame.h"
+ #include "Widgets/Images/SImage.h"
++#include "Widgets/SViewport.h"
++#include "Engine/GameViewportClient.h"
+ #include "Templates/Function.h"   // TFunction (CbwIcon glyph provider)
+ 
+ #include "Engine/StaticMesh.h"             // PHASE 3b: FBuildOption::Mesh soft-ref (TSoftObjectPtr<UStaticMesh>)
+@@ -51,7 +53,23 @@ ACityBuildController* UCityBuildWidget::Ctl() const { return Cast<ACityBuildCont
+ bool UCityBuildWidget::IsPointerOverInteractiveHud() const
+ {
+ 	if (ActiveModal != EActiveModal::None) { return true; }
+-	const FVector2D PointerPos = FSlateApplication::IsInitialized() ? FSlateApplication::Get().GetCursorPos() : FVector2D(-FLT_MAX, -FLT_MAX);
++	// The PLAYER's cursor (the one the controller deprojects for world clicks), in Slate's
++	// absolute space — not the hardware cursor: with a virtual / scripted / gamepad cursor
++	// the two differ, and the HUD would claim (or miss) clicks the world receives.
++	FVector2D PointerPos = FSlateApplication::IsInitialized() ? FSlateApplication::Get().GetCursorPos() : FVector2D(-FLT_MAX, -FLT_MAX);
++	if (const APlayerController* PC = GetOwningPlayer())
++	{
++		float MouseX = 0.f, MouseY = 0.f;
++		UGameViewportClient* GVC = GetWorld() ? GetWorld()->GetGameViewport() : nullptr;
++		const TSharedPtr<SViewport> ViewportWidget = GVC ? GVC->GetGameViewportWidget() : nullptr;
++		FVector2D ViewportPixels;
++		if (GVC) { GVC->GetViewportSize(ViewportPixels); }
++		if (PC->GetMousePosition(MouseX, MouseY) && ViewportWidget.IsValid() && ViewportPixels.X > 0.0 && ViewportPixels.Y > 0.0)
++		{
++			const FGeometry& G = ViewportWidget->GetTickSpaceGeometry();
++			PointerPos = FVector2D(G.LocalToAbsolute(FVector2D(MouseX, MouseY) * (FVector2D(G.GetLocalSize()) / ViewportPixels)));
++		}
++	}
+ 	auto ContainsCursor = [&PointerPos](const TSharedPtr<SWidget>& Region) {
+ 		return Region.IsValid() && Region->GetVisibility().IsVisible() && Region->GetCachedGeometry().IsUnderLocation(PointerPos);
+ 	};

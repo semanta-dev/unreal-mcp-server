@@ -556,8 +556,8 @@ def _op_editor_undo(args):
 
 def _op_actor_spawn(args):
     world, name = _edit_world(args)
-    if name != "editor":
-        raise _V2Error("UNSUPPORTED", "spawning into PIE is not supported in v2.0; spawn in the editor world")
+    if name == "pie":
+        _need_plugin(5, "spawning into PIE")
     cls = _resolve_class_v2(args.get("class"))
     loc = _vec(args.get("location"), [0.0, 0.0, 100.0])
     rot = _vec(args.get("rotation"), [0.0, 0.0, 0.0])
@@ -567,9 +567,16 @@ def _op_actor_spawn(args):
         mesh = unreal.load_asset(args["static_mesh"])
         if not mesh:
             raise _V2Error("NOT_FOUND", "static_mesh %s did not load" % args["static_mesh"])
-    sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    if name == "pie":
+        # Python can spawn only into the editor world (spike row 10): the plugin's
+        # control subsystem spawns into the running game (gone when PIE stops).
+        _, ctrl = _pie_control()
+        spawn, destroy = ctrl.spawn_in_game, (lambda a: a.destroy_actor())
+    else:
+        sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+        spawn, destroy = sub.spawn_actor_from_class, sub.destroy_actor
     with _undoable(name, "spawn " + str(args.get("class"))):
-        actor = sub.spawn_actor_from_class(cls, unreal.Vector(*loc), unreal.Rotator(rot[2], rot[0], rot[1]))
+        actor = spawn(cls, unreal.Vector(*loc), unreal.Rotator(rot[2], rot[0], rot[1]))
         if not actor:
             raise _V2Error("SPAWN_FAILED", "spawn failed for %s" % args.get("class"))
         try:
@@ -584,7 +591,7 @@ def _op_actor_spawn(args):
                 comp.set_static_mesh(mesh)
             errors = _set_props(actor, args.get("properties"))
         except Exception:
-            sub.destroy_actor(actor)  # a failed spawn leaves nothing behind
+            destroy(actor)  # a failed spawn leaves nothing behind
             raise
     return {"world": name, "spawned": _actor_view(actor, name, True), "property_errors": errors}
 
@@ -676,6 +683,9 @@ def _struct_arg(tname, value, where, st=None):
     m = re.match(r"^Array\[(\w+)\]$", tname)
     if m and isinstance(value, list):
         return [_struct_arg(m.group(1), v, "%s[%d]" % (where, i)) for i, v in enumerate(value)]
+    if isinstance(value, list) and any(isinstance(e, dict) for e in value):
+        # A Set/Map (or unknown) container of structs: UE would convert it unchecked.
+        raise _V2Error("BAD_VALUE", "%s: objects inside a %s cannot be checked (only arrays of structs are)" % (where, tname))
     st = st or getattr(unreal, tname, None)
     base = getattr(unreal, "StructBase", None)
     if not isinstance(value, dict) or base is None or not (isinstance(st, type) and issubclass(st, base)):

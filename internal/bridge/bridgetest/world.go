@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Actor is one actor in an emulated world.
@@ -33,6 +34,19 @@ type World struct {
 	objects   map[string]*Actor // PIE object refs (@gameinstance, @subsystem:<Class>, …) -> fake object
 	// Game is the fake game API behind game_read / game_command.
 	Game *FakeGame
+	// Inputs records the player input the control subsystem received (pie_input,
+	// pie_cursor, pie_ui_click): op plus its args, in order.
+	Inputs []map[string]any
+	// WorldTimeScale is game seconds per real second (0 = 1; a paused game: tiny).
+	WorldTimeScale float64
+	pieStarted     time.Time
+}
+
+// RecordedInputs returns a copy of the input the game received.
+func (w *World) RecordedInputs() []map[string]any {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]map[string]any(nil), w.Inputs...)
 }
 
 // SetObject registers a PIE object reference (e.g. "@subsystem:AesirAgentSubsystem")
@@ -152,6 +166,7 @@ func (w *World) StartPIE() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.pie = map[string]*Actor{}
+	w.pieStarted = time.Now()
 	for _, a := range w.editor {
 		c := *a
 		c.Path = strings.Replace(a.Path, "/L_Test.", "/UEDPIE_0_L_Test.", 1)
@@ -293,12 +308,13 @@ func (w *World) actorQuery(args map[string]any) (any, *OpError) {
 func (w *World) actorSpawn(args map[string]any) (any, *OpError) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	_, name, err := w.worldFor(args, "")
+	actors, name, err := w.worldFor(args, "")
 	if err != nil {
 		return nil, err
 	}
-	if name != "editor" {
-		return nil, &OpError{Code: "UNSUPPORTED", Message: "spawning into PIE is not supported"}
+	if name == "pie" && w.PluginAPI < 5 {
+		return nil, &OpError{Code: "PLUGIN_MISSING", Message: "spawning into PIE needs the UnrealMCP plugin API 5",
+			Details: map[string]any{"needed": 5, "have": w.PluginAPI}}
 	}
 	class, _ := args["class"].(string)
 	if class == "" || strings.Contains(class, "Missing") {
@@ -315,6 +331,11 @@ func (w *World) actorSpawn(args map[string]any) (any, *OpError) {
 		for i := range loc {
 			a.Location[i], _ = loc[i].(float64)
 		}
+	}
+	if name == "pie" { // the plugin's SpawnInGame: transient, no undo step
+		a.Path = fmt.Sprintf("/Game/Maps/UEDPIE_0_L_Test.L_Test:PersistentLevel.%s_%d", label, w.seq)
+		actors[a.Path] = a
+		return map[string]any{"world": "pie", "spawned": view(a, "pie"), "property_errors": []any{}}, nil
 	}
 	w.editor[a.Path] = a
 	w.record(fmt.Sprintf("MCP: spawn %s [%d]", class, w.seq), func() { delete(w.editor, a.Path) }, func() { w.editor[a.Path] = a })

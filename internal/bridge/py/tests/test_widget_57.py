@@ -189,3 +189,14 @@ def test_hidden_tree_without_the_plugin_is_plugin_missing(v2, ue):
     v2["_mcp2"].unreal.get_editor_subsystem = lambda cls: (_ for _ in ()).throw(Exception("no MCPAuthoringSubsystem"))
     env = call(v2, "widget_create", {"dest": "/Game/UI/WBP_X", "root_panel": "CanvasPanel"})
     assert not env["ok"] and env["code"] == "PLUGIN_MISSING", env
+
+
+def test_a_replaced_root_loses_its_guid(v2, ue):
+    # Live R2: a spec root named "Root" replaced widget_create's "RootPanel"; the old
+    # root kept its variable GUID and 5.7's compiler ensured on every compile.
+    call(v2, "widget_create", {"dest": "/Game/UI/WBP_X", "root_panel": "CanvasPanel"})
+    env = call(v2, "widget_compose", {"blueprint": "/Game/UI/WBP_X", "tree": {
+        "name": "Root", "class": "CanvasPanel", "children": [{"name": "B", "class": "TextBlock"}]}})
+    assert env["ok"] and env["result"]["removed"] == ["RootPanel"], env
+    assert ue.wbp.tree.root.get_name() == "Root"
+    assert "RootPanel" not in ue.wbp.guids and ue.auth.unregistered == ["RootPanel"]

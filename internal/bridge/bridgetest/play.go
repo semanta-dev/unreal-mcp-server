@@ -3,6 +3,7 @@ package bridgetest
 import (
 	"sort"
 	"strings"
+	"time"
 )
 
 // StopPIE discards the PIE world.
@@ -34,6 +35,38 @@ func (w *World) installPlay(e *Emulator) {
 		return map[string]any{"pie": "stopping"}, nil
 	})
 	e.Handle("pie_observe", w.pieObserve)
+	e.Handle("pie_time", func(map[string]any) (any, *OpError) {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		if w.pie == nil {
+			return nil, &OpError{Code: "NOT_IN_PIE", Message: "PIE is not running"}
+		}
+		scale := w.WorldTimeScale
+		if scale == 0 {
+			scale = 1
+		}
+		return map[string]any{"world_time_s": time.Since(w.pieStarted).Seconds() * scale, "paused": false}, nil
+	})
+	for _, op := range []string{"pie_input", "pie_cursor", "pie_ui_click"} {
+		op := op
+		e.Handle(op, func(args map[string]any) (any, *OpError) {
+			w.mu.Lock()
+			defer w.mu.Unlock()
+			if w.pie == nil {
+				return nil, &OpError{Code: "NOT_IN_PIE", Message: "PIE is not running"}
+			}
+			if op != "pie_input" && w.PluginAPI < 5 {
+				return nil, &OpError{Code: "PLUGIN_MISSING", Message: op + " needs the UnrealMCP plugin API 5",
+					Details: map[string]any{"needed": 5, "have": w.PluginAPI}}
+			}
+			rec := map[string]any{"op": op}
+			for k, v := range args {
+				rec[k] = v
+			}
+			w.Inputs = append(w.Inputs, rec)
+			return map[string]any{"ok": true, "handled": true}, nil
+		})
+	}
 	e.Handle("snapshot_actors", w.snapshotActors)
 	e.Handle("snapshot_restore", w.snapshotRestore)
 }

@@ -92,7 +92,7 @@ func Lint(specs []*Spec) []string {
 		for i := range s.Ops {
 			for _, n := range s.Ops[i].Needs {
 				if !needsVocab[n] && !pluginNeed.MatchString(n) {
-					add("%s op=%q: unknown Needs %q (want pie, plugin, plugin>=N, navmesh, project or engine)", s.Name, s.Ops[i].Name, n)
+					add("%s op=%q: unknown Needs %q (want pie, plugin, plugin>=N[ for <what>], navmesh, project or engine)", s.Name, s.Ops[i].Name, n)
 				}
 			}
 		}
@@ -106,7 +106,9 @@ func Lint(specs []*Spec) []string {
 
 var (
 	needsVocab = map[string]bool{"pie": true, "plugin": true, "navmesh": true, "project": true, "engine": true}
-	pluginNeed = regexp.MustCompile(`^plugin>=([1-9][0-9]*)$`)
+	// "plugin>=N", or "plugin>=N for <what>" when only some uses need it (a playtest
+	// needs the plugin only for its input / game_command beats).
+	pluginNeed = regexp.MustCompile(`^plugin>=([1-9][0-9]*)( for [a-z_ /]+)?$`)
 )
 
 // neededPlugin is the plugin API an op's Needs declares (0 when none).

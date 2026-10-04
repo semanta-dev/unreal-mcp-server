@@ -184,62 +184,72 @@ func gameCommandSpec() *spec.Spec {
 			if err := c.Decode(&in); err != nil {
 				return nil, err
 			}
-			api, err := gameAPIOf(c)
+			res, err := runGameCommand(ctx, c, in)
 			if err != nil {
 				return nil, err
-			}
-			key := gameProject(c) + "|" + in.RequestID
-			prior, seen := loadGameRequest(key)
-			if prior.refused {
-				return nil, envelope.New(envelope.InvalidArgument, "request_id %q was refused for an earlier game world (dedup_expired)", in.RequestID).
-					WithHint("send the command with a NEW request_id once you have read the new world")
-			}
-			epoch := prior.epoch
-			if !seen {
-				epoch, _ = worldEpochs.Load(gameProject(c))
-				if epoch == nil {
-					// Never send a command without an epoch: learn the world first.
-					if _, err := gameRead(ctx, c, api, api.Capabilities, []any{}); err != nil {
-						return nil, err
-					}
-					epoch, _ = worldEpochs.Load(gameProject(c))
-				}
-				if epoch == nil {
-					return nil, envelope.New(envelope.OperationFailed, "%s.%s returned no world_epoch: a command is never sent without one", api.Class, api.Capabilities).
-						WithHint("the game API must report world_epoch (docs/plans/GAME_CONTRACT.md)")
-				}
-				// Recorded before sending: an outcome:unknown re-send goes to this world.
-				storeGameRequest(gameProject(c), key, gameRequest{epoch: epoch})
-			}
-			req := map[string]any{}
-			for k, v := range in.Args {
-				req[k] = v
-			}
-			req["command"], req["request_id"], req["world_epoch"] = in.Name, in.RequestID, epoch
-			body, _ := json.Marshal(req)
-			out, err := v2Op(ctx, c, "game_command", map[string]any{"class": api.ClassPath(), "function": api.Command, "request": string(body)})
-			if err != nil {
-				return nil, err
-			}
-			res, _ := out["result"].(map[string]any)
-			if res == nil {
-				return nil, envelope.New(envelope.OperationFailed, "%s.%s did not return a JSON object", api.Class, api.Command)
-			}
-			noteEpoch(c, res)
-			if accepted, _ := res["accepted"].(bool); !accepted {
-				code, msg := gameError(res)
-				e := envelope.New(envelope.Precondition, "the game refused %s: %s", in.Name, msg).
-					WithDetail("game_error", code).WithDetail("result", res)
-				if code == "dedup_expired" {
-					worldEpochs.CompareAndDelete(gameProject(c), epoch)
-					storeGameRequest(gameProject(c), key, gameRequest{epoch: epoch, refused: true})
-					e.WithHint("the game world changed (PIE restarted?): read it again (game op=snapshot), then send the command with a NEW request_id")
-				}
-				return nil, e
 			}
 			return &spec.Result{Data: res, Summary: in.Name + " accepted"}, nil
 		},
 	}
+}
+
+// runGameCommand sends one game command (game_command, playtest beats): the request_id
+// keeps the world it was first sent to; no command goes without an epoch.
+func runGameCommand(ctx context.Context, c *spec.Call, in gameCommandIn) (map[string]any, error) {
+	api, err := gameAPIOf(c)
+	if err != nil {
+		return nil, err
+	}
+	key := gameProject(c) + "|" + in.RequestID
+	prior, seen := loadGameRequest(key)
+	if prior.refused {
+		return nil, envelope.New(envelope.InvalidArgument, "request_id %q was refused for an earlier game world (dedup_expired)", in.RequestID).
+			WithHint("send the command with a NEW request_id once you have read the new world")
+	}
+	epoch := prior.epoch
+	if !seen {
+		epoch, _ = worldEpochs.Load(gameProject(c))
+		if epoch == nil {
+			// Never send a command without an epoch: learn the world first.
+			if _, err := gameRead(ctx, c, api, api.Capabilities, []any{}); err != nil {
+				return nil, err
+			}
+			epoch, _ = worldEpochs.Load(gameProject(c))
+		}
+		if epoch == nil {
+			return nil, envelope.New(envelope.OperationFailed, "%s.%s returned no world_epoch: a command is never sent without one", api.Class, api.Capabilities).
+				WithHint("the game API must report world_epoch (docs/plans/GAME_CONTRACT.md)")
+		}
+		// Recorded before sending: an outcome:unknown re-send goes to this world.
+		storeGameRequest(gameProject(c), key, gameRequest{epoch: epoch})
+	}
+	req := map[string]any{}
+	for k, v := range in.Args {
+		req[k] = v
+	}
+	req["command"], req["request_id"], req["world_epoch"] = in.Name, in.RequestID, epoch
+	body, _ := json.Marshal(req)
+	out, err := v2Op(ctx, c, "game_command", map[string]any{"class": api.ClassPath(), "function": api.Command, "request": string(body)})
+	if err != nil {
+		return nil, err
+	}
+	res, _ := out["result"].(map[string]any)
+	if res == nil {
+		return nil, envelope.New(envelope.OperationFailed, "%s.%s did not return a JSON object", api.Class, api.Command)
+	}
+	noteEpoch(c, res)
+	if accepted, _ := res["accepted"].(bool); !accepted {
+		code, msg := gameError(res)
+		e := envelope.New(envelope.Precondition, "the game refused %s: %s", in.Name, msg).
+			WithDetail("game_error", code).WithDetail("result", res)
+		if code == "dedup_expired" {
+			worldEpochs.CompareAndDelete(gameProject(c), epoch)
+			storeGameRequest(gameProject(c), key, gameRequest{epoch: epoch, refused: true})
+			e.WithHint("the game world changed (PIE restarted?): read it again (game op=snapshot), then send the command with a NEW request_id")
+		}
+		return nil, e
+	}
+	return res, nil
 }
 
 // gameError reads a refusal: Aesir puts error_code/message at the top, poly-world an

@@ -86,6 +86,9 @@ _OPS = {
     "cockpit_info": _op_cockpit_info,
     # P7 plugin-backed input synthesis
     "pie_input": _op_pie_input,
+    "pie_cursor": _op_pie_cursor,
+    "pie_ui_click": _op_pie_ui_click,
+    "pie_time": _op_pie_time,
 }
 
 

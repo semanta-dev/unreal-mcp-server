@@ -135,12 +135,12 @@ Read actors in the editor level (world=editor, default), the running game (pie) 
 _tier destructive_
 
 Change actors. `world` is REQUIRED: editor (the saved level) or pie (the running game, discarded on stop).
-spawn: editor only. delete, transform, set_properties: both worlds; editor edits are one undo step.
+spawn, delete, transform, set_properties: both worlds (pie spawn: plugin API 5); editor edits are one undo step.
 `actor` = label, object path, @gamestate, @pawn; a shared label is a CONFLICT.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
-| `spawn` | mutating | spawn into the editor level (PIE spawn is UNSUPPORTED) | world, class | editor |
+| `spawn` | mutating | spawn into the editor level, or the running game (world=pie; plugin API 5) | world, class | editor |
 | `delete` | destructive | destroy an actor | world, actor | editor |
 | `transform` | mutating | set location/rotation/scale | world, actor | editor |
 | `set_properties` | mutating | set reflected properties | world, actor, properties | editor |
@@ -437,23 +437,32 @@ _tier ephemeral_
 Play In Editor.
 - start (simulate=true: no player); waits until running.
 - stop; everything changed in the pie world is discarded.
-- input: tap/press/release/hold `key` like a player (UnrealMCP plugin).
+- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s.
+- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate — your OS cursor is never moved or captured; the game's cursor stays there until action=release.
+- ui_click widget=<name>: click a visible widget (refused if hidden, ambiguous or covered). Needs the UnrealMCP plugin.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
 | `start` | ephemeral | start Play In Editor (or Simulate) |  | editor |
 | `stop` | ephemeral | stop PIE (game-world changes are discarded) |  | editor |
-| `input` | ephemeral | inject a key/button into the running game | key | editor, pie, plugin |
+| `input` | ephemeral | inject a key/button or an analog axis into the running game | key | editor, pie, plugin |
+| `cursor` | ephemeral | move/click/drag the game's cursor (viewport pixels); release gives it back |  | editor, pie, plugin>=5 |
+| `ui_click` | ephemeral | click a visible live widget by name | widget | editor, pie, plugin>=5 |
 
 | param | type | description |
 |---|---|---|
-| `action` | string | input: tap (default) \| press \| release \| hold \| release_all — one of: tap, press, release, hold, release_all |
-| `duration_s` | number | input action=hold: seconds (default 1) |
+| `action` | string | input: tap (default) \| press \| release \| hold \| axis \| release_all; cursor: move \| click (default) \| drag \| release — one of: tap, press, release, hold, axis, release_all, move, click, drag |
+| `button` | string | cursor/ui_click: mouse button (default LeftMouseButton) |
+| `duration_s` | number | input hold (default 1) / axis (0.1); cursor drag (0.3): seconds |
 | `ignore_blueprint_errors` | boolean | start: play despite Blueprint compile errors (needs the plugin) |
-| `key` | string | input: UE key name, e.g. W, SpaceBar, LeftMouseButton |
-| `op` | string | one of: start, stop, input |
+| `key` | string | input: UE key name, e.g. W, SpaceBar, MouseX, Gamepad_LeftX |
+| `op` | string | one of: start, stop, input, cursor, ui_click |
+| `position` | number[] | cursor: [x, y] viewport pixels (not for release) |
 | `simulate` | boolean | start: Simulate In Editor (the world runs, no player is possessed) |
+| `to` | number[] | cursor action=drag: [x, y] end |
+| `value` | number | input action=axis: sent every tick (a mouse axis: that frame's delta) |
 | `wait` | boolean | start/stop: wait until PIE is actually running/stopped (default true) |
+| `widget` | string | ui_click: name of a widget on screen |
 
 ### `pie_observe` — Observe the running game
 
@@ -746,11 +755,11 @@ The project's git repo (no editor).
 
 _tier exec_
 
-Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats (exec = call a UFUNCTION, arbitrary code; console; wait_until), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, verdict_reasons?, timeline} plus a contact sheet image via wait_s / job. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.
+Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, verdict_reasons?, timeline} plus a contact sheet image via wait_s / job. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
-| `run` | exec, async | play a scenario: frames + state + beats + rubric verdict |  | editor |
+| `run` | exec, async | play a scenario: frames + state + beats + rubric verdict |  | editor, plugin>=5 for input/game_command beats |
 
 | param | type | description |
 |---|---|---|

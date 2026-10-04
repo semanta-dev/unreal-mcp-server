@@ -227,3 +227,46 @@ func TestMovedWorldToolsNeedTheirToolset(t *testing.T) {
 		}
 	}
 }
+
+// R2.1–R2.3: pie input axis, cursor and ui_click arguments, and the plugin API 5 gate.
+func TestPieAxisCursorUIClick(t *testing.T) {
+	h := startHarness(t, harnessOpts{})
+	h.world.StartPIE()
+	defer h.world.StopPIE()
+	bad := []map[string]any{
+		{"op": "input", "key": "MouseX", "action": "axis"},                   // axis needs value
+		{"op": "input", "key": "W", "value": 1.0},                            // value without axis
+		{"op": "input", "key": "W", "action": "drag"},                        // a cursor action
+		{"op": "cursor", "position": []any{1.0}},                             // not [x, y]
+		{"op": "cursor", "position": []any{1.0, 2.0}, "action": "drag"},      // drag needs to
+		{"op": "cursor", "position": []any{1.0, 2.0}, "to": []any{3.0, 4.0}}, // to without drag
+		{"op": "cursor", "position": []any{1.0, 2.0}, "action": "hold"},      // an input action
+		{"op": "cursor"}, // no position
+		{"op": "cursor", "action": "release", "position": []any{1.0, 2.0}}, // release takes none
+		{"op": "ui_click", "widget": "B", "position": []any{1.0, 2.0}},     // rejected param
+		{"op": "start", "widget": "B"},                                     // rejected param
+	}
+	for _, args := range bad {
+		if e := errorOf(t, h.call(t, "pie", args)); e["code"] != "INVALID_ARGUMENT" {
+			t.Fatalf("pie %v = %v", args, e)
+		}
+	}
+	if e := errorOf(t, h.call(t, "pie", map[string]any{"op": "ui_click", "widget": "B"})); e["code"] != "PRECONDITION" {
+		t.Fatalf("ui_click with plugin API 3 = %v", e)
+	}
+	h.world.PluginAPI = 5
+	for _, args := range []map[string]any{
+		{"op": "input", "key": "MouseX", "action": "axis", "value": 3.0, "duration_s": 0.5},
+		{"op": "cursor", "position": []any{10.0, 20.0}, "action": "drag", "to": []any{30.0, 40.0}},
+		{"op": "ui_click", "widget": "StartButton"},
+		{"op": "cursor", "action": "release"},
+	} {
+		if res := h.call(t, "pie", args); res.IsError {
+			t.Fatalf("pie %v: %s", args, text(res))
+		}
+	}
+	in := h.world.RecordedInputs()
+	if len(in) != 4 || in[0]["value"] != 3.0 || in[1]["action"] != "drag" || in[2]["widget"] != "StartButton" || in[3]["action"] != "release" {
+		t.Fatalf("the game received %v", in)
+	}
+}

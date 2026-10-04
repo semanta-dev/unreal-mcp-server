@@ -315,3 +315,13 @@ Args:
     with pytest.raises(m._V2Error) as e:
         m._ufunction_params(U(), "GetFoo")
     assert e.value.code == "CONFLICT"
+
+
+def test_dicts_in_non_array_containers_are_refused(v2, ue):
+    # R1 review round 3 nit: a Set[Struct] of dicts would go to UE's unchecked conversion.
+    m = v2["_mcp2"]
+    ue.StructBase, ue.Vec = _StructBase, _Vec
+    with pytest.raises(m._V2Error) as e:
+        m._struct_arg("Set[Vec]", [{"x": 1}], "points")
+    assert e.value.code == "BAD_VALUE" and "Set[Vec]" in str(e.value)
+    assert m._struct_arg("Set[int]", [1, 2], "ids") == [1, 2]

@@ -430,14 +430,14 @@ type actorEditIn struct {
 
 func actorEditSpec() *spec.Spec {
 	ops := []spec.OpSpec{
-		{Name: "spawn", Summary: "spawn into the editor level (PIE spawn is UNSUPPORTED)", Tier: spec.Mutating, Required: []string{"world", "class"}, Rejects: []string{"actor"}, Reaches: []string{"actor_spawn"}},
+		{Name: "spawn", Summary: "spawn into the editor level, or the running game (world=pie; plugin API 5)", Tier: spec.Mutating, Required: []string{"world", "class"}, Rejects: []string{"actor"}, Reaches: []string{"actor_spawn"}},
 		{Name: "delete", Summary: "destroy an actor", Tier: spec.Destructive, Required: []string{"world", "actor"}, Reaches: []string{"actor_delete"}},
 		{Name: "transform", Summary: "set location/rotation/scale", Tier: spec.Mutating, Idempotent: true, Required: []string{"world", "actor"}, Reaches: []string{"actor_transform"}},
 		{Name: "set_properties", Summary: "set reflected properties", Tier: spec.Mutating, Idempotent: true, Required: []string{"world", "actor", "properties"}, Reaches: []string{"actor_set_properties"}},
 	}
 	return &spec.Spec{
 		Name: "actor_edit", Title: "Edit actors", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
-		Description: "Change actors. `world` is REQUIRED: editor (the saved level) or pie (the running game, discarded on stop).\nspawn: editor only. delete, transform, set_properties: both worlds; editor edits are one undo step.\n`actor` = label, object path, @gamestate, @pawn; a shared label is a CONFLICT.",
+		Description: "Change actors. `world` is REQUIRED: editor (the saved level) or pie (the running game, discarded on stop).\nspawn, delete, transform, set_properties: both worlds (pie spawn: plugin API 5); editor edits are one undo step.\n`actor` = label, object path, @gamestate, @pawn; a shared label is a CONFLICT.",
 		Schema: spec.SchemaFor[actorEditIn](map[string][]any{
 			"op": spec.OpEnum(ops...), "world": {"editor", "pie"}}, "op", "world"),
 		Replaces: []string{"spawn_actor", "delete_actor", "set_actor_transform", "pie_set_property", "pie_destroy"},

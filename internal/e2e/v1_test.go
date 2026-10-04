@@ -76,10 +76,18 @@ func TestActorEditWorldMatrix(t *testing.T) {
 		t.Fatalf("code = %v", e["code"])
 	}
 	h.world.StartPIE()
-	// Spawning into PIE is UNSUPPORTED in v2.0.
-	if e := errorOf(t, h.call(t, "actor_edit", map[string]any{"op": "spawn", "world": "pie", "class": "/Script/Engine.Actor"})); e["code"] != "UNSUPPORTED" {
-		t.Fatalf("pie spawn code = %v", e["code"])
+	// Spawning into PIE needs plugin API 5 (R2.5); the spawn is in the game world only.
+	if e := errorOf(t, h.call(t, "actor_edit", map[string]any{"op": "spawn", "world": "pie", "class": "/Script/Engine.Actor"})); e["code"] != "PRECONDITION" {
+		t.Fatalf("pie spawn with plugin API 3 = %v", e)
 	}
+	h.world.PluginAPI = 5
+	if out := structured(t, h.call(t, "actor_edit", map[string]any{"op": "spawn", "world": "pie", "class": "/Script/Engine.Actor", "label": "Drop"})); out["world"] != "pie" {
+		t.Fatalf("pie spawn = %v", out)
+	}
+	if e := errorOf(t, h.call(t, "actor_query", map[string]any{"op": "get", "world": "editor", "actor": "Drop"})); e["code"] != "NOT_FOUND" {
+		t.Fatalf("a PIE spawn reached the editor level: %v", e)
+	}
+	h.world.PluginAPI = 3
 	// Transform in PIE moves the PIE copy only; the editor actor stays put.
 	res := h.call(t, "actor_edit", map[string]any{"op": "transform", "world": "pie", "actor": "Hero", "location": []any{5.0, 6.0, 7.0}})
 	if res.IsError || structured(t, res)["world"] != "pie" {

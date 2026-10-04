@@ -75,11 +75,6 @@ def test_actor_edits_require_explicit_world(v2, mod):
     assert env["ok"] is False and env["code"] == "BAD_VALUE" and "explicit world" in env["error"]
 
 
-def test_actor_spawn_in_pie_is_unsupported(v2, mod):
-    env = run_dispatch(v2["_mcp2_dispatch"], "actor_spawn", {"world": "pie", "class": "PointLight"})
-    assert env["ok"] is False and env["code"] == "UNSUPPORTED"
-
-
 def test_actor_call_in_editor_is_unsupported(v2, mod):
     env = run_dispatch(v2["_mcp2_dispatch"], "actor_call", {"world": "editor", "actor": "Cube", "function": "F"})
     assert env["ok"] is False and env["code"] == "UNSUPPORTED"

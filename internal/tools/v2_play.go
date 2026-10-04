@@ -53,29 +53,94 @@ func pollTimeout(ctx context.Context, requestedS float64, def time.Duration) tim
 // --- pie -------------------------------------------------------------------------
 
 type pieIn struct {
-	Op        string  `json:"op" jsonschema:"start | stop | input"`
-	Simulate  bool    `json:"simulate,omitempty" jsonschema:"start: Simulate In Editor (the world runs, no player is possessed)"`
-	IgnoreBP  bool    `json:"ignore_blueprint_errors,omitempty" jsonschema:"start: play despite Blueprint compile errors (needs the plugin)"`
-	Wait      *bool   `json:"wait,omitempty" jsonschema:"start/stop: wait until PIE is actually running/stopped (default true)"`
-	Key       string  `json:"key,omitempty" jsonschema:"input: UE key name, e.g. W, SpaceBar, LeftMouseButton"`
-	Action    string  `json:"action,omitempty" jsonschema:"input: tap (default) | press | release | hold | release_all"`
-	DurationS float64 `json:"duration_s,omitempty" jsonschema:"input action=hold: seconds (default 1)"`
+	Op        string    `json:"op" jsonschema:"start | stop | input | cursor | ui_click"`
+	Simulate  bool      `json:"simulate,omitempty" jsonschema:"start: Simulate In Editor (the world runs, no player is possessed)"`
+	IgnoreBP  bool      `json:"ignore_blueprint_errors,omitempty" jsonschema:"start: play despite Blueprint compile errors (needs the plugin)"`
+	Wait      *bool     `json:"wait,omitempty" jsonschema:"start/stop: wait until PIE is actually running/stopped (default true)"`
+	Key       string    `json:"key,omitempty" jsonschema:"input: UE key name, e.g. W, SpaceBar, MouseX, Gamepad_LeftX"`
+	Action    string    `json:"action,omitempty" jsonschema:"input: tap (default) | press | release | hold | axis | release_all; cursor: move | click (default) | drag | release"`
+	Value     *float64  `json:"value,omitempty" jsonschema:"input action=axis: sent every tick (a mouse axis: that frame's delta)"`
+	DurationS float64   `json:"duration_s,omitempty" jsonschema:"input hold (default 1) / axis (0.1); cursor drag (0.3): seconds"`
+	Position  []float64 `json:"position,omitempty" jsonschema:"cursor: [x, y] viewport pixels (not for release)"`
+	To        []float64 `json:"to,omitempty" jsonschema:"cursor action=drag: [x, y] end"`
+	Button    string    `json:"button,omitempty" jsonschema:"cursor/ui_click: mouse button (default LeftMouseButton)"`
+	Widget    string    `json:"widget,omitempty" jsonschema:"ui_click: name of a widget on screen"`
 }
+
+var (
+	pieInputOnly  = []string{"key", "value"}
+	piePointer    = []string{"position", "to", "button", "widget"}
+	pieStartFlags = []string{"simulate", "ignore_blueprint_errors", "wait"}
+)
 
 func pieSpec() *spec.Spec {
 	ops := []spec.OpSpec{
-		{Name: "start", Summary: "start Play In Editor (or Simulate)", Tier: spec.Ephemeral, Idempotent: true, Rejects: []string{"key", "action", "duration_s"}, Timeout: sync28, Reaches: []string{"pie_preflight", "pie_start", "editor_ping"}},
-		{Name: "stop", Summary: "stop PIE (game-world changes are discarded)", Tier: spec.Ephemeral, Idempotent: true, Rejects: []string{"simulate", "ignore_blueprint_errors", "key", "action", "duration_s"}, Reaches: []string{"pie_stop", "editor_ping"}},
-		{Name: "input", Summary: "inject a key/button into the running game", Tier: spec.Ephemeral, Required: []string{"key"}, Rejects: []string{"simulate", "ignore_blueprint_errors", "wait"}, Reaches: []string{"pie_input"}, Needs: []string{"pie", "plugin"}},
+		{Name: "start", Summary: "start Play In Editor (or Simulate)", Tier: spec.Ephemeral, Idempotent: true, Rejects: concat([]string{"action", "duration_s"}, pieInputOnly, piePointer), Timeout: sync28, Reaches: []string{"pie_preflight", "pie_start", "editor_ping"}},
+		{Name: "stop", Summary: "stop PIE (game-world changes are discarded)", Tier: spec.Ephemeral, Idempotent: true, Rejects: concat([]string{"simulate", "ignore_blueprint_errors", "action", "duration_s"}, pieInputOnly, piePointer), Reaches: []string{"pie_stop", "editor_ping"}},
+		{Name: "input", Summary: "inject a key/button or an analog axis into the running game", Tier: spec.Ephemeral, Required: []string{"key"}, Rejects: concat(pieStartFlags, piePointer), Reaches: []string{"pie_input"}, Needs: []string{"pie", "plugin"}},
+		{Name: "cursor", Summary: "move/click/drag the game's cursor (viewport pixels); release gives it back", Tier: spec.Ephemeral, Rejects: concat(pieStartFlags, pieInputOnly, []string{"widget"}), Reaches: []string{"pie_cursor"}, Needs: []string{"pie", "plugin>=5"}},
+		{Name: "ui_click", Summary: "click a visible live widget by name", Tier: spec.Ephemeral, Required: []string{"widget"}, Rejects: concat(pieStartFlags, pieInputOnly, []string{"action", "duration_s", "position", "to"}), Reaches: []string{"pie_ui_click"}, Needs: []string{"pie", "plugin>=5"}},
 	}
 	return &spec.Spec{
 		Name: "pie", Title: "Play In Editor", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
-		Description: "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop; everything changed in the pie world is discarded.\n- input: tap/press/release/hold `key` like a player (UnrealMCP plugin).",
+		Description: "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop; everything changed in the pie world is discarded.\n" +
+			"- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s.\n" +
+			"- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate — your OS cursor is never moved or captured; " +
+			"the game's cursor stays there until action=release.\n" +
+			"- ui_click widget=<name>: click a visible widget (refused if hidden, ambiguous or covered). Needs the UnrealMCP plugin.",
 		Schema: spec.SchemaFor[pieIn](map[string][]any{"op": spec.OpEnum(ops...),
-			"action": {"tap", "press", "release", "hold", "release_all"}}, "op"),
+			"action": {"tap", "press", "release", "hold", "axis", "release_all", "move", "click", "drag"}}, "op"),
 		Replaces: []string{"start_play", "stop_play", "pie_input"},
 		Handler:  pieHandler,
 	}
+}
+
+func concat(lists ...[]string) []string {
+	var out []string
+	for _, l := range lists {
+		out = append(out, l...)
+	}
+	return out
+}
+
+// pieActions are the actions each op takes (one enum serves input and cursor).
+var pieActions = map[string]map[string]bool{
+	"input":  {"": true, "tap": true, "press": true, "release": true, "hold": true, "axis": true, "release_all": true},
+	"cursor": {"": true, "move": true, "click": true, "drag": true, "release": true},
+}
+
+// pieInputHandler runs input / cursor / ui_click (the plugin's control subsystem).
+func pieInputHandler(ctx context.Context, c *spec.Call, in pieIn) (*spec.Result, error) {
+	if ok := pieActions[c.Op.Name]; ok != nil && !ok[in.Action] {
+		return nil, envelope.New(envelope.InvalidArgument, "%s takes action %s, not %q", c.Op.Name,
+			map[string]string{"input": "tap | press | release | hold | axis | release_all", "cursor": "move | click | drag | release"}[c.Op.Name], in.Action)
+	}
+	switch c.Op.Name {
+	case "input":
+		if (in.Action == "axis") != (in.Value != nil) {
+			return nil, envelope.New(envelope.InvalidArgument, "value goes with action=axis, and action=axis needs value")
+		}
+		out, err := v2Op(ctx, c, "pie_input", pick(c.Args, "key", "action", "duration_s", "value"))
+		return &spec.Result{Data: out, Summary: fmt.Sprintf("%s %s", orStr(in.Action, "tap"), in.Key)}, err
+	case "cursor":
+		if in.Action == "release" {
+			if in.Position != nil || in.To != nil {
+				return nil, envelope.New(envelope.InvalidArgument, "action=release takes no position or to")
+			}
+			out, err := v2Op(ctx, c, "pie_cursor", map[string]any{"action": "release"})
+			return &spec.Result{Data: out, Summary: "cursor released"}, err
+		}
+		if len(in.Position) != 2 || (in.To != nil && len(in.To) != 2) {
+			return nil, envelope.New(envelope.InvalidArgument, "position (and to) are [x, y] in viewport pixels")
+		}
+		if (in.Action == "drag") != (in.To != nil) {
+			return nil, envelope.New(envelope.InvalidArgument, "to goes with action=drag, and action=drag needs to")
+		}
+		out, err := v2Op(ctx, c, "pie_cursor", pick(c.Args, "action", "position", "to", "button", "duration_s"))
+		return &spec.Result{Data: out, Summary: fmt.Sprintf("cursor %s at %v", orStr(in.Action, "click"), in.Position)}, err
+	}
+	out, err := v2Op(ctx, c, "pie_ui_click", pick(c.Args, "widget", "button"))
+	return &spec.Result{Data: out, Summary: "clicked " + in.Widget}, err
 }
 
 // pieMinPoll is the least time worth polling for PIE to start (a var for tests).
@@ -86,9 +151,8 @@ func pieHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	if err := c.Decode(&in); err != nil {
 		return nil, err
 	}
-	if c.Op.Name == "input" {
-		out, err := v2Op(ctx, c, "pie_input", pick(c.Args, "key", "action", "duration_s"))
-		return &spec.Result{Data: out, Summary: fmt.Sprintf("%s %s", orStr(in.Action, "tap"), in.Key)}, err
+	if c.Op.Name != "start" && c.Op.Name != "stop" {
+		return pieInputHandler(ctx, c, in)
 	}
 	want := c.Op.Name == "start"
 	py := map[bool]string{true: "pie_start", false: "pie_stop"}[want]

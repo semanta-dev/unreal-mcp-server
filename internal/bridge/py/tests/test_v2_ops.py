@@ -72,9 +72,9 @@ def test_failed_spawn_leaves_the_level_unchanged(v2, ue):
     assert res["spawned"]["class"] == "StaticMeshActor"
 
 
-def test_pie_spawn_unsupported(v2, ue):
+def test_pie_spawn_needs_plugin_5(v2, ue):
     ue.pie_actors = []
-    assert err(v2, "actor_spawn", {"world": "pie", "class": "Actor"})["code"] == "UNSUPPORTED"
+    assert err(v2, "actor_spawn", {"world": "pie", "class": "Actor"})["code"] == "PLUGIN_MISSING"
 
 
 def test_edit_world_must_be_explicit(v2, ue):

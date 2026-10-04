@@ -192,33 +192,105 @@ def _op_scene_restore(args):
 
 # --- P7 input synthesis (plugin-backed: drive the game via injected input) ---
 
-def _op_pie_input(args):
-    """Synthesize input into the live game (WASD movement, button taps) via the
-    UnrealMCP C++ plugin's control subsystem. Needs the plugin compiled in."""
+def _pie_control():
+    """The running game's MCPControlSubsystem (the UnrealMCP plugin)."""
     world = _game_world()
     if not world:
-        return {"error": "not in PIE", "code": "NOT_IN_PIE"}
+        raise _V2Error("NOT_IN_PIE", "PIE is not running (start it with the pie tool)")
     ctrl_cls = getattr(unreal, "MCPControlSubsystem", None)
-    if ctrl_cls is None:
-        return {"error": "MCPControlSubsystem unavailable — rebuild the UnrealMCP plugin", "code": "PLUGIN_MISSING"}
-    ctrl = ctrl_cls.get(world)
+    ctrl = ctrl_cls.get(world) if ctrl_cls is not None else None
     if not ctrl:
-        return {"error": "no MCPControlSubsystem in the game instance", "code": "PLUGIN_MISSING"}
-    key = str(args["key"])
-    action = args.get("action", "tap")
+        raise _V2Error("PLUGIN_MISSING", "no MCPControlSubsystem in the game instance: copy plugin/UnrealMCP into "
+                       "<project>/Plugins and rebuild (build strategy=ubt)")
+    return world, ctrl
+
+
+def _op_pie_input(args):
+    """Synthesize input into the live game like a player: keys (tap/press/release/hold)
+    and, with plugin API 5, an analog axis sent every tick for duration_s."""
+    _, ctrl = _pie_control()
+    key = str(args.get("key") or "")
+    action = args.get("action") or "tap"
+    if action == "release_all":
+        ctrl.release_all()
+        return {"ok": True, "action": action}
+    if not key:
+        raise _V2Error("BAD_VALUE", "input needs key")
+    if action == "axis":
+        _need_plugin(5, "axis input")
+        value, dur = float(args.get("value", 0.0)), float(args.get("duration_s") or 0.1)
+        why = ctrl.inject_axis(key, value, dur)
+        if why:
+            raise _V2Error("BAD_VALUE", why)
+        return {"ok": True, "key": key, "action": action, "value": value, "duration_s": dur}
     if action == "hold":
-        ok = ctrl.hold_key(key, float(args.get("duration_s", 1.0)))
+        ok = ctrl.hold_key(key, float(args.get("duration_s") or 1.0))
     elif action == "press":
         ok = ctrl.inject_key_by_name(key, True)
     elif action == "release":
         ok = ctrl.inject_key_by_name(key, False)
-    elif action == "release_all":
-        ctrl.release_all()
-        ok = True
-    else:
+    elif action == "tap":
         ok = ctrl.tap_key(key)
+    else:
+        raise _V2Error("BAD_VALUE", "action must be tap, press, release, hold, axis or release_all (got %r)" % (action,))
     if not ok:
-        return {"error": "input rejected (no player controller or invalid key '" + key + "')", "code": "INPUT_FAILED"}
+        raise _V2Error("BAD_VALUE", "input rejected: no player controller, or %r is not a key" % key)
     return {"ok": True, "key": key, "action": action}
 
 
+def _xy(v, what):
+    if not (isinstance(v, (list, tuple)) and len(v) == 2 and all(isinstance(n, (int, float)) for n in v)):
+        raise _V2Error("BAD_VALUE", "%s must be [x, y] in viewport pixels (got %r)" % (what, v))
+    return float(v[0]), float(v[1])
+
+
+def _pointer_result(raw, what):
+    """The plugin's pointer JSON, or its refusal as an error (never a silent miss)."""
+    try:
+        res = json.loads(raw)
+    except ValueError:
+        raise _V2Error("BAD_VALUE", "%s: the plugin returned %r" % (what, raw)) from None
+    if not res.get("ok"):
+        msg = str(res.get("error") or "refused")
+        code = ("NOT_FOUND" if msg.startswith("no visible") else
+                "CONFLICT" if " are named " in msg or "is covered" in msg else
+                "NOT_IN_PIE" if msg in ("no game viewport", "no game world") else "BAD_VALUE")
+        raise _V2Error(code, "%s: %s" % (what, msg))
+    res.pop("ok", None)
+    return res
+
+
+def _op_pie_cursor(args):
+    """Move / click / drag the game's cursor in viewport pixels through Slate (plugin
+    API 5): GameAndUI input, the user's OS cursor never moved or captured. The game's
+    cursor stays where the agent put it until action=release (or PIE ends)."""
+    _need_plugin(5, "cursor input")
+    _, ctrl = _pie_control()
+    action = args.get("action") or "click"
+    if action == "release":
+        return {"action": action, "was_pinned": bool(ctrl.release_cursor())}
+    x, y = _xy(args.get("position"), "position")
+    button = str(args.get("button") or "")
+    if action == "move":
+        raw = ctrl.move_cursor(x, y)
+    elif action == "click":
+        raw = ctrl.click_at(x, y, button)
+    elif action == "drag":
+        tx, ty = _xy(args.get("to"), "to")
+        raw = ctrl.drag_cursor(x, y, tx, ty, float(args.get("duration_s") or 0.3), button)
+    else:
+        raise _V2Error("BAD_VALUE", "cursor action must be move, click, drag or release (got %r)" % (action,))
+    res = _pointer_result(raw, "cursor " + action)
+    res["action"] = action
+    return res
+
+
+def _op_pie_ui_click(args):
+    """Click the centre of the one visible live widget with this name (plugin API 5);
+    refused when none, several, or something covers it."""
+    _need_plugin(5, "ui_click")
+    _, ctrl = _pie_control()
+    widget = str(args.get("widget") or "")
+    if not widget:
+        raise _V2Error("BAD_VALUE", "ui_click needs widget (the name of a widget on screen)")
+    return _pointer_result(ctrl.click_widget(widget, str(args.get("button") or "")), "ui_click " + widget)

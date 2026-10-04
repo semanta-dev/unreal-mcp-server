@@ -179,6 +179,16 @@ func TestLintRules(t *testing.T) {
 	if v := Lint([]*Spec{fixed}); len(v) != 0 {
 		t.Fatalf("rejecting prune should satisfy the lint: %v", v)
 	}
+	// "plugin>=N for <what>": a need some uses have (playtest's input beats) still counts.
+	cond := &Spec{Name: "cond", Description: "cond", Max: time.Second, Ops: []OpSpec{{Tier: Destructive, Reaches: []string{"editor_undo"},
+		Needs: []string{"plugin>=3 for undo steps"}}}}
+	if v := Lint([]*Spec{cond}); len(v) != 0 {
+		t.Fatalf("a conditional plugin need should satisfy the lint: %v", v)
+	}
+	if v := strings.Join(Lint([]*Spec{{Name: "condbad", Description: "condbad", Max: time.Second, Ops: []OpSpec{{Tier: ReadOnly,
+		Needs: []string{"plugin>=3 when"}}}}}), " "); !strings.Contains(v, "unknown Needs") {
+		t.Fatalf("a malformed conditional need must be refused: %q", v)
+	}
 }
 
 func BenchmarkServerConstruction(b *testing.B) {

@@ -154,6 +154,7 @@ func opArgs(sp *spec.Spec, op spec.OpSpec, dir, png string) map[string]any {
 		"properties": map[string]any{"health": 1.0}, "function": "GetWave", "command": "stat fps", "code": "1+1",
 		"level": "/Game/Maps/L_Test", "asset": "/Game/X", "dest": "/Game/New/" + tool + "_" + op.Name,
 		"kind": "blueprint", "row_struct": "/Script/Engine.TableRowBase", "parent": "/Game/M", "tree": map[string]any{"name": "Root"},
+		"position": []any{10.0, 20.0}, "widget": "StartButton",
 		"key": "W", "predicate": "counts.Actor >= 0", "name": "snap1", "message": "cp", "to": "1", "job_id": "j1",
 		"toolset": "design", "tag": "A.B", "enum": "EFoo", "files": []any{png}, "scene_id": "arena", "sound": "/Game/S",
 		"preset": "studio", "layout": map[string]any{"type": "grid", "count": 2.0, "spacing": 100.0},
@@ -218,6 +219,10 @@ func opArgs(sp *spec.Spec, op spec.OpSpec, dir, png string) map[string]any {
 		args["kind"] = "decision"
 	case "game_command":
 		args["name"], args["request_id"] = "start_wave", "everyop-1"
+	case "pie":
+		if op.Name == "cursor" {
+			args["position"] = []any{10.0, 20.0}
+		}
 	case "analyze":
 		if op.Name == "perf" {
 			csv := filepath.Join(dir, "perf.csv")
@@ -256,7 +261,7 @@ func installPermissiveOps(h *harness, dir, png string) {
 	for _, py := range []string{"python_recipe", "open_level", "save_all", "set_world_gamemode", "console", "viewport_get", "viewport_set",
 		"focus_actors", "asset_info", "asset_query", "asset_deps", "asset_tags", "asset_edit", "import_assets", "asset_reimport",
 		"datatable_import", "map_gameplay", "widget_tree", "widget_describe", "widget_compose", "widget_compile", "world_query",
-		"instances_count", "pie_input", "audio_capture_start", "audio_capture_stop", "play_test_sound", "scene_apply",
+		"instances_count", "pie_input", "pie_cursor", "pie_ui_click", "audio_capture_start", "audio_capture_stop", "play_test_sound", "scene_apply",
 		"scene_clear", "scene_prune", "scene_actors", "design_probe", "capture_poll", "company_status", "company_build",
 		"company_select", "company_road", "company_demolish", "apply_level_recipe", "quit_editor"} {
 		h.emu.Handle(py, ok(map[string]any{"ok": true, "count": 0.0, "total": 0.0, "actors": []any{}, "capital": 100.0,

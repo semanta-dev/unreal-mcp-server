@@ -42,7 +42,8 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
 - `headless op=tests` counted no results on UE 5.7, which prints `Result={Success}` / `{Fail}`; both spellings are
   parsed now (and `NotRun`/`Skipped` are reported as `skipped`).
 - `widget_edit op=compose` reports an unknown `slot` key (`SLOT_KEY_UNKNOWN`) instead of ignoring it; prune unregisters
-  the widgets it removes.
+  the widgets it removes, and so does a spec root that replaces the existing root (the old root's GUID made 5.7 ensure
+  on every compile).
 - **The game's own API** (toolset `game`, on when the project's `.umcp.json` declares `game_api` — stdio startup and
   daemon attach): `game` (read-only: `capabilities`, `snapshot`, `events since=<cursor>`; each function must be
   `BlueprintPure`/`const`) and `game_command` (Exec; `request_id` required — a re-send returns the recorded result and
@@ -63,6 +64,20 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
   unknown keys: `{"X": 1}` zeroed a Vector); a list is positional fields / array elements.
 - `polyworld` is deprecated in favour of `game` / `game_command`
   ([`docs/polyworld-migration.md`](docs/polyworld-migration.md)); it is removed in v2.3.
+
+- **Play like a player** (plugin API 5): `pie op=input action=axis key=MouseX value=… duration_s=…` sends an analog
+  axis every game tick (a mouse axis is that frame's delta; a stick or trigger returns to rest at the end);
+  `pie op=cursor action=move|click|drag position=[x,y] (to=[x,y])` moves, clicks and drags the game's cursor in viewport
+  pixels through Slate — UMG and raw-Slate UI alike, with the editor focused or in the background (GameAndUI input, no
+  mouse lock; the OS cursor is never moved or captured). The game's cursor (what `GetMousePosition` /
+  `DeprojectMousePosition` read) stays where the agent put it until `action=release` or PIE ends. `pie op=ui_click
+  widget=<name>` clicks the centre of the one visible live widget with that name (refused when none, several, or
+  something covers it). Game code that reads the hardware cursor itself sees the user's mouse.
+- `actor_edit op=spawn world=pie` spawns into the running game (plugin API 5; it was `UNSUPPORTED`).
+- Playtest beats: `input` (a key/axis, a cursor action, or a widget click) and `game_command` (the game's own command;
+  a `request_id` unique per run and beat unless given), and `at_world_s` — beats on the game's clock (paused time does
+  not count; a beat the clock never reaches within the window fails, never runs early). One clock per scenario.
+- `Needs` may say when it applies: playtest declares `plugin>=5 for input/game_command beats`.
 
 ### Fixed
 - `world=editor` during PIE found no editor world on UE 5.7 (`get_editor_world()` is None while PIE runs): it is now

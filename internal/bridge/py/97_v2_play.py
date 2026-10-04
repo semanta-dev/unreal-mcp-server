@@ -95,6 +95,16 @@ def _op_pie_stop(args):
     return {"pie": "stopping", "editor_pid": os.getpid()}
 
 
+def _op_pie_time(args):
+    """The running game's clock (playtest beats scheduled at_world_s): world time stops
+    while the game is paused and follows time dilation, unlike the wall clock."""
+    world = _game_world()
+    if not world:
+        raise _V2Error("NOT_IN_PIE", "PIE is not running (start it with pie op=start)")
+    return {"world_time_s": float(unreal.GameplayStatics.get_time_seconds(world)),
+            "paused": bool(unreal.GameplayStatics.is_game_paused(world))}
+
+
 def _op_pie_observe_v2(args):
     if not _pie_running():
         raise _V2Error("NOT_IN_PIE", "PIE is not running (start it with pie op=start)")

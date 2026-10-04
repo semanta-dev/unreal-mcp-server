@@ -40,13 +40,69 @@ type SetProp struct {
 	Properties map[string]any `json:"properties"`
 }
 
-// Beat is one timed step over the capture window.
+// Beat is one timed step over the capture window. It is scheduled on the wall clock
+// (at_s, seconds after play starts) or on the game's own clock (at_world_s, game
+// seconds after the window opens: it stops while the game is paused and follows time
+// dilation) — one clock per scenario.
 type Beat struct {
-	AtS       float64   `json:"at_s,omitempty"`
-	Exec      *ExecStep `json:"exec,omitempty"`
-	WaitUntil string    `json:"wait_until,omitempty"`
-	TimeoutS  float64   `json:"timeout_s,omitempty"`
-	Console   string    `json:"console,omitempty"`
+	AtS         float64          `json:"at_s,omitempty"`
+	AtWorldS    float64          `json:"at_world_s,omitempty"`
+	Exec        *ExecStep        `json:"exec,omitempty"`
+	WaitUntil   string           `json:"wait_until,omitempty"`
+	TimeoutS    float64          `json:"timeout_s,omitempty"`
+	Console     string           `json:"console,omitempty"`
+	Input       *InputStep       `json:"input,omitempty"`
+	GameCommand *GameCommandStep `json:"game_command,omitempty"`
+}
+
+// InputStep plays input like a player (pie op=input / cursor / ui_click): a key or
+// axis (key), a cursor action at a viewport position (position), or a click on a
+// visible widget (widget) — exactly one of the three.
+type InputStep struct {
+	Key       string    `json:"key,omitempty"`
+	Action    string    `json:"action,omitempty"`
+	Value     *float64  `json:"value,omitempty"`
+	DurationS float64   `json:"duration_s,omitempty"`
+	Position  []float64 `json:"position,omitempty"`
+	To        []float64 `json:"to,omitempty"`
+	Button    string    `json:"button,omitempty"`
+	Widget    string    `json:"widget,omitempty"`
+}
+
+// Kind is the pie op the step maps to: input, cursor or ui_click ("" when malformed).
+func (s *InputStep) Kind() string {
+	n, kind := 0, ""
+	if s.Key != "" {
+		n, kind = n+1, "input"
+	}
+	if s.Position != nil {
+		n, kind = n+1, "cursor"
+	}
+	if s.Widget != "" {
+		n, kind = n+1, "ui_click"
+	}
+	if n != 1 {
+		return ""
+	}
+	return kind
+}
+
+// GameCommandStep runs one of the game's commands (game_command; the project's
+// game_api). RequestID defaults to one unique per run and beat.
+type GameCommandStep struct {
+	Name      string         `json:"name"`
+	Args      map[string]any `json:"args,omitempty"`
+	RequestID string         `json:"request_id,omitempty"`
+}
+
+// WorldClock reports whether the beats are scheduled on the game's clock (at_world_s).
+func (s *Scenario) WorldClock() bool {
+	for _, b := range s.Beats {
+		if b.AtWorldS > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 type ExecStep struct {
@@ -103,8 +159,25 @@ func ParseScenario(data []byte) (*Scenario, []Diagnostic, error) {
 			add("error", fmt.Sprintf("setup.set_props[%d].target", i), "target is required")
 		}
 	}
+	wall, world := false, false
 	for i, b := range s.Beats {
+		wall, world = wall || b.AtS > 0, world || b.AtWorldS > 0
+		if b.AtS < 0 || b.AtWorldS < 0 {
+			add("error", fmt.Sprintf("beats[%d]", i), "at_s / at_world_s must be >= 0")
+		}
 		n := 0
+		if b.Input != nil {
+			n++
+			if b.Input.Kind() == "" {
+				add("error", fmt.Sprintf("beats[%d].input", i), "input needs exactly one of key, position, widget")
+			}
+		}
+		if b.GameCommand != nil {
+			n++
+			if strings.TrimSpace(b.GameCommand.Name) == "" {
+				add("error", fmt.Sprintf("beats[%d].game_command", i), "game_command needs name")
+			}
+		}
 		if b.Exec != nil {
 			n++
 			if b.Exec.Target == "" || b.Exec.UFunction == "" {
@@ -118,8 +191,11 @@ func ParseScenario(data []byte) (*Scenario, []Diagnostic, error) {
 			n++
 		}
 		if n == 0 {
-			add("warning", fmt.Sprintf("beats[%d]", i), "beat has no exec/wait_until/console (no-op)")
+			add("warning", fmt.Sprintf("beats[%d]", i), "beat has no exec/wait_until/console/input/game_command (no-op)")
 		}
+	}
+	if wall && world {
+		add("error", "beats", "beats are scheduled on one clock: at_s (wall) or at_world_s (game time), not both")
 	}
 	seen := map[string]bool{}
 	for i, c := range s.Rubric {

@@ -20,7 +20,9 @@
 // 4: UMCPHUDWidget binding sources GameState and Subsystem; MCPAuthoring Get/SetClassDefaultJson,
 //    GetWidgetTree, Get/SetRootWidget, RegisterWidget/UnregisterWidget, SetWidgetIsVariable;
 //    MCPControl Mount/UnmountWidget, DescribeLiveWidgets (remediation G.5).
-static constexpr int32 GMCPPluginApiVersion = 4;
+// 5: MCPControl InjectAxis (per tick), MoveCursor/ClickAt/DragCursor/ClickWidget (Slate, no
+//    OS capture), SpawnInGame (remediation R2).
+static constexpr int32 GMCPPluginApiVersion = 5;
 
 int32 UMCPCoreLibrary::GetPluginApiVersion()
 {

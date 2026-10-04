@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge/bridgetest"
 	"github.com/jdziat/unreal-mcp-server/internal/build"
+	"github.com/jdziat/unreal-mcp-server/internal/tools/spec"
 )
 
 // T1 scenarios for the P5d tools: the editor-aware git_revert (§2.5), jobs, playtest
@@ -292,5 +294,56 @@ func TestPlaytestWaitUntilReadsObjectPaths(t *testing.T) {
 	out := structured(t, h.call(t, "playtest", map[string]any{"op": "run", "json": scenario, "wait_s": 20}))
 	if r, _ := out["result"].(map[string]any); out["state"] != "succeeded" || r == nil || r["verdict"] != "PASS" {
 		t.Fatalf("playtest with an object-path wait_until = %v", out)
+	}
+}
+
+// R2.4: input and game_command beats, scheduled on the game's clock.
+func TestPlaytestInputAndGameCommandBeats(t *testing.T) {
+	h := startHarness(t, harnessOpts{project: gameProject(t, gameAPIJSON, ""), toolsets: []spec.Toolset{spec.Game}})
+	h.world.PluginAPI = 5
+	rec := &bridgetest.Recorder{Dir: t.TempDir(), Frames: 3, State: func(i int) map[string]any {
+		return map[string]any{"gamestate": map[string]any{"wave": float64(i)}}
+	}}
+	rec.Install(h.emu)
+	scenario := `{"schema":"scenario/v1","name":"beats","mode":"pie","duration_s":1.5,"interval_s":0.1,
+	 "beats":[{"at_world_s":0.2,"input":{"key":"MouseX","action":"axis","value":2.5,"duration_s":0.3}},
+	          {"at_world_s":0.3,"input":{"position":[100,200],"action":"click"}},
+	          {"at_world_s":0.4,"input":{"widget":"StartButton"}},
+	          {"at_world_s":0.5,"game_command":{"name":"start_wave"}}],
+	 "rubric":[{"id":"waves","kind":"reached","path":"gamestate.wave","params":{"value":2}}]}`
+	out := structured(t, h.call(t, "playtest", map[string]any{"op": "run", "json": scenario, "wait_s": 20}))
+	if r, _ := out["result"].(map[string]any); out["state"] != "succeeded" || r == nil || r["verdict"] != "PASS" {
+		t.Fatalf("playtest with input/game_command beats = %v", out)
+	}
+	in := h.world.RecordedInputs()
+	if len(in) != 3 || in[0]["op"] != "pie_input" || in[0]["value"] != 2.5 || in[1]["op"] != "pie_cursor" || in[2]["widget"] != "StartButton" {
+		t.Fatalf("the game received %v", in)
+	}
+	if h.world.Game.Runs != 1 {
+		t.Fatalf("the game_command beat ran %d times", h.world.Game.Runs)
+	}
+}
+
+// A game clock that does not reach a beat's at_world_s within the window (paused or
+// slowed) fails the beat — it never runs early — and mixing clocks is a scenario error.
+func TestPlaytestWorldClock(t *testing.T) {
+	h := startHarness(t, harnessOpts{})
+	h.world.PluginAPI = 5
+	h.world.WorldTimeScale = 0.01 // a slowed game
+	rec := &bridgetest.Recorder{Dir: t.TempDir(), Frames: 2, State: func(i int) map[string]any {
+		return map[string]any{"gamestate": map[string]any{"wave": float64(2)}}
+	}}
+	rec.Install(h.emu)
+	scenario := `{"schema":"scenario/v1","name":"slow","mode":"pie","duration_s":0.5,"interval_s":0.1,
+	 "beats":[{"at_world_s":5,"input":{"key":"W"}}],
+	 "rubric":[{"id":"waves","kind":"reached","path":"gamestate.wave","params":{"value":2}}]}`
+	out := structured(t, h.call(t, "playtest", map[string]any{"op": "run", "json": scenario, "wait_s": 20}))
+	r, _ := out["result"].(map[string]any)
+	if r == nil || r["verdict"] != "FAIL" || !strings.Contains(fmt.Sprint(r["beat_errors"]), "game clock") || len(h.world.RecordedInputs()) != 0 {
+		t.Fatalf("a beat the game clock never reached = %v (inputs %v)", out, h.world.RecordedInputs())
+	}
+	mixed := `{"schema":"scenario/v1","name":"mixed","beats":[{"at_s":1,"console":"x"},{"at_world_s":1,"console":"y"}]}`
+	if e := errorOf(t, h.call(t, "playtest", map[string]any{"op": "run", "json": mixed})); e["code"] != "INVALID_ARGUMENT" || !strings.Contains(fmt.Sprint(e), "one clock") {
+		t.Fatalf("mixed clocks = %v", e)
 	}
 }

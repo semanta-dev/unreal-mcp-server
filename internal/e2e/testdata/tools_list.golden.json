@@ -64,7 +64,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Change actors. `world` is REQUIRED: editor (the saved level) or pie (the running game, discarded on stop).\nspawn: editor only. delete, transform, set_properties: both worlds; editor edits are one undo step.\n`actor` = label, object path, @gamestate, @pawn; a shared label is a CONFLICT.",
+      "description": "Change actors. `world` is REQUIRED: editor (the saved level) or pie (the running game, discarded on stop).\nspawn, delete, transform, set_properties: both worlds (pie spawn: plugin API 5); editor edits are one undo step.\n`actor` = label, object path, @gamestate, @pawn; a shared label is a CONFLICT.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1694,23 +1694,31 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop; everything changed in the pie world is discarded.\n- input: tap/press/release/hold `key` like a player (UnrealMCP plugin).",
+      "description": "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop; everything changed in the pie world is discarded.\n- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s.\n- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate — your OS cursor is never moved or captured; the game's cursor stays there until action=release.\n- ui_click widget=\u003cname\u003e: click a visible widget (refused if hidden, ambiguous or covered). Needs the UnrealMCP plugin.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "action": {
-            "description": "input: tap (default) | press | release | hold | release_all",
+            "description": "input: tap (default) | press | release | hold | axis | release_all; cursor: move | click (default) | drag | release",
             "enum": [
               "tap",
               "press",
               "release",
               "hold",
-              "release_all"
+              "axis",
+              "release_all",
+              "move",
+              "click",
+              "drag"
             ],
             "type": "string"
           },
+          "button": {
+            "description": "cursor/ui_click: mouse button (default LeftMouseButton)",
+            "type": "string"
+          },
           "duration_s": {
-            "description": "input action=hold: seconds (default 1)",
+            "description": "input hold (default 1) / axis (0.1); cursor drag (0.3): seconds",
             "type": "number"
           },
           "ignore_blueprint_errors": {
@@ -1718,24 +1726,48 @@
             "type": "boolean"
           },
           "key": {
-            "description": "input: UE key name, e.g. W, SpaceBar, LeftMouseButton",
+            "description": "input: UE key name, e.g. W, SpaceBar, MouseX, Gamepad_LeftX",
             "type": "string"
           },
           "op": {
             "enum": [
               "start",
               "stop",
-              "input"
+              "input",
+              "cursor",
+              "ui_click"
             ],
             "type": "string"
+          },
+          "position": {
+            "description": "cursor: [x, y] viewport pixels (not for release)",
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
           },
           "simulate": {
             "description": "start: Simulate In Editor (the world runs, no player is possessed)",
             "type": "boolean"
           },
+          "to": {
+            "description": "cursor action=drag: [x, y] end",
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "value": {
+            "description": "input action=axis: sent every tick (a mouse axis: that frame's delta)",
+            "type": "number"
+          },
           "wait": {
             "description": "start/stop: wait until PIE is actually running/stopped (default true)",
             "type": "boolean"
+          },
+          "widget": {
+            "description": "ui_click: name of a widget on screen",
+            "type": "string"
           }
         },
         "required": [
@@ -1851,7 +1883,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats (exec = call a UFUNCTION, arbitrary code; console; wait_until), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, verdict_reasons?, timeline} plus a contact sheet image via wait_s / job. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
+      "description": "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, verdict_reasons?, timeline} plus a contact sheet image via wait_s / job. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

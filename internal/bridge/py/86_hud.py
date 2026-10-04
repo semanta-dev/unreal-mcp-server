@@ -267,8 +267,21 @@ def _op_widget_compose(args):
     # PASS 2 — apply slot + props to every node (after all adds mint their slots).
     _widget_apply_all(spec, built, issues)
 
-    # remove / prune (destructive; snapshotted above).
     removed = []
+    # A spec root that replaced the old root (widget_create's RootPanel) detaches the old
+    # tree: every old widget not in the new tree is gone and must lose its variable GUID,
+    # or 5.7's compiler ensures ("was deleted but still has a GUID") on every compile.
+    if cur_root is not None and root is not None and cur_root != root:
+        live = {}
+        _widget_index(root, live)
+        auth = _mcp_authoring()
+        for nm in index:
+            if nm not in live:
+                if auth is not None and hasattr(auth, "unregister_widget"):
+                    auth.unregister_widget(wbp, unreal.Name(nm))
+                removed.append(nm)
+
+    # remove / prune (destructive; snapshotted above).
     to_remove = list(args.get("remove") or [])
     if args.get("prune"):
         spec_names = set()

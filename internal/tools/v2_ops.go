@@ -571,11 +571,13 @@ func playtestSpec() *spec.Spec {
 	ops := []spec.OpSpec{
 		{Name: "run", Summary: "play a scenario: frames + state + beats + rubric verdict", Tier: spec.Exec, Async: true,
 			Reaches: []string{"open_level", "pie_start", "pie_stop", "console", "actor_set_properties",
-				"capture_start", "capture_stop", "actor_call", "pie_observe", "observe_paths", "editor_ping"}},
+				"capture_start", "capture_stop", "actor_call", "pie_observe", "observe_paths", "editor_ping",
+				"pie_input", "pie_cursor", "pie_ui_click", "pie_time", "game_read", "game_command"},
+			Needs: []string{"plugin>=5 for input/game_command beats"}},
 	}
 	return &spec.Spec{
 		Name: "playtest", Title: "Automated playtest", Toolset: spec.Core, Timeout: sync15, Max: sync28, Ops: ops,
-		Description: "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats (exec = call a UFUNCTION, arbitrary code; console; wait_until), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, verdict_reasons?, timeline} plus a contact sheet image via wait_s / job. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
+		Description: "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, verdict_reasons?, timeline} plus a contact sheet image via wait_s / job. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
 		Schema:      spec.SchemaFor[playtestIn](map[string][]any{"op": spec.OpEnum(ops...), "beat_errors": {"fail", "warn"}}, "op"),
 		Replaces:    []string{"playtest_capture", "scenario_run"},
 		Handler:     playtestHandler,
@@ -809,20 +811,53 @@ func beatTarget(t string) string {
 	return t
 }
 
-// runBeatsV2 runs the beats in at_s order over the window via the v2 ops, collecting
-// (not swallowing) beat failures.
+// runBeatsV2 runs the beats in schedule order over the window via the v2 ops,
+// collecting (not swallowing) beat failures. Beats are scheduled on the wall clock
+// (at_s) or on the game's clock (at_world_s, read with pie_time: paused time does not
+// count) — one clock per scenario (ParseScenario).
 func runBeatsV2(ctx context.Context, c *spec.Call, beats []eval.Beat, duration float64, progress func(string)) []string {
 	var errs []string
 	start := time.Now()
+	end := start.Add(secs(duration))
 	ordered := append([]eval.Beat(nil), beats...)
-	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].AtS < ordered[j].AtS })
+	worldClock := false
+	for _, b := range ordered {
+		worldClock = worldClock || b.AtWorldS > 0
+	}
+	at := func(b eval.Beat) float64 {
+		if worldClock {
+			return b.AtWorldS
+		}
+		return b.AtS
+	}
+	sort.SliceStable(ordered, func(i, j int) bool { return at(ordered[i]) < at(ordered[j]) })
 	fail := func(i int, what string, err error) {
 		msg := fmt.Sprintf("beat %d (%s): %v", i, what, err)
 		errs = append(errs, msg)
 		progress(msg)
 	}
+	var world0 float64
+	if worldClock {
+		t, err := gameTime(ctx, c)
+		if err != nil {
+			fail(0, "at_world_s", fmt.Errorf("the game clock is unreadable: %w", err))
+			return errs
+		}
+		world0 = t
+	}
+	runID := strconv.FormatInt(start.UnixNano(), 36) // game_command request_ids: unique per run
 	for i, bt := range ordered {
-		if bt.AtS > 0 && sleepUntil(ctx, start.Add(secs(bt.AtS))) != nil {
+		if worldClock {
+			if bt.AtWorldS > 0 {
+				if err := waitGameTime(ctx, c, world0+bt.AtWorldS, end); err != nil {
+					if ctx.Err() != nil {
+						return errs
+					}
+					fail(i, "at_world_s", err)
+					continue
+				}
+			}
+		} else if bt.AtS > 0 && sleepUntil(ctx, start.Add(secs(bt.AtS))) != nil {
 			return errs
 		}
 		if bt.Exec != nil {
@@ -836,6 +871,20 @@ func runBeatsV2(ctx context.Context, c *spec.Call, beats []eval.Beat, duration f
 				fail(i, "console", err)
 			}
 		}
+		if bt.Input != nil {
+			if err := runInputBeat(ctx, c, bt.Input); err != nil {
+				fail(i, "input "+bt.Input.Kind(), err)
+			}
+		}
+		if g := bt.GameCommand; g != nil {
+			id := g.RequestID
+			if id == "" {
+				id = fmt.Sprintf("playtest-%s-beat%d", runID, i)
+			}
+			if _, err := runGameCommand(ctx, c, gameCommandIn{Name: g.Name, Args: g.Args, RequestID: id}); err != nil {
+				fail(i, "game_command "+g.Name, err)
+			}
+		}
 		if bt.WaitUntil != "" {
 			if ok, err := waitUntil(ctx, c, bt.WaitUntil, orDefault(bt.TimeoutS, 10)); err != nil {
 				fail(i, "wait_until", err)
@@ -844,8 +893,81 @@ func runBeatsV2(ctx context.Context, c *spec.Call, beats []eval.Beat, duration f
 			}
 		}
 	}
-	_ = sleepUntil(ctx, start.Add(secs(duration)))
+	_ = sleepUntil(ctx, end)
 	return errs
+}
+
+// runInputBeat plays one input step through the same companion ops as pie op=input /
+// cursor / ui_click.
+func runInputBeat(ctx context.Context, c *spec.Call, in *eval.InputStep) error {
+	args := map[string]any{}
+	set := func(k string, v any, ok bool) {
+		if ok {
+			args[k] = v
+		}
+	}
+	set("action", in.Action, in.Action != "")
+	set("duration_s", in.DurationS, in.DurationS > 0)
+	set("button", in.Button, in.Button != "")
+	var op string
+	switch in.Kind() {
+	case "input":
+		op = "pie_input"
+		args["key"] = in.Key
+		if in.Value != nil {
+			args["value"] = *in.Value
+		}
+		if (in.Action == "axis") != (in.Value != nil) {
+			return envelope.New(envelope.InvalidArgument, "value goes with action=axis, and action=axis needs value")
+		}
+	case "cursor":
+		op = "pie_cursor"
+		args["position"] = in.Position
+		set("to", in.To, in.To != nil)
+	case "ui_click":
+		op = "pie_ui_click"
+		args["widget"] = in.Widget
+	default:
+		return envelope.New(envelope.InvalidArgument, "input needs exactly one of key, position, widget")
+	}
+	_, err := v2Op(ctx, c, op, args)
+	return err
+}
+
+// gameTime reads the running game's clock (world seconds).
+func gameTime(ctx context.Context, c *spec.Call) (float64, error) {
+	out, err := v2Op(ctx, c, "pie_time", nil)
+	if err != nil {
+		return 0, err
+	}
+	t, ok := out["world_time_s"].(float64)
+	if !ok {
+		return 0, envelope.New(envelope.OperationFailed, "pie_time returned no world_time_s")
+	}
+	return t, nil
+}
+
+// waitGameTime polls the game clock until it reaches target, or fails when the window
+// ends first (a paused or slowed game) — never runs a beat early.
+func waitGameTime(ctx context.Context, c *spec.Call, target float64, end time.Time) error {
+	last := -1.0
+	for {
+		t, err := gameTime(ctx, c)
+		if err == nil {
+			if t >= target {
+				return nil
+			}
+			last = t
+		} else if transient, _ := transientWaitError(err); !transient {
+			return err
+		}
+		if time.Now().After(end) {
+			return fmt.Errorf("the game clock was at %.2fs, not %.2fs, when the window ended (paused or slowed?)", last, target)
+		}
+		if err := sleepCtx(ctx, 50*time.Millisecond); err != nil {
+			return err
+		}
+	}
 }
 
 func waitUntil(ctx context.Context, c *spec.Call, expr string, timeoutS float64) (bool, error) {
