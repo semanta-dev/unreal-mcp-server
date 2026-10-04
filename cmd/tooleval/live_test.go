@@ -176,16 +176,16 @@ func TestLintGameTasks(t *testing.T) {
 	}
 }
 
-func TestRunCostFailsClosed(t *testing.T) {
+func TestTurnCostPricesEachTurnAtItsModel(t *testing.T) {
 	o := liveOpts{model: "a", prices: map[string]price{"a": {1, 1}, "b": {10, 10}}}
 	u := usage{InputTokens: 1_000_000}
-	if c, ok := runCost(u, []string{"a"}, o); c != 1 || !ok {
+	if c, ok := turnCost(u, "a", o); c != 1 || !ok {
 		t.Fatalf("cost = %v %v", c, ok)
 	}
-	if c, ok := runCost(u, []string{"a", "b"}, o); c != 10 || !ok {
-		t.Fatalf("cost with a pricier served model = %v %v", c, ok)
+	if c, ok := turnCost(u, "b", o); c != 10 || !ok {
+		t.Fatalf("a pricier served model = %v %v", c, ok)
 	}
-	if _, ok := runCost(u, []string{"a", "unknown-model"}, o); ok {
+	if _, ok := turnCost(u, "unknown-model", o); ok {
 		t.Fatal("a served model without a price must be reported unpriced")
 	}
 }

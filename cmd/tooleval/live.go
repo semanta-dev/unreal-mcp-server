@@ -744,8 +744,8 @@ func runLive(ctx context.Context, cl *client, o liveOpts, t *gameTask, run int, 
 		r.Usage.add(resp.Usage)
 		r.Served = append(r.Served, resp.Model)
 		r.Turns++
-		cost, priced := runCost(r.Usage, r.Served, o)
-		r.CostUSD = cost
+		cost, priced := turnCost(resp.Usage, resp.Model, o)
+		r.CostUSD += cost
 		if !priced {
 			// An unpriced model would silently disable the caps: fail the run instead.
 			r.Aborted = "unpriced"
@@ -873,24 +873,15 @@ func callLive(ctx context.Context, s *liveSession, name string, args map[string]
 	return out, code, structured
 }
 
-// runCost prices a run by the models that served it (a router may substitute), at the
-// most expensive one; priced is false when a served model (or, before any turn, the
-// requested model) has no price.
-func runCost(u usage, served []string, o liveOpts) (float64, bool) {
-	p, ok := o.prices[o.model]
-	if len(served) > 0 {
-		ok = false
-		for _, m := range served {
-			q, has := o.prices[m]
-			if !has {
-				return cost(u, p), false
-			}
-			if !ok || q.in > p.in {
-				p, ok = q, true
-			}
-		}
+// turnCost prices one turn at the model that served it (the router may serve a
+// different model each turn; cache reads and writes as in cost). A served model
+// without a price is reported unpriced, so the caps never run blind.
+func turnCost(u usage, served string, o liveOpts) (float64, bool) {
+	p, ok := o.prices[served]
+	if !ok {
+		return 0, false
 	}
-	return cost(u, p), ok
+	return cost(u, p), true
 }
 
 // --- report ----------------------------------------------------------------------
