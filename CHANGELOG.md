@@ -43,6 +43,28 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
   parsed now (and `NotRun`/`Skipped` are reported as `skipped`).
 - `widget_edit op=compose` reports an unknown `slot` key (`SLOT_KEY_UNKNOWN`) instead of ignoring it; prune unregisters
   the widgets it removes.
+- **The game's own API** (toolset `game`, on when the project's `.umcp.json` declares `game_api` — stdio startup and
+  daemon attach): `game` (read-only: `capabilities`, `snapshot`, `events since=<cursor>`; each function must be
+  `BlueprintPure`/`const`) and `game_command` (Exec; `request_id` required — a re-send returns the recorded result and
+  never runs twice; a command for a world that restarted is refused as `dedup_expired`, and that `request_id` cannot be
+  re-sent). `game_api` is versioned and strict, its object must be a subsystem in one of the project's own modules, and
+  an invalid declaration disables only `game` (`toolsets op=list` says why; `gate_policy` still applies). Under
+  `gate_policy: require`, `game_command` is refused. Contract: [`docs/plans/GAME_CONTRACT.md`](docs/plans/GAME_CONTRACT.md).
+- Object references: `actor_query`, `actor_call`, `reflect` and predicates take `@gameinstance`, `@playerstate[:n]`,
+  `@hud` (PIE) and `@subsystem:<Class>` (World / GameInstance / LocalPlayer subsystems; editor and engine subsystems
+  only from `reflect`). `actor_call parse=json` decodes a JSON-string return.
+- Predicates (`pie_wait`, playtest rubrics): `and` / `or` / `not` and parentheses; object paths
+  `@ref.prop.Getter().field` call only `BlueprintPure`/`const` getters (another is `INVALID_ARGUMENT`); a bool compares
+  as a bool (`== True` and `== true` both match). `pie_wait timeout_s` goes up to 600 s: past `wait_s` it continues as a
+  `job`.
+- `polyworld` is deprecated in favour of `game` / `game_command`
+  ([`docs/polyworld-migration.md`](docs/polyworld-migration.md)); it is removed in v2.3.
+
+### Fixed
+- `world=editor` during PIE found no editor world on UE 5.7 (`get_editor_world()` is None while PIE runs): it is now
+  the PIE map's source level.
+- A short class name (`AesirAgentSubsystem`, `LevelEditorSubsystem`) resolved only in a fixed list of engine modules;
+  any loaded native class now resolves by its short name.
 
 ## v2.0.2 — 2026-10-03
 

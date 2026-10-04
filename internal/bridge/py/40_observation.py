@@ -165,7 +165,19 @@ def _op_reflect_object(args):
 # --- shared world / bounds helpers ------------------------------------------
 
 def _editor_world():
-    return unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
+    ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
+    world = ues.get_editor_world()
+    if world:
+        return world
+    # UE 5.7 returns None while PIE runs: the editor world is then the PIE world's
+    # source map (UEDPIE_<n>_<Map> is the PIE copy of <Map>), still loaded.
+    game = ues.get_game_world()
+    if not game:
+        return None
+    try:
+        return unreal.find_object(None, re.sub(r"UEDPIE_\d+_", "", game.get_path_name()))
+    except Exception:
+        return None
 
 
 def _pick_world(which):

@@ -184,3 +184,20 @@ func TestObjectPathPredicates(t *testing.T) {
 		t.Fatal("a malformed object path must not parse")
 	}
 }
+
+// A live R1 wait spelled a bool the Python way ("== True") and never matched.
+func TestPredicateBoolSpellings(t *testing.T) {
+	state := map[string]any{"player": map[string]any{"alive": true}}
+	for expr, want := range map[string]bool{
+		"player.alive == True": true, "player.alive == true": true, "player.alive == TRUE": true,
+		"player.alive != False": true, "player.alive == false": false, "player.alive == 'yes'": false,
+	} {
+		p, err := ParsePredicate(expr)
+		if err != nil {
+			t.Fatalf("parse %q: %v", expr, err)
+		}
+		if got, _ := p.Eval(state); got != want {
+			t.Errorf("%q = %v, want %v", expr, got, want)
+		}
+	}
+}

@@ -318,12 +318,17 @@ def _resolve_class_v2(ref):
             raise _V2Error("CLASS_UNRESOLVED", "no loaded class /Script/%s" % base)
         return cls
     found = {}
-    modules = list(_CLASS_MODULES)
-    try:
-        modules.append(unreal.SystemLibrary.get_project_name())
-    except Exception:
-        pass
-    for mod in modules:
+    # Any loaded native class is exposed on the unreal module by its short name (the
+    # project's and plugins' modules included, whatever they are called).
+    pytype = getattr(unreal, base, None)
+    if isinstance(pytype, type) and hasattr(pytype, "static_class"):
+        try:
+            c = pytype.static_class()
+        except Exception:
+            c = None
+        if isinstance(c, unreal.Class) and c.get_path_name().startswith("/Script/"):
+            found[c.get_path_name()] = c
+    for mod in _CLASS_MODULES:
         try:
             c = unreal.find_object(None, "/Script/%s.%s" % (mod, base))
         except Exception:

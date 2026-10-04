@@ -252,6 +252,17 @@ func (p *Predicate) Eval(state map[string]any) (bool, error) {
 			return f != p.num, nil
 		}
 	}
+	// A bool compares as a bool: "True" (Python's spelling) and "true" both match.
+	if b, isBool := val.(bool); isBool {
+		if rb, err := strconv.ParseBool(p.str); err == nil {
+			switch p.op {
+			case "==":
+				return b == rb, nil
+			case "!=":
+				return b != rb, nil
+			}
+		}
+	}
 	s := fmt.Sprintf("%v", val)
 	switch p.op {
 	case "==":

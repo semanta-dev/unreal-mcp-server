@@ -132,3 +132,30 @@ def test_game_read_and_command(v2, ue):
     assert env["ok"] and env["result"]["result"]["echo"]["request_id"] == "r1", env
     ue.pie_actors = None  # PIE stopped
     assert call(v2, "game_read", {"class": cls, "function": "PeekSnapshotJson"})["code"] == "NOT_IN_PIE"
+
+
+def test_short_subsystem_names_resolve_through_the_python_module(v2, ue):
+    # Live R1 defect: a short name in a module the companion does not list (the game's
+    # own module, LevelEditor) was CLASS_UNRESOLVED.
+    m = v2["_mcp2"]
+    ue.AgentSubsystem = type("AgentSubsystem", (), {"static_class": staticmethod(lambda: SUB_CLS)})
+    assert m._resolve_object("PIE", "pie", "@subsystem:AgentSubsystem") is ue.sub
+    with pytest.raises(m._V2Error) as e:
+        m._resolve_class_v2("NoSuchClass")
+    assert e.value.code == "CLASS_UNRESOLVED"
+    # A non-native class exposed under the name is not taken from the module.
+    ue.Transient = type("Transient", (), {"static_class": staticmethod(lambda: Class("Transient", "/Game/X.Transient_C"))})
+    with pytest.raises(m._V2Error):
+        m._resolve_class_v2("Transient")
+
+
+def test_editor_world_during_pie_is_the_pie_maps_source(v2, ue):
+    # Live R1 defect: UE 5.7's get_editor_world() is None while PIE runs.
+    m = v2["_mcp2"]
+    editor_map = Obj("L_Arena", Class("World", "/Script/Engine.World"))
+    pie_map = _NS(get_path_name=lambda: "/Game/Maps/UEDPIE_0_L_Arena.L_Arena")
+    ue.classes["/Game/Maps/L_Arena.L_Arena"] = editor_map
+    ue.get_editor_subsystem = lambda t: _NS(get_editor_world=lambda: None, get_game_world=lambda: pie_map)
+    assert m._editor_world() is editor_map
+    ue.get_editor_subsystem = lambda t: _NS(get_editor_world=lambda: None, get_game_world=lambda: None)
+    assert m._editor_world() is None

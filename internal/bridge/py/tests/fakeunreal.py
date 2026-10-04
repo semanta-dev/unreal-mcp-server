@@ -268,7 +268,8 @@ class Fake:
         for n in ("DirectionalLight", "SkyLight", "SkyAtmosphere", "ExponentialHeightFog", "PostProcessVolume"):
             setattr(self, n, self.add_class(n, "/Script/Engine." + n, actor))
         self.MathLibrary = _Math()
-        self.SystemLibrary = _NS(get_project_name=lambda: self.project)
+        # UE 5.7's SystemLibrary has no get_project_name (the live R1 run): not modelled.
+        self.SystemLibrary = _NS()
         self.GameplayStatics = _NS(
             get_player_pawn=lambda world, i: self.pawn if world == "PIE" else None,
             get_game_state=lambda world: self.gamestate if world == "PIE" else None,
@@ -298,6 +299,9 @@ class Fake:
     def add_class(self, name, path, parent=None):
         c = Class(name, path, parent)
         self.classes[path] = c
+        if path.startswith("/Script/"):
+            # Like the real module: a loaded native class is exposed by its short name.
+            setattr(self, name, type(name, (), {"static_class": staticmethod(lambda: c)}))
         return c
 
     def add_blueprint(self, path, parent):
