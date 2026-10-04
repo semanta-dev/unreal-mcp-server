@@ -849,6 +849,26 @@
           }
         },
         {
+          "tool": "game_command",
+          "args": {
+            "name": "place_road",
+            "request_id": "gameeval-setup-starter-road",
+            "args": {
+              "city_id": "Home",
+              "cells": [
+                {
+                  "x": 47,
+                  "y": 50
+                },
+                {
+                  "x": 47,
+                  "y": 51
+                }
+              ]
+            }
+          }
+        },
+        {
           "tool": "python",
           "args": {
             "op": "run",
