@@ -130,6 +130,9 @@ class Actor(Object):
     def get_actor_scale3d(self):
         return self.scale
 
+    def get_actor_bounds(self, only_colliding_components, include_from_child_actors=False):
+        return self.loc, Vector(50, 50, 90)
+
     def set_actor_location(self, v, sweep, teleport):
         if self.game and self.root.mobility == ComponentMobility.STATIC:
             return False

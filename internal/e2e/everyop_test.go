@@ -226,6 +226,9 @@ func opArgs(sp *spec.Spec, op spec.OpSpec, dir, png string) map[string]any {
 	case "game_command":
 		args["name"], args["request_id"] = "start_wave", "everyop-1"
 	case "pie":
+		if op.Name == "aim" {
+			args["class"] = "Actor"
+		}
 		if op.Name == "cursor" {
 			args["position"] = []any{10.0, 20.0}
 		}

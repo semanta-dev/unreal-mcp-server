@@ -69,7 +69,7 @@
         "additionalProperties": false,
         "properties": {
           "actor": {
-            "description": "delete/transform/set_properties: a label, an object path, @gamestate or @pawn",
+            "description": "delete/transform/set_properties: the target",
             "type": "string"
           },
           "class": {
@@ -501,7 +501,7 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Find and inspect Content Browser assets.\n- list: assets under `folder`.\n- info: class, bounds, LODs, Nanite.\n- search: by /Script `classes` and `folder`; blueprints=true finds Blueprints deriving them.\n- deps / tags: dependencies + referencers / registry tags (lineage), no loading.\n- thumbnail: PNG of a StaticMesh + tris/verts/LODs/slots/bounds.",
+      "description": "Find and inspect Content Browser assets.\n- list: assets under `folder`.\n- info: class, bounds, LODs, Nanite.\n- search: by /Script `classes` and `folder`; blueprints=true finds Blueprints deriving them.\n- deps / tags: dependencies + referencers / registry tags (no loading).\n- thumbnail: PNG of a StaticMesh + tris/verts/LODs/slots/bounds.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -525,7 +525,7 @@
             "type": "string"
           },
           "limit": {
-            "description": "list/search: max results (default 200; total is always the full count)",
+            "description": "list/search: max results (default 200; total counts all)",
             "type": "integer"
           },
           "op": {
@@ -561,7 +561,7 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Listen to the running game (PIE only, UnrealMCP plugin).\n- capture_start: record the main submix envelope.\n- capture_stop → {path, points, max_rms, duration} for design_audit kind=audio.\n- play `sound` as a test signal.",
+      "description": "Listen to the running game (PIE only, UnrealMCP plugin).\n- capture_start: record the main submix envelope.\n- capture_stop → an envelope for design_audit kind=audio.\n- play `sound` as a test signal.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -759,7 +759,7 @@
             "type": "string"
           },
           "track_actors": {
-            "description": "start: actor labels to record per-frame state for",
+            "description": "start: actors whose state each frame records",
             "items": {
               "type": "string"
             },
@@ -1436,7 +1436,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Inspect the connected Unreal Editor.\n- op=status: engine, project, level, is_in_pie, camera, selection, actor count.\n- op=ping: cheap liveness probe.\n- op=health: ping, then check expect_version, expect_plugin and for crashes since `since` → {healthy, plugin_api, problems[]}.",
+      "description": "Inspect the connected Unreal Editor.\n- status: engine, project, level, PIE, camera, selection, actor count.\n- ping: liveness.\n- health: ping, then check expect_version, expect_plugin and for crashes since `since` → {healthy, plugin_api, problems[]}.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1854,7 +1854,7 @@
         "destructiveHint": false,
         "openWorldHint": true
       },
-      "description": "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop (pie-world changes are discarded).\n- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s (hold/axis durations are game time: paused, they wait).\n- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate (never your OS cursor); the game's cursor stays until action=release.\n- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the plugin.",
+      "description": "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop (pie-world changes are discarded).\n- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s (game time: paused, they wait).\n- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate (never your OS cursor); the game's cursor stays until action=release.\n- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the plugin.\n- aim: turn the view onto `actor` (or nearest `class`) by mouse input; then fire with input.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1873,8 +1873,16 @@
             ],
             "type": "string"
           },
+          "actor": {
+            "description": "aim: the target's label",
+            "type": "string"
+          },
           "button": {
             "description": "cursor/ui_click: mouse button (default LeftMouseButton)",
+            "type": "string"
+          },
+          "class": {
+            "description": "aim: the nearest actor of this class",
             "type": "string"
           },
           "duration_s": {
@@ -1895,7 +1903,8 @@
               "stop",
               "input",
               "cursor",
-              "ui_click"
+              "ui_click",
+              "aim"
             ],
             "type": "string"
           },
@@ -1943,7 +1952,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read the running game (PIE) by reflection (its own API, events included: toolset game): gamestate properties, a class histogram `counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. The output schema is what pie_wait predicates address (gamestate.Prop, counts.Class, pawn.speed).",
+      "description": "Read the running game (PIE) by reflection (its own API, events included: toolset game): gamestate properties, a class histogram `counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. pie_wait predicates address its output (gamestate.Prop, counts.Class, pawn.speed).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1955,7 +1964,7 @@
             "type": "array"
           },
           "exclude": {
-            "description": "glob patterns of property names to exclude",
+            "description": "property-name globs to exclude",
             "items": {
               "type": "string"
             },
@@ -2368,7 +2377,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Discover what an object exposes, without knowing the game.\n- op=object: `actor` in `world` (editor default) → {class, path, properties, functions}.\n- op=class: a class contract — its CDO defaults and functions.\n- op=enum: enumerator names and values (e.g. to write a predicate over an enum field).",
+      "description": "Discover what an object exposes, without knowing the game.\n- object: `actor` in `world` (editor default) → {class, path, properties, functions}.\n- class: a class contract — its CDO defaults and functions.\n- enum: enumerator names and values.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2392,7 +2401,7 @@
             "type": "array"
           },
           "include": {
-            "description": "object/class: glob patterns of property names to include (default all)",
+            "description": "object/class: property-name globs to include (default all)",
             "items": {
               "type": "string"
             },

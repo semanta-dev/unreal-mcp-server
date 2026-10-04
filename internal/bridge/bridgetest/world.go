@@ -50,6 +50,13 @@ type World struct {
 	// model a map travel).
 	PIEWorld   string
 	pieStarted time.Time
+	// The player's view in PIE (degrees), turned by MouseX/MouseY axis input at AimGain
+	// degrees per unit (default {0.175, -0.175}: a low sensitivity and inverted Y), with
+	// its pitch clamped to ±89. The eye is at the origin.
+	ViewYaw, ViewPitch float64
+	AimGain            [2]float64
+	// LookIgnored: mouse input does not turn the view (a cursor mode).
+	LookIgnored bool
 }
 
 // RestartClock models the level restarting on the same map: the game clock starts over.

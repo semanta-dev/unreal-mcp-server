@@ -104,7 +104,7 @@ type assetQueryIn struct {
 	Classes    []string `json:"classes,omitempty" jsonschema:"search: /Script/Module.Class paths (blueprints=true: the PARENT classes)"`
 	Blueprints bool     `json:"blueprints,omitempty" jsonschema:"search: Blueprints deriving the classes (a Blueprint's own class is Blueprint)"`
 	Recursive  *bool    `json:"recursive,omitempty" jsonschema:"list/search: include subfolders (default true)"`
-	Limit      int      `json:"limit,omitempty" jsonschema:"list/search: max results (default 200; total is always the full count)"`
+	Limit      int      `json:"limit,omitempty" jsonschema:"list/search: max results (default 200; total counts all)"`
 	Size       int      `json:"size,omitempty" jsonschema:"thumbnail: image size in pixels (default 512)"`
 }
 
@@ -123,7 +123,7 @@ func assetQuerySpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "asset_query", Title: "Find and inspect assets", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
-		Description: "Find and inspect Content Browser assets.\n- list: assets under `folder`.\n- info: class, bounds, LODs, Nanite.\n- search: by /Script `classes` and `folder`; blueprints=true finds Blueprints deriving them.\n- deps / tags: dependencies + referencers / registry tags (lineage), no loading.\n- thumbnail: PNG of a StaticMesh + tris/verts/LODs/slots/bounds.",
+		Description: "Find and inspect Content Browser assets.\n- list: assets under `folder`.\n- info: class, bounds, LODs, Nanite.\n- search: by /Script `classes` and `folder`; blueprints=true finds Blueprints deriving them.\n- deps / tags: dependencies + referencers / registry tags (no loading).\n- thumbnail: PNG of a StaticMesh + tris/verts/LODs/slots/bounds.",
 		Schema:      spec.SchemaFor[assetQueryIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces:    []string{"list_assets", "asset_info", "asset_query", "asset_deps", "asset_tags", "asset_thumbnail"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
@@ -350,7 +350,7 @@ type reflectIn struct {
 	World      string   `json:"world,omitempty" jsonschema:"object: editor (default) | pie | auto"`
 	Class      string   `json:"class,omitempty" jsonschema:"class: /Script path, /Game Blueprint, Module.Class or short name"`
 	Enum       string   `json:"enum,omitempty" jsonschema:"enum: a UENUM(BlueprintType) name or UserDefinedEnum asset"`
-	Include    []string `json:"include,omitempty" jsonschema:"object/class: glob patterns of property names to include (default all)"`
+	Include    []string `json:"include,omitempty" jsonschema:"object/class: property-name globs to include (default all)"`
 	Exclude    []string `json:"exclude,omitempty" jsonschema:"object/class: glob patterns to exclude"`
 	Properties []string `json:"properties,omitempty" jsonschema:"object/class: read exactly these properties (overrides include/exclude)"`
 	MaxProps   int      `json:"max_props,omitempty" jsonschema:"object/class: cap on discovered properties (default 64)"`
@@ -366,9 +366,9 @@ func reflectSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "reflect", Title: "Reflect objects, classes, enums", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
 		Description: "Discover what an object exposes, without knowing the game.\n" +
-			"- op=object: `actor` in `world` (editor default) → {class, path, properties, functions}.\n" +
-			"- op=class: a class contract — its CDO defaults and functions.\n" +
-			"- op=enum: enumerator names and values (e.g. to write a predicate over an enum field).",
+			"- object: `actor` in `world` (editor default) → {class, path, properties, functions}.\n" +
+			"- class: a class contract — its CDO defaults and functions.\n" +
+			"- enum: enumerator names and values.",
 		Schema:   spec.SchemaFor[reflectIn](map[string][]any{"op": spec.OpEnum(ops...), "world": {"editor", "pie", "auto"}}, "op"),
 		Replaces: []string{"reflect_object", "reflect_class", "enum_values"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {

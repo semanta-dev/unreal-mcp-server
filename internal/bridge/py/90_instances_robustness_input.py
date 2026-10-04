@@ -238,6 +238,51 @@ def _op_pie_input(args):
     return {"ok": True, "key": key, "action": action}
 
 
+def _wrap180(d):
+    return (d + 180.0) % 360.0 - 180.0
+
+
+def _op_pie_aim_state(args):
+    """Where the player looks against where the target is: the yaw/pitch the view must
+    turn to put `actor` (or the nearest live `class` actor) under the crosshair. pie
+    op=aim turns it with mouse-axis input (MouseX/MouseY), as a player's mouse does."""
+    world = _game_world()
+    if not world:
+        raise _V2Error("NOT_IN_PIE", "PIE is not running (start it with the pie tool)")
+    pc = unreal.GameplayStatics.get_player_controller(world, 0)
+    pawn = unreal.GameplayStatics.get_player_pawn(world, 0)
+    if not pc or not pawn:
+        raise _V2Error("NOT_FOUND", "no player controller with a pawn in the running game")
+    cam = pc.get_editor_property("player_camera_manager")
+    eye = cam.get_camera_location() if cam else pawn.get_actor_location()
+    if args.get("actor"):
+        target = _resolve_actor(world, "pie", args["actor"])
+    elif args.get("class"):
+        cls = _resolve_class_v2(args["class"])
+        best, best_d = None, None
+        for a in _world_actors(world, "pie"):
+            if a == pawn or not _is_a(a, cls):
+                continue
+            loc = a.get_actor_location()
+            d = (loc.x - eye.x) ** 2 + (loc.y - eye.y) ** 2 + (loc.z - eye.z) ** 2
+            if best_d is None or d < best_d:
+                best, best_d = a, d
+        if best is None:
+            raise _V2Error("NOT_FOUND", "no %s in the running game" % args["class"])
+        target = best
+    else:
+        raise _V2Error("BAD_VALUE", "aim needs actor or class")
+    origin, _extent = target.get_actor_bounds(False)
+    dx, dy, dz = origin.x - eye.x, origin.y - eye.y, origin.z - eye.z
+    flat = math.hypot(dx, dy)
+    want_yaw, want_pitch = math.degrees(math.atan2(dy, dx)), math.degrees(math.atan2(dz, flat))
+    rot = pc.get_control_rotation()
+    return {"target": target.get_actor_label(), "path": target.get_path_name(),
+            "distance": round(math.sqrt(flat * flat + dz * dz), 1),
+            "yaw": rot.yaw, "pitch": _wrap180(rot.pitch),
+            "yaw_error": round(_wrap180(want_yaw - rot.yaw), 3), "pitch_error": round(_wrap180(want_pitch - _wrap180(rot.pitch)), 3)}
+
+
 def _xy(v, what):
     if not (isinstance(v, (list, tuple)) and len(v) == 2 and all(isinstance(n, (int, float)) for n in v)):
         raise _V2Error("BAD_VALUE", "%s must be [x, y] in viewport pixels (got %r)" % (what, v))

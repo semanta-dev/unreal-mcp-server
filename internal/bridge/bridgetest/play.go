@@ -2,6 +2,7 @@ package bridgetest
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -92,9 +93,13 @@ func (w *World) installPlay(e *Emulator) {
 				rec[k] = v
 			}
 			w.Inputs = append(w.Inputs, rec)
+			if op == "pie_input" && args["action"] == "axis" {
+				w.turnView(args)
+			}
 			return map[string]any{"ok": true, "handled": true}, nil
 		})
 	}
+	e.Handle("pie_aim_state", w.aimState)
 	e.Handle("snapshot_actors", w.snapshotActors)
 	e.Handle("snapshot_restore", w.snapshotRestore)
 }
@@ -188,4 +193,52 @@ func (w *World) snapshotRestore(args map[string]any) (any, *OpError) {
 	}
 	sort.Strings(added)
 	return map[string]any{"restored": restored, "not_restored": map[string]any{"added": added, "removed": removed}, "saved": true}, nil
+}
+
+func (w *World) turnView(args map[string]any) {
+	if w.LookIgnored {
+		return
+	}
+	g := w.AimGain
+	if g == [2]float64{} {
+		g = [2]float64{0.175, -0.175}
+	}
+	v, _ := args["value"].(float64)
+	switch args["key"] {
+	case "MouseX":
+		w.ViewYaw += 6 * v * g[0] // pie_axis_stats reports 6 ticks
+	case "MouseY":
+		w.ViewPitch = math.Max(-89, math.Min(89, w.ViewPitch+6*v*g[1]))
+	}
+}
+
+// aimState is pie_aim_state: the yaw/pitch from the view to `actor` or the nearest
+// `class` actor (the eye at the origin).
+func (w *World) aimState(args map[string]any) (any, *OpError) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.pie == nil {
+		return nil, &OpError{Code: "NOT_IN_PIE", Message: "PIE is not running"}
+	}
+	var t *Actor
+	best := math.Inf(1)
+	for _, a := range w.pie {
+		if lbl, _ := args["actor"].(string); lbl != "" && a.Label != lbl {
+			continue
+		}
+		if cls, _ := args["class"].(string); cls != "" && !strings.HasSuffix(a.Class, cls) && !strings.HasSuffix(a.Class, "."+cls) {
+			continue
+		}
+		if d := math.Hypot(math.Hypot(a.Location[0], a.Location[1]), a.Location[2]); d < best {
+			t, best = a, d
+		}
+	}
+	if t == nil {
+		return nil, &OpError{Code: "NOT_FOUND", Message: "no such target in the running game"}
+	}
+	yaw := math.Atan2(t.Location[1], t.Location[0]) * 180 / math.Pi
+	pitch := math.Atan2(t.Location[2], math.Hypot(t.Location[0], t.Location[1])) * 180 / math.Pi
+	wrap := func(d float64) float64 { return math.Mod(math.Mod(d+180, 360)+360, 360) - 180 }
+	return map[string]any{"target": t.Label, "path": t.Path, "distance": best, "yaw": w.ViewYaw, "pitch": w.ViewPitch,
+		"yaw_error": wrap(yaw - w.ViewYaw), "pitch_error": wrap(pitch - w.ViewPitch)}, nil
 }

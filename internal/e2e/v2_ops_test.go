@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -385,5 +386,51 @@ func TestPlaytestWorldClockRestart(t *testing.T) {
 	r, _ := out["result"].(map[string]any)
 	if r == nil || !strings.Contains(fmt.Sprint(r["beat_errors"]), "clock went back") || len(h.world.RecordedInputs()) != 0 {
 		t.Fatalf("a beat after a level restart = %v", out)
+	}
+}
+
+// pie op=aim turns the view onto a target only through MouseX/MouseY axis input,
+// measuring the gain (here 0.175°/unit with an inverted Y) instead of assuming one.
+func TestPieAimTurnsTheViewWithMouseInput(t *testing.T) {
+	h := startHarness(t, harnessOpts{project: t.TempDir()})
+	h.world.PluginAPI = 5
+	h.world.AddActor("Enemy_1", "/Script/Game.EnemyCharacter", [3]float64{1000, 600, 300}, nil)
+	h.world.AddActor("Enemy_2", "/Script/Game.EnemyCharacter", [3]float64{-3000, -100, 0}, nil)
+	h.world.StartPIE()
+	out := structured(t, h.call(t, "pie", map[string]any{"op": "aim", "class": "EnemyCharacter"}))
+	if out["aimed"] != true || out["target"] != "Enemy_1" {
+		t.Fatalf("aim = %v", out)
+	}
+	if math.Abs(out["yaw_error"].(float64)) > 1 || math.Abs(out["pitch_error"].(float64)) > 1 {
+		t.Fatalf("aim errors = %v", out)
+	}
+	for _, in := range h.world.RecordedInputs() {
+		if in["op"] != "pie_input" || in["action"] != "axis" || (in["key"] != "MouseX" && in["key"] != "MouseY") {
+			t.Fatalf("aim sent %v", in)
+		}
+	}
+	// The far target: a 180° turn, with the gain the first aim measured.
+	out = structured(t, h.call(t, "pie", map[string]any{"op": "aim", "actor": "Enemy_2"}))
+	if out["aimed"] != true || out["steps"].(float64) > 4 {
+		t.Fatalf("second aim = %v", out)
+	}
+	if e := errorOf(t, h.call(t, "pie", map[string]any{"op": "aim"})); e["code"] != "INVALID_ARGUMENT" {
+		t.Fatalf("aim without a target = %v", e)
+	}
+	if e := errorOf(t, h.call(t, "pie", map[string]any{"op": "aim", "class": "EnemyCharacter", "key": "W"})); e["code"] != "INVALID_ARGUMENT" {
+		t.Fatalf("aim with key = %v", e)
+	}
+}
+
+// A view the mouse cannot turn (a cursor mode, an unbound axis) is a PRECONDITION, not
+// a silent miss.
+func TestPieAimRefusesWhenTheMouseDoesNotTurnTheView(t *testing.T) {
+	h := startHarness(t, harnessOpts{project: t.TempDir()})
+	h.world.PluginAPI = 5
+	h.world.LookIgnored = true
+	h.world.AddActor("Enemy_1", "/Script/Game.EnemyCharacter", [3]float64{1000, 600, 300}, nil)
+	h.world.StartPIE()
+	if e := errorOf(t, h.call(t, "pie", map[string]any{"op": "aim", "actor": "Enemy_1"})); e["code"] != "PRECONDITION" {
+		t.Fatalf("aim with look ignored = %v", e)
 	}
 }

@@ -89,6 +89,7 @@ var PyOps = map[string]PyOp{
 	"pie_observe":         {Tier: ReadOnly},
 	"pie_time":            {Tier: ReadOnly},
 	"pie_axis_stats":      {Tier: ReadOnly, Plugin: 5},
+	"pie_aim_state":       {Tier: ReadOnly, Note: "the yaw/pitch from the player's view to a target (pie op=aim)"},
 	"widget_bind":         {Tier: Mutating, Plugin: 6, Note: "MCPHUDWidget FieldSourceBindings; each binding checked, written all or nothing"},
 	"widget_mount":        {Tier: Ephemeral, Plugin: 4},
 	"widget_unmount":      {Tier: Ephemeral, Plugin: 4},

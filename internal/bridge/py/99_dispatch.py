@@ -95,6 +95,7 @@ _OPS = {
     "pie_ui_click": _op_pie_ui_click,
     "pie_time": _op_pie_time,
     "pie_axis_stats": _op_pie_axis_stats,
+    "pie_aim_state": _op_pie_aim_state,
     "widget_bind": _op_widget_bind,
     "widget_mount": _op_widget_mount,
     "widget_unmount": _op_widget_unmount,

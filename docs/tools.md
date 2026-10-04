@@ -30,9 +30,9 @@
 _tier readonly_
 
 Inspect the connected Unreal Editor.
-- op=status: engine, project, level, is_in_pie, camera, selection, actor count.
-- op=ping: cheap liveness probe.
-- op=health: ping, then check expect_version, expect_plugin and for crashes since `since` → {healthy, plugin_api, problems[]}.
+- status: engine, project, level, PIE, camera, selection, actor count.
+- ping: liveness.
+- health: ping, then check expect_version, expect_plugin and for crashes since `since` → {healthy, plugin_api, problems[]}.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -151,7 +151,7 @@ spawn, delete, transform, set_properties: both worlds (pie spawn: plugin API 5);
 
 | param | type | description |
 |---|---|---|
-| `actor` | string | delete/transform/set_properties: a label, an object path, @gamestate or @pawn |
+| `actor` | string | delete/transform/set_properties: the target |
 | `class` | string | spawn: /Script/Module.Class, a /Game Blueprint, Module.Class or a short name (CONFLICT if ambiguous) |
 | `label` | string | spawn: the new actor's label |
 | `location` | number[] | [x, y, z] |
@@ -239,7 +239,7 @@ Find and inspect Content Browser assets.
 - list: assets under `folder`.
 - info: class, bounds, LODs, Nanite.
 - search: by /Script `classes` and `folder`; blueprints=true finds Blueprints deriving them.
-- deps / tags: dependencies + referencers / registry tags (lineage), no loading.
+- deps / tags: dependencies + referencers / registry tags (no loading).
 - thumbnail: PNG of a StaticMesh + tris/verts/LODs/slots/bounds.
 
 | op | tier | does | required | needs |
@@ -257,7 +257,7 @@ Find and inspect Content Browser assets.
 | `blueprints` | boolean | search: Blueprints deriving the classes (a Blueprint's own class is Blueprint) |
 | `classes` | string[] | search: /Script/Module.Class paths (blueprints=true: the PARENT classes) |
 | `folder` | string | list/search: content folder (default /Game) |
-| `limit` | integer | list/search: max results (default 200; total is always the full count) |
+| `limit` | integer | list/search: max results (default 200; total counts all) |
 | `op` | string | one of: list, info, search, deps, tags, thumbnail |
 | `recursive` | boolean | list/search: include subfolders (default true) |
 | `size` | integer | thumbnail: image size in pixels (default 512) |
@@ -341,9 +341,9 @@ Bring outside data into assets. Every op OVERWRITES existing content.
 _tier readonly_
 
 Discover what an object exposes, without knowing the game.
-- op=object: `actor` in `world` (editor default) → {class, path, properties, functions}.
-- op=class: a class contract — its CDO defaults and functions.
-- op=enum: enumerator names and values (e.g. to write a predicate over an enum field).
+- object: `actor` in `world` (editor default) → {class, path, properties, functions}.
+- class: a class contract — its CDO defaults and functions.
+- enum: enumerator names and values.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -357,7 +357,7 @@ Discover what an object exposes, without knowing the game.
 | `class` | string | class: /Script path, /Game Blueprint, Module.Class or short name |
 | `enum` | string | enum: a UENUM(BlueprintType) name or UserDefinedEnum asset |
 | `exclude` | string[] | object/class: glob patterns to exclude |
-| `include` | string[] | object/class: glob patterns of property names to include (default all) |
+| `include` | string[] | object/class: property-name globs to include (default all) |
 | `max_props` | integer | object/class: cap on discovered properties (default 64) |
 | `max_str` | integer | object: truncate string values to this length (default 512) |
 | `op` | string | one of: object, class, enum |
@@ -452,9 +452,10 @@ _tier ephemeral_
 Play In Editor.
 - start (simulate=true: no player); waits until running.
 - stop (pie-world changes are discarded).
-- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s (hold/axis durations are game time: paused, they wait).
+- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s (game time: paused, they wait).
 - cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate (never your OS cursor); the game's cursor stays until action=release.
 - ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the plugin.
+- aim: turn the view onto `actor` (or nearest `class`) by mouse input; then fire with input.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -463,15 +464,18 @@ Play In Editor.
 | `input` | ephemeral | inject a key/button or an analog axis into the running game |  | editor, pie, plugin, plugin>=5 for axis |
 | `cursor` | ephemeral | move/click/drag the game's cursor (viewport pixels); release gives it back |  | editor, pie, plugin>=5 |
 | `ui_click` | ephemeral | click a visible live widget by name | widget | editor, pie, plugin>=5 |
+| `aim` | ephemeral | turn the view onto an actor with mouse-axis input |  | editor, pie, plugin>=5 |
 
 | param | type | description |
 |---|---|---|
 | `action` | string | input: tap (default) \| press \| release \| hold \| axis \| release_all; cursor: move \| click (default) \| drag \| release — one of: tap, press, release, hold, axis, release_all, move, click, drag |
+| `actor` | string | aim: the target's label |
 | `button` | string | cursor/ui_click: mouse button (default LeftMouseButton) |
+| `class` | string | aim: the nearest actor of this class |
 | `duration_s` | number | input hold (default 1) / axis (0.1); cursor drag (0.3): seconds |
 | `ignore_blueprint_errors` | boolean | start: play despite Blueprint compile errors (needs the plugin) |
 | `key` | string | input: UE key name, e.g. W, SpaceBar, MouseX, Gamepad_LeftX |
-| `op` | string | one of: start, stop, input, cursor, ui_click |
+| `op` | string | one of: start, stop, input, cursor, ui_click, aim |
 | `position` | number[] | cursor: [x, y] viewport pixels (not for release) |
 | `simulate` | boolean | start: Simulate In Editor (the world runs, no player is possessed) |
 | `to` | number[] | cursor action=drag: [x, y] end |
@@ -483,7 +487,7 @@ Play In Editor.
 
 _tier readonly_
 
-Read the running game (PIE) by reflection (its own API, events included: toolset game): gamestate properties, a class histogram `counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. The output schema is what pie_wait predicates address (gamestate.Prop, counts.Class, pawn.speed).
+Read the running game (PIE) by reflection (its own API, events included: toolset game): gamestate properties, a class histogram `counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. pie_wait predicates address its output (gamestate.Prop, counts.Class, pawn.speed).
 
 | tier | required | needs |
 |---|---|---|
@@ -492,7 +496,7 @@ Read the running game (PIE) by reflection (its own API, events included: toolset
 | param | type | description |
 |---|---|---|
 | `actors` | string[] | actor labels to detail (unknown ones are listed in missing) |
-| `exclude` | string[] | glob patterns of property names to exclude |
+| `exclude` | string[] | property-name globs to exclude |
 | `include` | string[] | property-name globs to include (default all but engine noise) |
 | `max_props` | integer | cap on properties per object (default 48) |
 | `pawn` | boolean | include the player pawn's location, velocity and speed |
@@ -642,7 +646,7 @@ Film the world: an in-editor recorder saves a frame + state every interval_s.
 | `rotation` | number[] | start camera_mode=fixed: [pitch, yaw, roll] |
 | `session` | string | start: id (default generated); else the session |
 | `source` | string | start: scene_capture (default; editor) \| pie_highres (possessed PIE) \| game_scene (PIE, plugin) — one of: scene_capture, pie_highres, game_scene |
-| `track_actors` | string[] | start: actor labels to record per-frame state for |
+| `track_actors` | string[] | start: actors whose state each frame records |
 | `world` | string | start: editor (default) \| pie — one of: editor, pie |
 
 ### `audio` — Game audio
@@ -651,7 +655,7 @@ _tier ephemeral_
 
 Listen to the running game (PIE only, UnrealMCP plugin).
 - capture_start: record the main submix envelope.
-- capture_stop → {path, points, max_rms, duration} for design_audit kind=audio.
+- capture_stop → an envelope for design_audit kind=audio.
 - play `sound` as a test signal.
 
 | op | tier | does | required | needs |

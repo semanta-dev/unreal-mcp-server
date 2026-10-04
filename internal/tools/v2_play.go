@@ -54,7 +54,7 @@ func pollTimeout(ctx context.Context, requestedS float64, def time.Duration) tim
 // --- pie -------------------------------------------------------------------------
 
 type pieIn struct {
-	Op        string    `json:"op" jsonschema:"start | stop | input | cursor | ui_click"`
+	Op        string    `json:"op" jsonschema:"start | stop | input | cursor | ui_click | aim"`
 	Simulate  bool      `json:"simulate,omitempty" jsonschema:"start: Simulate In Editor (the world runs, no player is possessed)"`
 	IgnoreBP  bool      `json:"ignore_blueprint_errors,omitempty" jsonschema:"start: play despite Blueprint compile errors (needs the plugin)"`
 	Wait      *bool     `json:"wait,omitempty" jsonschema:"start/stop: wait until PIE is actually running/stopped (default true)"`
@@ -66,30 +66,35 @@ type pieIn struct {
 	To        []float64 `json:"to,omitempty" jsonschema:"cursor action=drag: [x, y] end"`
 	Button    string    `json:"button,omitempty" jsonschema:"cursor/ui_click: mouse button (default LeftMouseButton)"`
 	Widget    string    `json:"widget,omitempty" jsonschema:"ui_click: name of a widget on screen"`
+	Actor     string    `json:"actor,omitempty" jsonschema:"aim: the target's label"`
+	Class     string    `json:"class,omitempty" jsonschema:"aim: the nearest actor of this class"`
 }
 
 var (
 	pieInputOnly  = []string{"key", "value"}
 	piePointer    = []string{"position", "to", "button", "widget"}
 	pieStartFlags = []string{"simulate", "ignore_blueprint_errors", "wait"}
+	pieAimOnly    = []string{"actor", "class"}
 )
 
 func pieSpec() *spec.Spec {
 	ops := []spec.OpSpec{
-		{Name: "start", Summary: "start Play In Editor (or Simulate)", Tier: spec.Ephemeral, Idempotent: true, Rejects: concat([]string{"action", "duration_s"}, pieInputOnly, piePointer), Timeout: sync28, Reaches: []string{"pie_preflight", "pie_start", "editor_ping"}},
-		{Name: "stop", Summary: "stop PIE (game-world changes are discarded)", Tier: spec.Ephemeral, Idempotent: true, Rejects: concat([]string{"simulate", "ignore_blueprint_errors", "action", "duration_s"}, pieInputOnly, piePointer), Reaches: []string{"pie_stop", "editor_ping"}},
-		{Name: "input", Summary: "inject a key/button or an analog axis into the running game", Tier: spec.Ephemeral, Rejects: concat(pieStartFlags, piePointer), Reaches: []string{"pie_input", "pie_axis_stats"}, Needs: []string{"pie", "plugin", "plugin>=5 for axis"}},
-		{Name: "cursor", Summary: "move/click/drag the game's cursor (viewport pixels); release gives it back", Tier: spec.Ephemeral, Rejects: concat(pieStartFlags, pieInputOnly, []string{"widget"}), Reaches: []string{"pie_cursor"}, Needs: []string{"pie", "plugin>=5"}},
-		{Name: "ui_click", Summary: "click a visible live widget by name", Tier: spec.Ephemeral, Required: []string{"widget"}, Rejects: concat(pieStartFlags, pieInputOnly, []string{"action", "duration_s", "position", "to"}), Reaches: []string{"pie_ui_click"}, Needs: []string{"pie", "plugin>=5"}},
+		{Name: "start", Summary: "start Play In Editor (or Simulate)", Tier: spec.Ephemeral, Idempotent: true, Rejects: concat([]string{"action", "duration_s"}, pieInputOnly, piePointer, pieAimOnly), Timeout: sync28, Reaches: []string{"pie_preflight", "pie_start", "editor_ping"}},
+		{Name: "stop", Summary: "stop PIE (game-world changes are discarded)", Tier: spec.Ephemeral, Idempotent: true, Rejects: concat([]string{"simulate", "ignore_blueprint_errors", "action", "duration_s"}, pieInputOnly, piePointer, pieAimOnly), Reaches: []string{"pie_stop", "editor_ping"}},
+		{Name: "input", Summary: "inject a key/button or an analog axis into the running game", Tier: spec.Ephemeral, Rejects: concat(pieStartFlags, piePointer, pieAimOnly), Reaches: []string{"pie_input", "pie_axis_stats"}, Needs: []string{"pie", "plugin", "plugin>=5 for axis"}},
+		{Name: "cursor", Summary: "move/click/drag the game's cursor (viewport pixels); release gives it back", Tier: spec.Ephemeral, Rejects: concat(pieStartFlags, pieInputOnly, pieAimOnly, []string{"widget"}), Reaches: []string{"pie_cursor"}, Needs: []string{"pie", "plugin>=5"}},
+		{Name: "ui_click", Summary: "click a visible live widget by name", Tier: spec.Ephemeral, Required: []string{"widget"}, Rejects: concat(pieStartFlags, pieInputOnly, pieAimOnly, []string{"action", "duration_s", "position", "to"}), Reaches: []string{"pie_ui_click"}, Needs: []string{"pie", "plugin>=5"}},
+		{Name: "aim", Summary: "turn the view onto an actor with mouse-axis input", Tier: spec.Ephemeral, Rejects: concat(pieStartFlags, pieInputOnly, piePointer, []string{"action", "duration_s"}), Reaches: []string{"pie_aim_state", "pie_input", "pie_axis_stats"}, Needs: []string{"pie", "plugin>=5"}},
 	}
 	return &spec.Spec{
 		Name: "pie", Title: "Play In Editor", Toolset: spec.Core, Timeout: sync20, Max: sync28, Ops: ops,
 		Description: "Play In Editor.\n- start (simulate=true: no player); waits until running.\n- stop (pie-world changes are discarded).\n" +
 			"- input: tap/press/release/hold `key` like a player; action=axis value=… sends an analog axis every tick for duration_s " +
-			"(hold/axis durations are game time: paused, they wait).\n" +
+			"(game time: paused, they wait).\n" +
 			"- cursor: move/click/drag at position=[x,y] (viewport pixels, to=[x,y]) through Slate (never your OS cursor); " +
 			"the game's cursor stays until action=release.\n" +
-			"- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the plugin.",
+			"- ui_click widget=name: click a visible widget (refused if hidden, ambiguous or covered). Needs the plugin.\n" +
+			"- aim: turn the view onto `actor` (or nearest `class`) by mouse input; then fire with input.",
 		Schema: spec.SchemaFor[pieIn](map[string][]any{"op": spec.OpEnum(ops...),
 			"action": {"tap", "press", "release", "hold", "axis", "release_all", "move", "click", "drag"}}, "op"),
 		Replaces: []string{"start_play", "stop_play", "pie_input"},
@@ -146,6 +151,8 @@ func pieInputHandler(ctx context.Context, c *spec.Call, in pieIn) (*spec.Result,
 			map[string]string{"input": "tap | press | release | hold | axis | release_all", "cursor": "move | click | drag | release"}[c.Op.Name], in.Action)
 	}
 	switch c.Op.Name {
+	case "aim":
+		return pieAim(ctx, c, in)
 	case "input":
 		if (in.Key == "") != (in.Action == "release_all") {
 			return nil, envelope.New(envelope.InvalidArgument, "input needs key (except action=release_all, which takes none)")
@@ -333,7 +340,7 @@ type pieObserveIn struct {
 	Pawn       bool     `json:"pawn,omitempty" jsonschema:"include the player pawn's location, velocity and speed"`
 	Player     int      `json:"player,omitempty" jsonschema:"pawn: local player index (default 0)"`
 	Include    []string `json:"include,omitempty" jsonschema:"property-name globs to include (default all but engine noise)"`
-	Exclude    []string `json:"exclude,omitempty" jsonschema:"glob patterns of property names to exclude"`
+	Exclude    []string `json:"exclude,omitempty" jsonschema:"property-name globs to exclude"`
 	Properties []string `json:"properties,omitempty" jsonschema:"read exactly these properties (keeps your key names for predicates)"`
 	MaxProps   int      `json:"max_props,omitempty" jsonschema:"cap on properties per object (default 48)"`
 }
@@ -344,7 +351,7 @@ func pieObserveSpec() *spec.Spec {
 		Ops: []spec.OpSpec{{Tier: spec.ReadOnly, Idempotent: true, Reaches: []string{"pie_observe"}, Needs: []string{"pie"}}},
 		Description: "Read the running game (PIE) by reflection (its own API, events included: toolset game): gamestate properties, a class histogram " +
 			"`counts`, detailed state for `actors`, and with pawn=true the player pawn's location/velocity/speed. " +
-			"The output schema is what pie_wait predicates address (gamestate.Prop, counts.Class, pawn.speed).",
+			"pie_wait predicates address its output (gamestate.Prop, counts.Class, pawn.speed).",
 		Schema:   spec.SchemaFor[pieObserveIn](nil),
 		Replaces: []string{"pie_observe", "pawn_state"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
@@ -1051,7 +1058,7 @@ type captureIn struct {
 	CameraFov   float64   `json:"camera_fov,omitempty" jsonschema:"game_scene: FOV (default 90)"`
 	Location    []float64 `json:"location,omitempty" jsonschema:"start camera_mode=fixed: [x, y, z]"`
 	Rotation    []float64 `json:"rotation,omitempty" jsonschema:"start camera_mode=fixed: [pitch, yaw, roll]"`
-	TrackActors []string  `json:"track_actors,omitempty" jsonschema:"start: actor labels to record per-frame state for"`
+	TrackActors []string  `json:"track_actors,omitempty" jsonschema:"start: actors whose state each frame records"`
 	MaxFrames   int       `json:"max_frames,omitempty" jsonschema:"start: stop after N frames (default 240)"`
 	MaxSeconds  float64   `json:"max_seconds,omitempty" jsonschema:"start: stop after N seconds (default 60)"`
 	Include     []string  `json:"include,omitempty" jsonschema:"start: observed property include globs"`
@@ -1483,7 +1490,7 @@ func audioSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "audio", Title: "Game audio", Toolset: spec.Core, Timeout: sync15, Max: sync28, Ops: ops,
-		Description: "Listen to the running game (PIE only, UnrealMCP plugin).\n- capture_start: record the main submix envelope.\n- capture_stop → {path, points, max_rms, duration} for design_audit kind=audio.\n- play `sound` as a test signal.",
+		Description: "Listen to the running game (PIE only, UnrealMCP plugin).\n- capture_start: record the main submix envelope.\n- capture_stop → an envelope for design_audit kind=audio.\n- play `sound` as a test signal.",
 		Schema:      spec.SchemaFor[audioIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces:    []string{"audio_capture_start", "audio_capture_stop", "play_test_sound"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {

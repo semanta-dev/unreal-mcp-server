@@ -146,9 +146,9 @@ func editorSpec() *spec.Spec {
 	return &spec.Spec{
 		Name: "editor", Title: "Editor status", Toolset: spec.Core, Max: sync28, Ops: ops,
 		Description: "Inspect the connected Unreal Editor.\n" +
-			"- op=status: engine, project, level, is_in_pie, camera, selection, actor count.\n" +
-			"- op=ping: cheap liveness probe.\n" +
-			"- op=health: ping, then check expect_version, expect_plugin and for crashes since `since` → {healthy, plugin_api, problems[]}.",
+			"- status: engine, project, level, PIE, camera, selection, actor count.\n" +
+			"- ping: liveness.\n" +
+			"- health: ping, then check expect_version, expect_plugin and for crashes since `since` → {healthy, plugin_api, problems[]}.",
 		Schema:   spec.SchemaFor[editorIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces: []string{"editor_status", "editor_state", "editor_ping", "health_check"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
@@ -435,7 +435,7 @@ func actorQuerySpec() *spec.Spec {
 type actorEditIn struct {
 	Op         string         `json:"op" jsonschema:"spawn | delete | transform | set_properties"`
 	World      string         `json:"world" jsonschema:"REQUIRED: editor (the level) or pie (the running game)"`
-	Actor      string         `json:"actor,omitempty" jsonschema:"delete/transform/set_properties: a label, an object path, @gamestate or @pawn"`
+	Actor      string         `json:"actor,omitempty" jsonschema:"delete/transform/set_properties: the target"`
 	Class      string         `json:"class,omitempty" jsonschema:"spawn: /Script/Module.Class, a /Game Blueprint, Module.Class or a short name (CONFLICT if ambiguous)"`
 	Label      string         `json:"label,omitempty" jsonschema:"spawn: the new actor's label"`
 	Location   []float64      `json:"location,omitempty" jsonschema:"[x, y, z]"`
