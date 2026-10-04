@@ -9,6 +9,13 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
   tools, ~40.7 KB, leaving room for the plan's additions). Enable it with `toolsets op=enable toolset=world`, a
   project's `.umcp.json` `"toolsets": ["world"]`, or `-toolsets world`; calling a moved tool without it returns
   `PRECONDITION` with that hint.
+- `playtest op=run`: a crash or a failed setup step / beat now **fails** the run even when the rubric passes (the
+  scenario did not play as written); `beat_errors: "warn"` downgrades beat failures to `WARN`. `verdict_reasons` says
+  why the verdict is worse than the rubric's, which is still reported unchanged under `rubric`.
+- The recorder's per-frame `perf` block (`fps`, `frame_ms`, `hitch_ms`) is gone: it timed the recorder's own tick,
+  which its screenshots slow down, not the game. It is now `recorder.tick_ms` / `recorder.max_tick_ms`, and a rubric
+  check on `perf.*` — or on `recorder.*` without `"allow_perturbed": true` — is a scenario error (`playtest`,
+  `analyze op=rubric`). Measure the game's frame rate with a CsvProfiler capture and `analyze op=perf`.
 
 ## v2.0.2 — 2026-10-03
 

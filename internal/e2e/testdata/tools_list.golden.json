@@ -257,10 +257,13 @@
             "type": "string"
           },
           "rubric": {
-            "description": "rubric: [{id, kind, path, params?, severity?}]",
+            "description": "rubric: [{id, kind, path, params?, severity?, allow_perturbed?}]",
             "items": {
               "additionalProperties": false,
               "properties": {
+                "allow_perturbed": {
+                  "type": "boolean"
+                },
                 "id": {
                   "type": "string"
                 },
@@ -1771,10 +1774,18 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats (exec = call a UFUNCTION, arbitrary code; console; wait_until), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, timeline} plus a contact sheet image via wait_s / job. Saved suite: analyze op=scenarios.",
+      "description": "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats (exec = call a UFUNCTION, arbitrary code; console; wait_until), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, verdict_reasons?, timeline} plus a contact sheet image via wait_s / job. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "beat_errors": {
+            "description": "run: fail (default: a failed setup step or beat fails the run) | warn",
+            "enum": [
+              "fail",
+              "warn"
+            ],
+            "type": "string"
+          },
           "cols": {
             "description": "run: montage columns (default 8)",
             "type": "integer"

@@ -57,3 +57,26 @@ func TestReportToJSON(t *testing.T) {
 		t.Errorf("evidence frame = %v, want 3", ev["frame"])
 	}
 }
+
+func TestFinalVerdict(t *testing.T) {
+	for _, tc := range []struct {
+		rubric  string
+		beats   []string
+		crashed bool
+		mode    string
+		want    string
+		reasons int
+	}{
+		{"PASS", nil, false, "", "PASS", 0},
+		{"PASS", []string{"beat 0"}, false, "", "FAIL", 1},
+		{"PASS", []string{"beat 0"}, false, "warn", "WARN", 1},
+		{"FAIL", []string{"beat 0"}, false, "warn", "FAIL", 1}, // warn never improves a failing rubric
+		{"PASS", nil, true, "warn", "FAIL", 1},                 // a crash always fails
+		{"WARN", []string{"b"}, true, "", "FAIL", 2},
+	} {
+		got, reasons := finalVerdict(tc.rubric, tc.beats, tc.crashed, tc.mode)
+		if got != tc.want || len(reasons) != tc.reasons {
+			t.Errorf("finalVerdict(%s, %v, %v, %q) = %s %v, want %s (%d reasons)", tc.rubric, tc.beats, tc.crashed, tc.mode, got, reasons, tc.want, tc.reasons)
+		}
+	}
+}

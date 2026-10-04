@@ -63,3 +63,24 @@ def test_pie_highres_frames_are_written_where_they_are_read(v2, ue, tmp_path):
     assert d == (tmp_path / "Saved" / "MCP" / "capture" / "hr").as_posix() + "/"
     ticks[0](0.5)
     assert shots and shots[0].startswith(d)
+
+
+def test_recorder_reports_its_own_tick_not_fps(v2, ue, tmp_path):
+    # R0.7: the per-sample timing is the recorder's tick (slowed by its own captures),
+    # so it is published as recorder.tick_ms, never as the game's perf.fps.
+    ue.pie_actors = []
+    ue.Paths.convert_relative_path_to_full = lambda p: str(tmp_path / "Saved")
+    ticks = []
+    ue.register_slate_post_tick_callback = lambda fn: ticks.append(fn) or 1
+    ue.AutomationLibrary = _NS(take_high_res_screenshot=lambda w, h, f: None)
+    ue.GameplayStatics.get_time_seconds = lambda world: 1.0
+    v2["_mcp2"]._recorder_observe = lambda rec: {}
+    assert call(v2, "capture_start", {"session": "tk", "source": "pie_highres", "world": "pie"})["ok"]
+    ticks[0](0.04)
+    assert v2["_mcp2"]._MCP_RECORDERS["tk"].get("last_error") is None, v2["_mcp2"]._MCP_RECORDERS["tk"]["last_error"]
+    env = call(v2, "capture_stop", {"session": "tk"})
+    assert env["ok"] and env["result"]["frames"], env
+    st = env["result"]["frames"][0]["state"]
+    assert "perf" not in st
+    assert st["recorder"]["tick_ms"] == pytest.approx(40.0)
+    assert st["recorder"]["max_tick_ms"] == pytest.approx(40.0)

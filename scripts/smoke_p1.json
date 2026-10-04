@@ -11,8 +11,7 @@
       { "id": "captured_frames", "kind": "nonzero_count", "path": "counts.EnemyCharacter", "severity": "fail" },
       { "id": "wave_in_progress", "kind": "reached", "path": "gamestate.wave_state", "params": { "value": "IN_PROGRESS" }, "severity": "fail" },
       { "id": "no_log_errors", "kind": "log_zero", "path": "errors", "severity": "fail" },
-      { "id": "fps_floor", "kind": "min", "path": "perf.fps", "params": { "value": 20 }, "severity": "warn" },
-      { "id": "no_hitch", "kind": "max", "path": "perf.hitch_ms", "params": { "value": 250 }, "severity": "warn" }
+      { "id": "recorder_stall", "kind": "max", "path": "recorder.max_tick_ms", "params": { "value": 250 }, "severity": "warn", "allow_perturbed": true }
     ]
   },
   "expect": {

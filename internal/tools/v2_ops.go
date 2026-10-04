@@ -185,7 +185,7 @@ type analyzeIn struct {
 	Op       string             `json:"op" jsonschema:"rubric | perf | image_diff | scenarios"`
 	Timeline []timelineFrame    `json:"timeline,omitempty" jsonschema:"rubric: recorded frames [{index, t_world, state}] (a playtest result's timeline)"`
 	Logs     *logCounts         `json:"logs,omitempty" jsonschema:"rubric: {errors, warnings, ensures} for log checks"`
-	Rubric   []eval.RubricCheck `json:"rubric,omitempty" jsonschema:"rubric: [{id, kind, path, params?, severity?}]"`
+	Rubric   []eval.RubricCheck `json:"rubric,omitempty" jsonschema:"rubric: [{id, kind, path, params?, severity?, allow_perturbed?}]"`
 	Path     string             `json:"path,omitempty" jsonschema:"perf: a CsvProfiler .csv or a .memreport; image_diff: an image"`
 	Baseline string             `json:"baseline,omitempty" jsonschema:"image_diff: the image to compare against"`
 	HitchMs  float64            `json:"hitch_ms,omitempty" jsonschema:"perf: frames slower than this are hitches (default 33.3)"`
@@ -262,6 +262,9 @@ func analyze(_ context.Context, c *spec.Call) (*spec.Result, error) {
 		samples := make([]eval.Sample, len(in.Timeline))
 		for i, f := range in.Timeline {
 			samples[i] = eval.Sample{Index: f.Index, TWorld: f.TWorld, State: f.State}
+		}
+		if diags := eval.LintRubric(in.Rubric); eval.HasErrors(diags) {
+			return nil, envelope.New(envelope.InvalidArgument, "the rubric has errors").WithDetail("diagnostics", diags)
 		}
 		rep := eval.Evaluate(samples, ls, scenarioRubric(in.Rubric))
 		return &spec.Result{Data: reportToJSON(rep), Summary: "verdict " + rep.Verdict}, nil
@@ -561,6 +564,7 @@ type playtestIn struct {
 	Properties []string `json:"properties,omitempty" jsonschema:"run: exact observed properties"`
 	Cols       int      `json:"cols,omitempty" jsonschema:"run: montage columns (default 8)"`
 	WaitS      float64  `json:"wait_s,omitempty" jsonschema:"run: wait up to this many seconds (max 25) before returning the job"`
+	BeatErrors string   `json:"beat_errors,omitempty" jsonschema:"run: fail (default: a failed setup step or beat fails the run) | warn"`
 }
 
 func playtestSpec() *spec.Spec {
@@ -571,8 +575,8 @@ func playtestSpec() *spec.Spec {
 	}
 	return &spec.Spec{
 		Name: "playtest", Title: "Automated playtest", Toolset: spec.Core, Timeout: sync15, Max: sync28, Ops: ops,
-		Description: "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats (exec = call a UFUNCTION, arbitrary code; console; wait_until), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, timeline} plus a contact sheet image via wait_s / job. Saved suite: analyze op=scenarios.",
-		Schema:      spec.SchemaFor[playtestIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
+		Description: "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats (exec = call a UFUNCTION, arbitrary code; console; wait_until), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, verdict_reasons?, timeline} plus a contact sheet image via wait_s / job. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
+		Schema:      spec.SchemaFor[playtestIn](map[string][]any{"op": spec.OpEnum(ops...), "beat_errors": {"fail", "warn"}}, "op"),
 		Replaces:    []string{"playtest_capture", "scenario_run"},
 		Handler:     playtestHandler,
 	}
@@ -720,8 +724,9 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 		}
 	}
 	result["logs"] = logCounts{Errors: logSum.Errors, Warnings: logSum.Warnings, Ensures: logSum.Ensures}
-	if rep := detectCrash(pd, marker, runStart); rep != nil {
-		result["crash"] = rep
+	crash := detectCrash(pd, marker, runStart)
+	if crash != nil {
+		result["crash"] = crash
 	}
 	if len(cr.Frames) == 0 {
 		result["verdict"], result["error"] = "FAIL", "no frames were captured (was the world ticking? possessed play needs mode=pie)"
@@ -740,8 +745,48 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 	for k, v := range sidecar {
 		result[k] = v
 	}
-	result["verdict"], result["rubric"] = rep.Verdict, reportToJSON(rep)
+	verdict, reasons := finalVerdict(rep.Verdict, beatErrs, crash != nil, in.BeatErrors)
+	result["verdict"], result["rubric"] = verdict, reportToJSON(rep)
+	if len(reasons) > 0 {
+		result["verdict_reasons"] = reasons
+	}
 	return result, nil
+}
+
+// finalVerdict folds what the rubric cannot see into the verdict: a crash always fails
+// the run, and so does a failed setup step or beat — the scenario did not play as
+// written — unless the caller opted into beat_errors=warn. reasons says why the verdict
+// is worse than the rubric's.
+func finalVerdict(rubric string, beatErrs []string, crashed bool, beatMode string) (string, []string) {
+	verdict := rubric
+	var reasons []string
+	worsen := func(to, why string) {
+		if rank(to) > rank(verdict) {
+			verdict = to
+		}
+		reasons = append(reasons, why)
+	}
+	if crashed {
+		worsen("FAIL", "the editor crashed during the run")
+	}
+	if len(beatErrs) > 0 {
+		to := "FAIL"
+		if beatMode == "warn" {
+			to = "WARN"
+		}
+		worsen(to, fmt.Sprintf("%d setup step(s)/beat(s) failed (beat_errors)", len(beatErrs)))
+	}
+	return verdict, reasons
+}
+
+func rank(v string) int {
+	switch v {
+	case "FAIL":
+		return 2
+	case "WARN":
+		return 1
+	}
+	return 0
 }
 
 func nilIfEmpty(s []string) any {

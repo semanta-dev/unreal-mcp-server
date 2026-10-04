@@ -182,8 +182,8 @@ func evalCheck(timeline []Sample, logs LogSummary, c Check) CheckResult {
 
 // evalBound is the numeric-invariant reducer behind "min" and "max": every
 // present numeric sample must stay >= (min) or <= (max) Params.value. It is the
-// perf gate — "min perf.fps 30" fails the run the first frame framerate dips, and
-// "max perf.hitch_ms 20" fails on the first hitch. Evidence is the first violator.
+// bound gate — "max gamestate.enemies 50" fails on the first sample above 50.
+// Evidence is the first violator.
 func evalBound(timeline []Sample, path []string, c Check, res *CheckResult, isMin bool) {
 	bound, has := paramFloat(c, "value")
 	if !has {

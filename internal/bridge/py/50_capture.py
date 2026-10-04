@@ -122,10 +122,12 @@ def _recorder_tick(session):
             t_world = unreal.GameplayStatics.get_time_seconds(world) if world else 0.0
             st = _recorder_observe(rec)
             hitch_ms = rec.get("max_dt_ms", dt_ms)
-            st["perf"] = {
-                "fps": (1000.0 / dt_ms) if dt_ms > 0 else 0.0,
-                "frame_ms": dt_ms,
-                "hitch_ms": hitch_ms,  # worst frame time since the last sample
+            # The recorder's own tick timing, NOT the game's frame rate: a frame that
+            # takes a screenshot is slower because of it. Rubrics must opt in
+            # (allow_perturbed); measure the game with a CsvProfiler run instead.
+            st["recorder"] = {
+                "tick_ms": dt_ms,
+                "max_tick_ms": hitch_ms,  # worst tick since the last sample
             }
             rec["max_dt_ms"] = 0.0  # reset the hitch window
             rec["frames"].append({

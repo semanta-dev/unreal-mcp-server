@@ -75,3 +75,27 @@ func TestNoOpBeatWarns(t *testing.T) {
 		t.Error("expected a no-op beat warning")
 	}
 }
+
+// TestLintRubricRejectsRecorderPerf: perf.* is gone and recorder.* needs an explicit
+// opt-in — the recorder's tick is slowed by its own captures, so it is not the game's
+// frame rate (R0.7).
+func TestLintRubricRejectsRecorderPerf(t *testing.T) {
+	doc := `{"schema":"scenario/v1","name":"p","rubric":[
+	 {"id":"a","kind":"min","path":"perf.fps","params":{"value":30}},
+	 {"id":"b","kind":"max","path":"recorder.tick_ms","params":{"value":50}},
+	 {"id":"c","kind":"max","path":"recorder.max_tick_ms","params":{"value":250},"allow_perturbed":true},
+	 {"id":"d","kind":"max","path":"gamestate.performance","params":{"value":1}}]}`
+	_, diags, err := ParseScenario([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, d := range diags {
+		if d.Severity == "error" {
+			got[d.Field] = true
+		}
+	}
+	if !got["rubric[0].path"] || !got["rubric[1].path"] || got["rubric[2].path"] || got["rubric[3].path"] || len(got) != 2 {
+		t.Fatalf("errors on %v, want rubric[0] and rubric[1] only (diags %v)", got, diags)
+	}
+}

@@ -63,6 +63,9 @@ type RubricCheck struct {
 	Path     string         `json:"path"`
 	Params   map[string]any `json:"params,omitempty"`
 	Severity string         `json:"severity,omitempty"`
+	// AllowPerturbed lets a check read recorder.* — the recorder's own tick timing,
+	// which capture perturbs — knowing it is not the game's frame rate.
+	AllowPerturbed bool `json:"allow_perturbed,omitempty"`
 }
 
 // Diagnostic is a validation problem (severity error|warning).
@@ -130,7 +133,29 @@ func ParseScenario(data []byte) (*Scenario, []Diagnostic, error) {
 			add("error", fmt.Sprintf("rubric[%d].kind", i), "check kind is required")
 		}
 	}
+	diags = append(diags, LintRubric(s.Rubric)...)
 	return &s, diags, nil
+}
+
+// LintRubric rejects checks that would score the recorder instead of the game:
+// perf.* (removed in v2.1 — it was the recorder's tick, slowed by its own captures,
+// reported as fps) and recorder.* unless the check sets allow_perturbed.
+func LintRubric(checks []RubricCheck) []Diagnostic {
+	var diags []Diagnostic
+	for i, c := range checks {
+		field := fmt.Sprintf("rubric[%d].path", i)
+		root, _, _ := strings.Cut(c.Path, ".")
+		switch {
+		case root == "perf":
+			diags = append(diags, Diagnostic{"error", field, "perf.* was removed: it timed the recorder (which its own captures " +
+				"slow down), not the game. Measure the game with a CsvProfiler capture (analyze op=perf); the recorder's tick " +
+				"is recorder.tick_ms (needs allow_perturbed: true)"})
+		case root == "recorder" && !c.AllowPerturbed:
+			diags = append(diags, Diagnostic{"error", field, "recorder.* is the recorder's own tick timing, perturbed by " +
+				"capture — not the game's frame rate; set allow_perturbed: true to score it anyway"})
+		}
+	}
+	return diags
 }
 
 // HasErrors reports whether any diagnostic is an error (vs a warning).

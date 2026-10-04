@@ -698,7 +698,7 @@ Score evidence offline.
 | `max_luma_delta` | number | image_diff: pass threshold on mean-luma delta (default 0.15) |
 | `op` | string | one of: rubric, perf, image_diff, scenarios |
 | `path` | string | perf: a CsvProfiler .csv or a .memreport; image_diff: an image |
-| `rubric` | object[] | rubric: [{id, kind, path, params?, severity?}] |
+| `rubric` | object[] | rubric: [{id, kind, path, params?, severity?, allow_perturbed?}] |
 | `timeline` | object[] | rubric: recorded frames [{index, t_world, state}] (a playtest result's timeline) |
 
 ### `git` — Project git
@@ -727,7 +727,7 @@ The project's git repo (no editor).
 
 _tier exec_
 
-Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats (exec = call a UFUNCTION, arbitrary code; console; wait_until), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, timeline} plus a contact sheet image via wait_s / job. Saved suite: analyze op=scenarios.
+Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats (exec = call a UFUNCTION, arbitrary code; console; wait_until), stop, score the rubric → {verdict, rubric, logs, crash?, beat_errors?, verdict_reasons?, timeline} plus a contact sheet image via wait_s / job. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -735,6 +735,7 @@ Validate that the game works (async job). op=run plays a scenario/v1 (`path` or 
 
 | param | type | description |
 |---|---|---|
+| `beat_errors` | string | run: fail (default: a failed setup step or beat fails the run) \| warn — one of: fail, warn |
 | `cols` | integer | run: montage columns (default 8) |
 | `frame_h` | integer | run: per-frame height (default 144) |
 | `frame_w` | integer | run: per-frame width (default 256) |

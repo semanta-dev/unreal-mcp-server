@@ -182,6 +182,37 @@ func TestPlaytestRunReturnsVerdictAndContactSheet(t *testing.T) {
 	}
 }
 
+// TestPlaytestBeatErrorsFailTheVerdict: a scenario whose beat failed did not play as
+// written, so a passing rubric must not make it PASS (R0.6); beat_errors=warn opts in to
+// WARN.
+func TestPlaytestBeatErrorsFailTheVerdict(t *testing.T) {
+	h := startHarness(t, harnessOpts{})
+	rec := &bridgetest.Recorder{Dir: t.TempDir(), Frames: 3, State: func(i int) map[string]any {
+		return map[string]any{"gamestate": map[string]any{"wave": float64(i)}}
+	}}
+	rec.Install(h.emu)
+	sc := `{"schema":"scenario/v1","name":"beats","mode":"pie","duration_s":0.2,"interval_s":0.1,
+ "beats":[{"at_s":0,"exec":{"target":"NoSuchActor","ufunction":"StartWave"}}],
+ "rubric":[{"id":"waves","kind":"reached","path":"gamestate.wave","params":{"value":2}}]}`
+	for _, tc := range []struct{ mode, want string }{{"", "FAIL"}, {"warn", "WARN"}} {
+		args := map[string]any{"op": "run", "json": sc, "wait_s": 20}
+		if tc.mode != "" {
+			args["beat_errors"] = tc.mode
+		}
+		out := structured(t, h.call(t, "playtest", args))
+		r, _ := out["result"].(map[string]any)
+		if r == nil || r["verdict"] != tc.want || r["beat_errors"] == nil || r["verdict_reasons"] == nil {
+			t.Fatalf("beat_errors=%q: playtest = %v", tc.mode, out)
+		}
+		if rb, _ := r["rubric"].(map[string]any); rb["verdict"] != "PASS" {
+			t.Fatalf("the rubric itself should still pass: %v", r["rubric"])
+		}
+	}
+	if e := errorOf(t, h.call(t, "playtest", map[string]any{"op": "run", "json": sc, "beat_errors": "ignore"})); e["code"] != "INVALID_ARGUMENT" {
+		t.Fatalf("beat_errors=ignore = %v", e["code"])
+	}
+}
+
 func TestAnalyzeOffline(t *testing.T) {
 	h := startHarness(t, harnessOpts{noEditor: true, project: t.TempDir()})
 	timeline := []any{map[string]any{"index": 0, "t_world": 0, "state": map[string]any{"gamestate": map[string]any{"wave": 1}}},
