@@ -86,6 +86,12 @@ func main() {
 	label := flag.String("label", "live", "live: report label (e.g. baseline v2.0.2)")
 	flag.Parse()
 
+	if *mode == "live-merge" {
+		// A live eval's report over several results files: a later file's (task, run)
+		// replaces an earlier one (a re-run of runs that were aborted for a harness reason).
+		must(os.WriteFile(filepath.Join(*outDir, "live-merged.md"), []byte(liveMerge(strings.Split(*merge, ","), *label)), 0o644))
+		return
+	}
 	if *mode == "live-lint" || *mode == "live" {
 		gts, err := loadGameTaskFiles(*gameTasks)
 		must(err)

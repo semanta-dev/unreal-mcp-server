@@ -1097,3 +1097,31 @@ func selectGameTasks(ts []*gameTask, only string) ([]*gameTask, error) {
 	}
 	return sel, nil
 }
+
+// liveMerge reads live results files in order; a later file's (task, run) replaces an
+// earlier one. The report says which files it merged.
+func liveMerge(files []string, label string) string {
+	byKey := map[string]liveResult{}
+	var order []string
+	for _, f := range files {
+		raw, err := os.ReadFile(strings.TrimSpace(f))
+		must(err)
+		for _, line := range strings.Split(string(raw), "\n") {
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			var r liveResult
+			must(json.Unmarshal([]byte(line), &r))
+			k := fmt.Sprintf("%s#%d", r.Task, r.Run)
+			if _, ok := byKey[k]; !ok {
+				order = append(order, k)
+			}
+			byKey[k] = r
+		}
+	}
+	rs := make([]liveResult, 0, len(order))
+	for _, k := range order {
+		rs = append(rs, byKey[k])
+	}
+	return liveReport(rs, label+" (merged: "+strings.Join(files, ", ")+")", 20, 2)
+}
