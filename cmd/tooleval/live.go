@@ -546,11 +546,12 @@ func parseProbe(output string) (map[string]any, error) {
 // --- the live runner -------------------------------------------------------------
 
 type liveOpts struct {
-	server     string            // the server binary under test
-	serverArgs []string          // common args (engine, group)
-	projects   map[string]string // name -> scratch project dir
-	ports      map[string]string // name -> -command-addr
-	checkpoint map[string]string // name -> baseline checkpoint tag (made at start when empty)
+	server     string                     // the server binary under test
+	serverArgs []string                   // common args (engine, group)
+	projects   map[string]string          // name -> scratch project dir
+	ports      map[string]string          // name -> -command-addr
+	checkpoint map[string]string          // name -> baseline checkpoint tag (made at start when empty)
+	untracked  map[string]map[string]bool // name -> its untracked files at the start (isolation.go)
 	maxTurns   int
 	costCap    float64 // USD per run
 	prices     map[string]price
@@ -658,7 +659,7 @@ func baseline(ctx context.Context, s *liveSession) (string, error) {
 
 // reset reverts the project to its baseline (closing and reopening the editor when
 // files changed) and waits until the editor answers.
-func reset(ctx context.Context, s *liveSession, tag string) error {
+func reset(ctx context.Context, s *liveSession, tag, project string, untracked map[string]bool) error {
 	// A play session outlives the server and the revert (which leaves an unchanged
 	// project's editor open): stop it, or the run starts in the last run's game world.
 	if _, err := s.call(ctx, "pie", map[string]any{"op": "stop"}); err != nil && !strings.Contains(err.Error(), "EDITOR_UNREACHABLE") {
@@ -668,7 +669,11 @@ func reset(ctx context.Context, s *liveSession, tag string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := s.waitJob(ctx, out, 15*time.Minute); err != nil {
+	done, err := s.waitJob(ctx, out, 15*time.Minute)
+	if err != nil {
+		return err
+	}
+	if err := isolate(ctx, s, project, untracked, rebuildRequired(done)); err != nil {
 		return err
 	}
 	out, err = s.call(ctx, "editor_lifecycle", map[string]any{"op": "ensure_open", "wait_s": 25})
@@ -701,7 +706,7 @@ func runLive(ctx context.Context, cl *client, o liveOpts, t *gameTask, run int, 
 		return r
 	}
 	defer s.cs.Close()
-	if err := reset(ctx, s, o.checkpoint[t.Project]); err != nil {
+	if err := reset(ctx, s, o.checkpoint[t.Project], o.projects[t.Project], o.untracked[t.Project]); err != nil {
 		r.Err, r.Aborted = "reset: "+err.Error(), "error"
 		return r
 	}
@@ -1026,6 +1031,13 @@ func liveMain(ctx context.Context, cl *client, o liveOpts, tasks []*gameTask, ru
 		o.checkpoint[name] = tag
 		fmt.Fprintf(os.Stderr, "[live] %s baseline %s\n", name, tag)
 	}
+	o.untracked = map[string]map[string]bool{}
+	for name, dir := range o.projects {
+		u, err := untrackedFiles(dir)
+		must(err)
+		o.untracked[name] = u
+		fmt.Fprintf(os.Stderr, "[live] %s: %d untracked file(s) kept as the baseline\n", name, len(u))
+	}
 	// One queue per project: each project has its own editor, so the projects run side by
 	// side and a project's runs one at a time. The eval cap is shared.
 	var (
@@ -1122,4 +1134,13 @@ func liveMerge(files []string, label string) string {
 		rs = append(rs, byKey[k])
 	}
 	return liveReport(rs, label+" (merged: "+strings.Join(files, ", ")+")", 20, 2)
+}
+
+// rebuildRequired reads git_revert's rebuild_required from its job result.
+func rebuildRequired(done map[string]any) bool {
+	if r, ok := done["result"].(map[string]any); ok {
+		done = r
+	}
+	b, _ := done["rebuild_required"].(bool)
+	return b
 }
