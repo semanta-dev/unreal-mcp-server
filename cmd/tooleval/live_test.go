@@ -269,3 +269,35 @@ func TestLoadGameTaskFilesKeepsEachFilesPrelude(t *testing.T) {
 		t.Fatalf("%v %+v", err, ts)
 	}
 }
+
+// The last block carries the rolling cache breakpoint; the stored history does not, so
+// breakpoints never pile up past the API's four.
+func TestWithHistoryCacheMarksOnlyTheLastBlock(t *testing.T) {
+	msgs := []message{
+		{Role: "user", Content: raws([]block{{Type: "text", Text: "go"}})},
+		{Role: "assistant", Content: raws([]block{{Type: "text", Text: "ok"}, {Type: "tool_use", ID: "t1", Name: "editor", Input: []byte(`{}`)}})},
+		{Role: "user", Content: raws([]block{{Type: "tool_result", ToolUseID: "t1", Content: []block{{Type: "text", Text: "r"}}}})},
+	}
+	out := withHistoryCache(msgs)
+	marked := 0
+	for i, m := range out {
+		for j, c := range m.Content {
+			if strings.Contains(string(c), `"cache_control"`) {
+				marked++
+				if i != 2 || j != 0 {
+					t.Fatalf("breakpoint on message %d block %d", i, j)
+				}
+			}
+		}
+	}
+	if marked != 1 || !strings.Contains(string(out[2].Content[0]), `"tool_use_id":"t1"`) {
+		t.Fatalf("marked %d: %s", marked, out[2].Content[0])
+	}
+	for _, m := range msgs {
+		for _, c := range m.Content {
+			if strings.Contains(string(c), "cache_control") {
+				t.Fatal("the stored history was changed")
+			}
+		}
+	}
+}

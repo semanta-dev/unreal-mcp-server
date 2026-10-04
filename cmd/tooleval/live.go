@@ -731,7 +731,7 @@ func runLive(ctx context.Context, cl *client, o liveOpts, t *gameTask, run int, 
 			r.Aborted = "turn_limit"
 			break
 		}
-		resp, err := cl.create(ctx, request{Model: o.model, MaxTokens: 8192, System: liveSystemPrompt, Tools: tools, Messages: msgs})
+		resp, err := cl.create(ctx, request{Model: o.model, MaxTokens: 8192, System: liveSystemPrompt, Tools: tools, Messages: withHistoryCache(msgs)})
 		if err != nil {
 			r.Err, r.Aborted = err.Error(), "error"
 			break

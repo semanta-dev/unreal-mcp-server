@@ -57,6 +57,32 @@ func raws(bs []block) []json.RawMessage {
 	return out
 }
 
+// withHistoryCache marks the conversation's last block as a cache breakpoint, so each
+// turn reads the history so far from the cache (10 % of the input price) and writes only
+// what the turn added. The stored history is not changed: one rolling breakpoint, plus
+// the tool list's, stays within the API's four.
+func withHistoryCache(msgs []message) []message {
+	if len(msgs) == 0 {
+		return msgs
+	}
+	last := msgs[len(msgs)-1]
+	if len(last.Content) == 0 {
+		return msgs
+	}
+	var b map[string]json.RawMessage
+	if json.Unmarshal(last.Content[len(last.Content)-1], &b) != nil {
+		return msgs
+	}
+	b["cache_control"] = json.RawMessage(`{"type":"ephemeral"}`)
+	raw, err := json.Marshal(b)
+	if err != nil {
+		return msgs
+	}
+	content := append(append([]json.RawMessage(nil), last.Content[:len(last.Content)-1]...), raw)
+	out := append(append([]message(nil), msgs[:len(msgs)-1]...), message{Role: last.Role, Content: content})
+	return out
+}
+
 func parseBlocks(rs []json.RawMessage) []block {
 	out := make([]block, 0, len(rs))
 	for _, r := range rs {
