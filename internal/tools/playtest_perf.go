@@ -31,12 +31,7 @@ func perfPass(ctx context.Context, c *spec.Call, sc *eval.Scenario, duration flo
 	}
 	csvDir := filepath.Join(pd, "Saved", "Profiling", "CSV")
 	before := csvFiles(csvDir)
-	stopPIE := func() {
-		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
-		defer cancel()
-		_, _ = v2Op(cctx, c, "pie_stop", nil)
-		forgetGameWorld(c)
-	}
+	stopPIE := func() { stopPIEAndWait(ctx, c) }
 	progress(name + ": starting " + orStr(sc.Mode, "pie"))
 	forgetGameWorld(c)
 	if _, err := v2Op(ctx, c, "pie_start", map[string]any{"simulate": sc.Mode == "simulate"}); err != nil {

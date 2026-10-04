@@ -29,12 +29,19 @@ type eventTimeline struct {
 func startEventTimeline(ctx context.Context, c *spec.Call, session string) (*eventTimeline, error) {
 	args := map[string]any{"session": session, "engine": true}
 	if api, err := gameAPIOf(c); err == nil {
-		args["journal"] = map[string]any{"class": api.ClassPath(), "function": api.Events}
+		args["journal"] = map[string]any{"class": api.ClassPath(), "function": api.Events, "capabilities": api.Capabilities}
 	} else {
 		args["journal_why"] = err.Error()
 	}
 	out, err := v2Op(ctx, c, "events_start", args)
 	if err != nil {
+		// The session may exist although the call failed (a timeout): stop it, best
+		// effort, so its recorder does not stay bound (cleanup, not a retry).
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+		defer cancel()
+		if b, berr := v2Bridge(c); berr == nil {
+			_, _ = b.Call(cctx, "events_stop", map[string]any{"session": session})
+		}
 		return nil, err
 	}
 	return &eventTimeline{session: session, started: out}, nil
@@ -76,12 +83,13 @@ func (t *eventTimeline) stop(ctx context.Context, c *spec.Call) (*eval.EventLog,
 		Gaps      []eval.Gap        `json:"gaps"`
 		Sources   map[string]string `json:"sources"`
 		SourceWhy map[string]string `json:"source_why"`
+		Kinds     []string          `json:"journal_kinds"`
 		Engine    map[string]any    `json:"engine"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, nil, fmt.Errorf("events_stop: %w", err)
 	}
-	log := &eval.EventLog{StartT: out.StartT, EndT: out.EndT, Sources: out.Sources, SourceWhy: out.SourceWhy,
+	log := &eval.EventLog{StartT: out.StartT, EndT: out.EndT, Sources: out.Sources, SourceWhy: out.SourceWhy, JournalKinds: out.Kinds,
 		Events: append(out.Events, t.server...), Gaps: append(out.Gaps, t.gaps...)}
 	for i := range log.Gaps {
 		if math.IsInf(log.Gaps[i].ToT, 1) {
@@ -135,6 +143,7 @@ func writePlaytestJSON(dir string, result map[string]any, log *eval.EventLog) (s
 		doc["event_window"] = []float64{log.StartT, log.EndT}
 		doc["event_gaps"] = log.Gaps
 		doc["event_sources"] = log.Sources
+		doc["event_journal_kinds"] = log.JournalKinds
 		if len(log.SourceWhy) > 0 {
 			doc["event_source_why"] = log.SourceWhy
 		}

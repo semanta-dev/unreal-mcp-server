@@ -80,6 +80,8 @@ type batchRun struct {
 	Checks       map[string]string  `json:"checks,omitempty"` // id -> passed | failed | insufficient
 	Values       map[string]float64 `json:"values,omitempty"` // check id -> the number it measured
 	Events       map[string]float64 `json:"events,omitempty"` // kind -> count
+	NoEvidence   []string           `json:"no_evidence,omitempty"` // kinds this run cannot speak for (source off, gap, undeclared)
+	log          *eval.EventLog
 }
 
 func runBatch(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playtestIn, progress func(string)) (map[string]any, error) {
@@ -93,11 +95,26 @@ func runBatch(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playtestI
 		prefix := fmt.Sprintf("seed %d (%d/%d): ", seed, i+1, len(in.Seeds))
 		progress(prefix + "starting")
 		res, err := runPlaytest(ctx, c, sc, in, func(m string) { progress(prefix + m) }, &s)
-		runs = append(runs, summarizeRun(seed, res, err))
+		r := summarizeRun(seed, res, err)
+		if ctx.Err() != nil {
+			// Cut short by the cancel: not a run of the scenario, kept out of every figure.
+			r.Verdict, r.Error = "CANCELLED", "the batch was cancelled during this run"
+		}
+		runs = append(runs, r)
 	}
 	out := aggregateBatch(id, sc.Name, runs)
-	if len(runs) < len(in.Seeds) {
-		out["incomplete"] = fmt.Sprintf("cancelled after %d of %d runs", len(runs), len(in.Seeds))
+	complete := 0
+	for _, r := range runs {
+		if r.Verdict != "CANCELLED" {
+			complete++
+		}
+	}
+	if complete < len(in.Seeds) {
+		// Never a verdict over runs that were not played.
+		out["incomplete"] = fmt.Sprintf("cancelled: %d of %d runs complete", complete, len(in.Seeds))
+		if rank(fmt.Sprint(out["verdict"])) < rank(eval.VerdictInsufficient) {
+			out["verdict"] = eval.VerdictInsufficient
+		}
 	}
 	if pd := c.Deps.ProjectDir; pd != "" {
 		dir := filepath.Join(pd, "Saved", "MCP", "playtest")
@@ -108,7 +125,7 @@ func runBatch(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playtestI
 			}
 		}
 	}
-	return out, nil
+	return out, ctx.Err() // a cancelled batch is not a finished one (its file is written all the same)
 }
 
 func summarizeRun(seed int, res map[string]any, err error) batchRun {
@@ -128,13 +145,24 @@ func summarizeRun(seed int, res map[string]any, err error) batchRun {
 		r.PlaytestPath = p
 		if raw, err := os.ReadFile(p); err == nil {
 			var doc struct {
-				Events []eval.Event `json:"events"`
+				Events  []eval.Event      `json:"events"`
+				Window  []float64         `json:"event_window"`
+				Gaps    []eval.Gap        `json:"event_gaps"`
+				Sources map[string]string `json:"event_sources"`
+				Why     map[string]string `json:"event_source_why"`
+				Kinds   []string          `json:"event_journal_kinds"`
 			}
-			if json.Unmarshal(raw, &doc) == nil {
+			if json.Unmarshal(raw, &doc) == nil && doc.Sources != nil && len(doc.Window) == 2 {
+				r.log = &eval.EventLog{StartT: doc.Window[0], EndT: doc.Window[1], Events: doc.Events, Gaps: doc.Gaps,
+					Sources: doc.Sources, SourceWhy: doc.Why, JournalKinds: doc.Kinds}
 				for _, e := range doc.Events {
 					r.Events[e.Kind]++
-					if e.Kind == "wave_end" {
-						r.Waves = append(r.Waves, map[string]any{"wave": e.Data["wave"], "clear_s": e.Data["clear_s"]})
+				}
+				if eval.SpeaksFor(r.log, "wave_end") == "" {
+					for _, e := range doc.Events {
+						if e.Kind == "wave_end" {
+							r.Waves = append(r.Waves, map[string]any{"wave": e.Data["wave"], "clear_s": e.Data["clear_s"]})
+						}
 					}
 				}
 			}
@@ -171,11 +199,8 @@ func measured(v any) (float64, bool) {
 	case int:
 		return float64(x), true
 	case map[string]any:
-		if r, ok := x["rate"].(float64); ok {
-			return r, true
-		}
-		for k, val := range x {
-			if f, ok := val.(float64); ok && len(k) > 2 && k[len(k)-2:] == "_s" {
+		for _, k := range []string{"rate", "p50_s", "p95_s", "mean_s", "min_s", "max_s"} { // each event kind's key
+			if f, ok := x[k].(float64); ok {
 				return f, true
 			}
 		}
@@ -188,14 +213,19 @@ func aggregateBatch(id, scenario string, runs []batchRun) map[string]any {
 	worst := "PASS"
 	checks := map[string]map[string]int{}
 	values, events, waves := map[string]*stat{}, map[string]*stat{}, map[string]*stat{}
+	excluded := map[string]int{}
 	kinds := map[string]bool{}
 	for _, r := range runs {
 		for k := range r.Events {
 			kinds[k] = true
 		}
 	}
-	for _, r := range runs {
+	for i := range runs {
+		r := &runs[i]
 		verdicts[r.Verdict]++
+		if r.Verdict == "CANCELLED" {
+			continue
+		}
 		if rank(r.Verdict) > rank(worst) {
 			worst = r.Verdict
 		}
@@ -211,14 +241,20 @@ func aggregateBatch(id, scenario string, runs []batchRun) map[string]any {
 			}
 			values[id].add(v)
 		}
-		if r.PlaytestPath != "" {
-			for k := range kinds { // a kind a run never saw counts as 0 for it
-				if events[k] == nil {
-					events[k] = &stat{}
-				}
-				events[k].add(r.Events[k])
+		for k := range kinds {
+			// A run counts for a kind only if it can speak for it (source recorded, no gap,
+			// a kind the game declares): then a kind it never saw is a real 0.
+			if r.log == nil || eval.SpeaksFor(r.log, k) != "" {
+				excluded[k]++
+				r.NoEvidence = append(r.NoEvidence, k)
+				continue
 			}
+			if events[k] == nil {
+				events[k] = &stat{}
+			}
+			events[k].add(r.Events[k])
 		}
+		sort.Strings(r.NoEvidence)
 		for _, w := range r.Waves {
 			cs, ok := w["clear_s"].(float64)
 			if !ok {
@@ -245,8 +281,12 @@ func aggregateBatch(id, scenario string, runs []batchRun) map[string]any {
 	if worst == "" {
 		worst = "FAIL"
 	}
-	return map[string]any{"schema": "playtest-batch/v1", "id": id, "scenario": scenario, "verdict": worst,
+	out := map[string]any{"schema": "playtest-batch/v1", "id": id, "scenario": scenario, "verdict": worst,
 		"verdicts": verdicts, "checks": checks, "values": finish(values), "events": finish(events), "waves": waveList, "runs": runs}
+	if len(excluded) > 0 {
+		out["events_excluded_runs"] = excluded // per kind: runs without evidence for it
+	}
+	return out
 }
 
 func waveKey(v any) float64 {

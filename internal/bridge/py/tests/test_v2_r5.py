@@ -15,10 +15,12 @@ class Recorder:
 
     def __init__(self):
         self.events, self.dropped_before, self.recording, self.stopped = [], 0, False, 0
+        self.generation, self.lost_t = 0, None
 
     def start_recording(self, capacity):
         self.recording = True
-        return json.dumps({"ok": True, "bound": 12, "capacity": capacity})
+        self.generation += 1
+        return json.dumps({"ok": True, "bound": 12, "capacity": capacity, "generation": self.generation})
 
     def stop_recording(self):
         self.recording, self.stopped = False, self.stopped + 1
@@ -30,8 +32,11 @@ class Recorder:
         lost = max(0, oldest - (cursor + 1))
         page = after[:2]  # pages of 2: the drain must keep reading while more
         nxt = page[-1]["seq"] if page else cursor
-        return json.dumps({"events": page, "next_cursor": nxt, "gap": lost > 0, "dropped": lost,
-                           "more": len(after) > len(page)})
+        out = {"events": page, "next_cursor": nxt, "gap": lost > 0, "dropped": lost,
+               "more": len(after) > len(page), "generation": self.generation}
+        if self.lost_t is not None and not out["more"]:
+            out["world_lost"], out["lost_t"] = True, self.lost_t
+        return json.dumps(out)
 
 
 @pytest.fixture
@@ -47,14 +52,15 @@ def ue(v2):
         gap = journal["gap_on"] is not None and journal["gap_on"] == cursor
         return json.dumps({"events": evs, "next_cursor": nxt, "gap": gap, "dropped": 9 if gap else 0})
 
-    sub = Obj("AgentSubsystem_0", SUB_CLS, functions={"GetEventsSince": since})
+    sub = Obj("AgentSubsystem_0", SUB_CLS, functions={"GetEventsSince": since, "GetCapabilitiesJson": lambda: json.dumps(
+        {"event_kinds": ["kill", "hit", "death", "wave_start", "sfx"]})})
     fake.classes["/Script/Game.AgentSubsystem"] = SUB_CLS
     fake.EditorSubsystem = _NS(static_class=lambda: Class("EditorSubsystem", "/Script/EditorSubsystem.EditorSubsystem"))
     fake.EngineSubsystem = _NS(static_class=lambda: Class("EngineSubsystem", "/Script/Engine.EngineSubsystem"))
     api = {"v": 8}
     fake.MCPCoreLibrary = _NS(get_plugin_api_version=lambda: api["v"],
                               find_game_subsystem=lambda world, cls: sub if cls is SUB_CLS else None,
-                              is_pure_or_const=lambda cls, fn: str(fn) == "GetEventsSince")
+                              is_pure_or_const=lambda cls, fn: str(fn) in ("GetEventsSince", "GetCapabilitiesJson"))
     rec = Recorder()
     fake.MCPEventRecorder = _NS(get=lambda world: rec)
     clock = {"t": 10.0}
@@ -71,7 +77,7 @@ def call(v2, op, args):
     return run_dispatch(v2["_mcp2_dispatch"], op, args)
 
 
-JOURNAL = {"class": "/Script/Game.AgentSubsystem", "function": "GetEventsSince"}
+JOURNAL = {"class": "/Script/Game.AgentSubsystem", "function": "GetEventsSince", "capabilities": "GetCapabilitiesJson"}
 
 
 def tick(ue, dt=1.0):
@@ -166,3 +172,106 @@ def test_seed_random_seeds_the_engine_streams(v2, ue):
     ue.api["v"] = 8
     ue.pie_actors = None
     assert call(v2, "seed_random", {"seed": 1})["code"] == "NOT_IN_PIE" and seeds == [42]
+
+
+
+def test_session_reports_the_declared_kinds_and_refuses_a_second_session(v2, ue):
+    env = call(v2, "events_start", {"session": "k1", "journal": JOURNAL})
+    assert env["result"]["journal_kinds"] == ["death", "hit", "kill", "sfx", "wave_start"], env
+    env = call(v2, "events_start", {"session": "k2", "journal": JOURNAL})
+    assert env["code"] == "CONFLICT" and ue.rec.generation == 1, env  # the recorder was not restarted under k1
+    out = call(v2, "events_stop", {"session": "k1"})["result"]
+    assert out["journal_kinds"] == ["death", "hit", "kill", "sfx", "wave_start"]
+
+
+def test_journal_events_settle_before_they_are_read(v2, ue):
+    # A hit's visual_t is stamped up to 1 s later: an event younger than that is read again later.
+    call(v2, "events_start", {"session": "s1", "journal": JOURNAL})
+    hit = {"seq": 1, "t": 10.6, "kind": "hit"}
+    ue.journal["events"] = [hit]
+    tick(ue, 1.0)  # now 11.0: the hit is 0.4 s old
+    hit["data"] = {"visual_t": 10.7}  # the game stamps it afterwards
+    tick(ue, 1.0)  # now 12.0: settled, read with its stamp
+    out = call(v2, "events_stop", {"session": "s1"})["result"]
+    hits = [e for e in out["events"] if e["kind"] == "hit"]
+    assert len(hits) == 1 and hits[0]["data"] == {"visual_t": 10.7} and out["gaps"] == [], out
+
+
+def test_a_gap_before_the_window_is_not_a_gap(v2, ue):
+    ue.journal["gap_on"] = ""  # the journal lost events before the session started
+    out = call(v2, "events_start", {"session": "b1", "journal": JOURNAL})["result"]
+    out = call(v2, "events_stop", {"session": "b1"})["result"]
+    assert out["gaps"] == [] and out["before_window"][0]["source"] == "journal", out
+
+
+def test_a_lost_world_is_an_engine_gap_to_the_end(v2, ue):
+    call(v2, "events_start", {"session": "w1", "journal": JOURNAL})
+    ue.rec.events = [{"seq": 1, "t": 10.5, "kind": "damage"}]
+    tick(ue)
+    ue.rec.lost_t = 11.5  # a map travel tore the recorded world down
+    tick(ue)
+    tick(ue, 5.0)
+    out = call(v2, "events_stop", {"session": "w1"})["result"]
+    # The recording ends where the world went: both sources lost the rest (the new world's
+    # clock is not this one's), nothing after is drained, the window ends at detection.
+    assert out["end_t"] == 12.0 and {(g["source"], g["from_t"], g["to_t"]) for g in out["gaps"]} == {
+        ("engine", 11.5, 12.0), ("journal", 11.5, 12.0)}, out
+    assert ue.ticks[-1] is None
+
+
+def test_a_journal_world_change_or_a_clock_going_back_ends_the_recording(v2, ue):
+    call(v2, "events_start", {"session": "w2", "journal": JOURNAL})
+    tick(ue)
+    ue.journal["gap_on"] = "e:0"
+    real = ue.journal.get("reason")
+    m = v2["_mcp2"]
+    sub = m._MCP_EVENT_SESSIONS["w2"]["journal"]["obj"]
+    since = sub.functions["GetEventsSince"]
+    sub.functions["GetEventsSince"] = lambda c: json.dumps(dict(json.loads(since(c)), gap=True, reason="world_changed"))
+    tick(ue)
+    out = call(v2, "events_stop", {"session": "w2"})["result"]
+    assert all("world changed" in g["reason"] for g in out["gaps"]) and len(out["gaps"]) == 2 and real is None, out
+    call(v2, "events_start", {"session": "w3", "journal": dict(JOURNAL, function="GetEventsSince")})
+    sub.functions["GetEventsSince"] = since
+    ue.journal["gap_on"] = None
+    tick(ue, 2.0)
+    ue.clock["t"] = 0.5  # RestartLevel: a new world, its clock from 0
+    ue.ticks[-1](0.6)
+    out = call(v2, "events_stop", {"session": "w3"})["result"]
+    assert out["end_t"] == 14.0 and all("clock went back" in g["reason"] for g in out["gaps"]) and len(out["gaps"]) == 2, out
+
+
+def test_a_recorder_restarted_elsewhere_is_a_gap(v2, ue):
+    call(v2, "events_start", {"session": "g1", "journal": JOURNAL})
+    ue.rec.generation += 1  # someone else restarted the engine recorder
+    tick(ue)
+    out = call(v2, "events_stop", {"session": "g1"})["result"]
+    assert any(g["source"] == "engine" and "restarted" in g["reason"] for g in out["gaps"]), out
+
+
+def test_a_full_session_is_a_gap_on_every_source_until_the_end(v2, ue):
+    m = v2["_mcp2"]
+    old = m._EVENTS_MAX
+    m._EVENTS_MAX = 3
+    try:
+        call(v2, "events_start", {"session": "f1", "journal": JOURNAL})
+        ue.rec.events = [{"seq": i, "t": 10.0, "kind": "damage"} for i in range(1, 6)]
+        tick(ue)
+        ue.journal["events"] = [{"seq": 1, "t": 10.0, "kind": "kill"}]
+        tick(ue, 3.0)
+        out = call(v2, "events_stop", {"session": "f1"})["result"]
+    finally:
+        m._EVENTS_MAX = old
+    gaps = {g["source"]: g for g in out["gaps"]}
+    assert set(gaps) >= {"engine", "journal"} and gaps["journal"]["to_t"] == out["end_t"] == 14.0, out
+
+
+def test_pie_end_unregisters_the_tick(v2, ue):
+    call(v2, "events_start", {"session": "e1", "journal": JOURNAL})
+    ue.pie_actors = None
+    tick(ue)  # the drain sees PIE gone
+    cb = ue.ticks[-1]
+    tick(ue)  # the next tick unregisters itself
+    assert ue.ticks[-1] is None and cb is not None
+    out = call(v2, "events_stop", {"session": "e1"})["result"]
+    assert {g["source"] for g in out["gaps"]} == {"engine", "journal"}

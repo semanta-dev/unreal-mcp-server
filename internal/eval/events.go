@@ -19,6 +19,7 @@ import (
 // Source is engine (the plugin's recorder), journal (the game's GetEventsSince) or
 // server (what the playtest itself did: input beats, game commands).
 type Event struct {
+	Seq      int64          `json:"seq,omitempty"`
 	T        float64        `json:"t"`
 	Kind     string         `json:"kind"`
 	Actor    string         `json:"actor,omitempty"`
@@ -76,6 +77,26 @@ type EventLog struct {
 	Gaps      []Gap             `json:"gaps"`
 	Sources   map[string]string `json:"sources"`
 	SourceWhy map[string]string `json:"source_why,omitempty"`
+	// JournalKinds are the event kinds the game declares (GetCapabilitiesJson
+	// event_kinds); nil: it declared none. A journal kind outside them is never scored —
+	// zero events of a kind the game does not emit is not evidence of zero.
+	JournalKinds []string `json:"journal_kinds"`
+}
+
+// KindUnknown says why the log cannot speak for kind ("" when it can).
+func (l *EventLog) KindUnknown(kind string) string {
+	if EventSource(kind) != SourceJournal || l.Sources[SourceJournal] != SourceRecorded {
+		return ""
+	}
+	if l.JournalKinds == nil {
+		return "the game declares no event kinds (GetCapabilitiesJson event_kinds), so a journal kind cannot be checked"
+	}
+	for _, k := range l.JournalKinds {
+		if k == kind {
+			return ""
+		}
+	}
+	return fmt.Sprintf("the game does not emit %q events (its event kinds: %s)", kind, strings.Join(l.JournalKinds, ", "))
 }
 
 // Inputs is everything a rubric can read: the sampled frames, the log tally, the
@@ -195,21 +216,27 @@ func evalEventCheck(log *EventLog, c Check, res *CheckResult) {
 		kinds = append(kinds, from)
 	}
 	if log == nil {
-		insufficient(res, "the run recorded no events (set record_events: true in the scenario)")
+		insufficient(res, "the run has no event timeline (scenario record_events: true; if it was set, recording failed — see beat_errors)")
 		return
 	}
+	// from_t / to_t are seconds from the recording's start (runs of a batch start at
+	// different world times).
 	from, to := log.StartT, log.EndT
 	if v, ok := paramFloat(c, "from_t"); ok {
-		from = math.Max(from, v)
+		from = math.Max(from, log.StartT+v)
 	}
 	if v, ok := paramFloat(c, "to_t"); ok {
-		to = math.Min(to, v)
+		to = math.Min(to, log.StartT+v)
 	}
 	if to <= from {
-		insufficient(res, fmt.Sprintf("the window [%g, %g] s is outside the recording [%g, %g] s", from, to, log.StartT, log.EndT))
+		insufficient(res, fmt.Sprintf("the window is outside the recording (%.4g s long)", log.EndT-log.StartT))
 		return
 	}
 	for _, k := range kinds {
+		if why := log.KindUnknown(k); why != "" {
+			insufficient(res, why)
+			return
+		}
 		src := EventSource(k)
 		if state := log.Sources[src]; state != SourceRecorded {
 			why := log.SourceWhy[src]
@@ -221,8 +248,8 @@ func evalEventCheck(log *EventLog, c Check, res *CheckResult) {
 		}
 		for _, g := range log.Gaps {
 			if g.Source == src && g.ToT >= from && g.FromT <= to {
-				insufficient(res, fmt.Sprintf("the %s source has a gap in [%g, %g] s (%s): %q events may be missing",
-					src, g.FromT, g.ToT, gapWhy(g), k))
+				insufficient(res, fmt.Sprintf("the %s source has a gap %.4g–%.4g s into the recording (%s): %q events may be missing",
+					src, g.FromT-log.StartT, g.ToT-log.StartT, gapWhy(g), k))
 				return
 			}
 		}
@@ -339,6 +366,10 @@ func evalHistogram(events []Event, c Check, res *CheckResult) {
 		}
 	}
 	res.Evidence = &Evidence{FrameIndex: -1, Value: map[string]any{"by": by, "counts": counts, "total": total, "without_field": missing}}
+	if len(events) == 0 {
+		res.Message = fmt.Sprintf("no %s events: nothing to group", eventPathKind(c.Path))
+		return
+	}
 	if missing > 0 && total == 0 {
 		res.Message = fmt.Sprintf("none of the %d %s events has a %s", missing, eventPathKind(c.Path), by)
 		return
@@ -457,4 +488,23 @@ func evalPerfCSV(perf map[string]float64, c Check, res *CheckResult) {
 	}
 	res.Passed = true
 	res.Message = fmt.Sprintf("perf_csv.%s = %.4g", field, v)
+}
+
+// SpeaksFor says why the log cannot speak for kind over its whole recording ("" when
+// it can): the kind's source was not recorded, a gap touches the recording, or the game
+// does not declare the kind.
+func SpeaksFor(log *EventLog, kind string) string {
+	if why := log.KindUnknown(kind); why != "" {
+		return why
+	}
+	src := EventSource(kind)
+	if log.Sources[src] != SourceRecorded {
+		return fmt.Sprintf("the %s source was %s", src, orDefault(log.Sources[src], "off"))
+	}
+	for _, g := range log.Gaps {
+		if g.Source == src {
+			return fmt.Sprintf("the %s source has a gap (%s)", src, gapWhy(g))
+		}
+	}
+	return ""
 }

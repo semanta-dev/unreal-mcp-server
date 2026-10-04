@@ -80,6 +80,12 @@ FString UMCPEventRecorder::StartRecording(int32 InCapacity)
 	Dropped = DrainedTo = 0;
 	RecordingWorld = World;
 	bRecording = true;
+	bWorldLost = false;
+	LostT = 0.0;
+	LastT = World->GetTimeSeconds();
+	++Generation;
+	// The GameInstance outlives a map travel; the recorded world does not.
+	CleanupHandle = FWorldDelegates::OnWorldCleanup.AddUObject(this, &UMCPEventRecorder::OnWorldCleanup);
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
 		BindActor(*It); // pre-existing actors: placed nests, the core, the player
@@ -88,8 +94,24 @@ FString UMCPEventRecorder::StartRecording(int32 InCapacity)
 	Out->SetBoolField(TEXT("ok"), true);
 	Out->SetNumberField(TEXT("bound"), Bound.Num());
 	Out->SetNumberField(TEXT("capacity"), Capacity);
+	Out->SetNumberField(TEXT("generation"), Generation);
 	Out->SetNumberField(TEXT("t"), World->GetTimeSeconds());
 	return MCPToJson(Out);
+}
+
+void UMCPEventRecorder::OnWorldCleanup(UWorld* World, bool bSessionEnded, bool bCleanupResources)
+{
+	if (!bRecording || World != RecordingWorld.Get())
+	{
+		return;
+	}
+	// The recorded world is going: stop here and say so (a drain reports world_lost).
+	bWorldLost = true;
+	LostT = World->GetTimeSeconds();
+	World->RemoveOnActorSpawnedHandler(SpawnHandle);
+	SpawnHandle.Reset();
+	UnbindAll();
+	bRecording = false;
 }
 
 FString UMCPEventRecorder::StopRecording()
@@ -102,6 +124,8 @@ FString UMCPEventRecorder::StopRecording()
 		World->RemoveOnActorSpawnedHandler(SpawnHandle);
 	}
 	SpawnHandle.Reset();
+	FWorldDelegates::OnWorldCleanup.Remove(CleanupHandle);
+	CleanupHandle.Reset();
 	const int32 Unbound = UnbindAll();
 	Out->SetBoolField(TEXT("ok"), true);
 	Out->SetBoolField(TEXT("was_recording"), bWas);
@@ -109,11 +133,20 @@ FString UMCPEventRecorder::StopRecording()
 	Out->SetNumberField(TEXT("still_bound"), CountBoundActors());
 	Out->SetNumberField(TEXT("recorded"), (double)(NextSeq - 1));
 	Out->SetNumberField(TEXT("dropped"), (double)Dropped);
+	if (bWorldLost)
+	{
+		Out->SetBoolField(TEXT("world_lost"), true);
+		Out->SetNumberField(TEXT("lost_t"), LostT);
+	}
+	// The events are the caller's now (drained before stopping): free the ring.
+	Ring.Empty();
+	Capacity = Head = Count = 0;
 	return MCPToJson(Out);
 }
 
 void UMCPEventRecorder::Deinitialize()
 {
+	FWorldDelegates::OnWorldCleanup.Remove(CleanupHandle);
 	if (bRecording || Bound.Num() > 0)
 	{
 		const int32 Was = Bound.Num();
@@ -208,7 +241,8 @@ void UMCPEventRecorder::Record(FName Kind, const AActor* Actor, const AActor* Ta
 	}
 	FEvent E;
 	E.Seq = NextSeq++;
-	E.T = RecordingWorld.IsValid() ? RecordingWorld->GetTimeSeconds() : 0.0;
+	E.T = RecordingWorld.IsValid() ? RecordingWorld->GetTimeSeconds() : LastT;
+	LastT = E.T;
 	E.Kind = Kind;
 	E.Actor = MCPActorName(Actor);
 	E.Target = MCPActorName(Target);
@@ -273,6 +307,13 @@ FString UMCPEventRecorder::DrainEventsJson(int64 Cursor, int32 MaxEvents)
 {
 	TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
 	const int64 Oldest = NextSeq - Count; // seq of the oldest kept event (== NextSeq when empty)
+	// A cursor beyond this recording's events belongs to another recording (a restart):
+	// read from the start and report it as a gap, never as "nothing new".
+	const bool bForeign = Cursor > NextSeq - 1;
+	if (bForeign)
+	{
+		Cursor = 0;
+	}
 	const int64 From = FMath::Max(Cursor + 1, Oldest);
 	const int64 Lost = FMath::Max<int64>(0, Oldest - (Cursor + 1));
 	const int32 Max = FMath::Clamp(MaxEvents > 0 ? MaxEvents : 10000, 1, 100000);
@@ -304,11 +345,21 @@ FString UMCPEventRecorder::DrainEventsJson(int64 Cursor, int32 MaxEvents)
 	DrainedTo = FMath::Max(DrainedTo, Next);
 	Out->SetArrayField(TEXT("events"), Events);
 	Out->SetNumberField(TEXT("next_cursor"), (double)Next);
-	Out->SetBoolField(TEXT("gap"), Lost > 0);
+	Out->SetBoolField(TEXT("gap"), Lost > 0 || bForeign);
 	Out->SetNumberField(TEXT("dropped"), (double)Lost);
+	Out->SetNumberField(TEXT("generation"), Generation);
+	if (bForeign)
+	{
+		Out->SetStringField(TEXT("reason"), TEXT("the cursor is from another recording"));
+	}
+	if (bWorldLost)
+	{
+		Out->SetBoolField(TEXT("world_lost"), true);
+		Out->SetNumberField(TEXT("lost_t"), LostT);
+	}
 	Out->SetBoolField(TEXT("more"), Seq < NextSeq);
 	Out->SetBoolField(TEXT("recording"), bRecording);
 	Out->SetNumberField(TEXT("bound"), Bound.Num());
-	Out->SetNumberField(TEXT("t"), RecordingWorld.IsValid() ? RecordingWorld->GetTimeSeconds() : 0.0);
+	Out->SetNumberField(TEXT("t"), RecordingWorld.IsValid() ? RecordingWorld->GetTimeSeconds() : LastT);
 	return MCPToJson(Out);
 }

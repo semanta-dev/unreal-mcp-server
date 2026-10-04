@@ -36,6 +36,7 @@ func recorded() map[string]any {
 
 func feelDoc() map[string]any {
 	return map[string]any{"event_window": []float64{0, 60}, "event_sources": recorded(), "event_gaps": []any{},
+		"event_journal_kinds": []any{"camera_shake", "hit", "sfx", "vfx"},
 		"events": []any{
 			ev(1, "hit", true, map[string]any{"visual_t": 1.01}), ev(1.02, "sfx", true, nil), ev(1.03, "camera_shake", true, nil), ev(1.0, "vfx", true, nil),
 			ev(5, "hit", true, map[string]any{"visual_t": 5.05}), ev(5.04, "sfx", true, nil), ev(5.06, "camera_shake", true, nil),
@@ -108,6 +109,7 @@ func TestFeelAuditFromAPlaytestRefusesMissingEvidence(t *testing.T) {
 
 func TestDecisionAuditFromAPlaytest(t *testing.T) {
 	doc := map[string]any{"event_window": []float64{0, 60}, "event_sources": recorded(), "event_gaps": []any{},
+		"event_journal_kinds": []any{"dash", "hit", "weapon_fire"},
 		"events": []any{
 			ev(1.0, "weapon_fire", true, map[string]any{"data": map[string]any{"weapon": "Rifle"}}),
 			ev(1.1, "weapon_fire", true, map[string]any{"data": map[string]any{"weapon": "Rifle"}}), // held fire: one choice
@@ -139,5 +141,26 @@ func TestDecisionAuditFromAPlaytest(t *testing.T) {
 	}
 	if _, err := decisionFromPlaytest([]byte(`{"source":"` + filepath.ToSlash(p) + `","nope":1}`)); err == nil {
 		t.Fatal("an unknown input key passed")
+	}
+}
+
+
+// R5 review: a hit near the end of the recording, whose responses (and late visual
+// stamp) may not have been recorded, is not audited; an undeclared kind is refused.
+func TestFeelAuditWindowEdgesAndUndeclaredKinds(t *testing.T) {
+	doc := feelDoc()
+	doc["event_window"] = []float64{0, 9.5} // the hit at 9 s is within 1 s of the end
+	p := writeDoc(t, doc)
+	out, err := feelFromPlaytest([]byte(`{"source":"` + filepath.ToSlash(p) + `"}`))
+	if err != nil || out.(map[string]any)["events"] != 2 || !out.(map[string]any)["audit"].(audit.FeelReport).Pass {
+		t.Fatalf("edge hit: %v %v", out, err)
+	}
+	doc = feelDoc()
+	doc["event_journal_kinds"] = []any{"hit", "sfx", "vfx"} // the game never declared camera_shake
+	p = writeDoc(t, doc)
+	if _, err := feelFromPlaytest([]byte(`{"source":"` + filepath.ToSlash(p) + `"}`)); err == nil {
+		t.Fatal("an undeclared kind was audited")
+	} else if e, ok := asPrecondition(err); !ok || !strings.Contains(e.Message, "camera_shake") {
+		t.Fatalf("undeclared kind: %v", err)
 	}
 }

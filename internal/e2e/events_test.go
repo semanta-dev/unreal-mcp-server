@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jdziat/unreal-mcp-server/internal/bridge/bridgetest"
 	"github.com/jdziat/unreal-mcp-server/internal/tools/spec"
@@ -291,5 +292,57 @@ func TestPlaytestSeededBatch(t *testing.T) {
 	runs, _ := r["runs"].([]any)
 	if r["verdict"] != "FAIL" || len(runs) != 1 || !strings.Contains(fmt.Sprint(runs[0]), "seed 9") {
 		t.Fatalf("old plugin batch = %v", r)
+	}
+}
+
+// R5 review: a kind the game does not declare is never scored (a typo is not "zero").
+func TestPlaytestUndeclaredEventKinds(t *testing.T) {
+	h := eventsHarness(t, 8)
+	h.world.Events.Kinds = []string{"hit", "death"} // no "kill"
+	r := runEvents(t, h)
+	c := checks(r)
+	if r["verdict"] != "INSUFFICIENT_EVIDENCE" || c["kills"]["insufficient"] != true || !strings.Contains(fmt.Sprint(c["kills"]["message"]), `does not emit "kill"`) ||
+		c["damage"]["passed"] != true {
+		t.Fatalf("verdict %v, checks %v", r["verdict"], c)
+	}
+}
+
+// R5 review: a cancelled batch is not a finished one, and runs without evidence for a
+// kind stay out of that kind's spread.
+func TestPlaytestBatchCancelAndExcludedRuns(t *testing.T) {
+	proj := gameProject(t, gameAPIJSON, "")
+	h := startHarness(t, harnessOpts{project: proj, toolsets: []spec.Toolset{spec.Game}})
+	h.world.PluginAPI = 8
+	rec := &bridgetest.Recorder{Dir: t.TempDir(), Frames: 3, State: func(i int) map[string]any {
+		return map[string]any{"gamestate": map[string]any{"wave": float64(i)}}
+	}}
+	rec.Install(h.emu)
+	h.world.Events.Engine = []map[string]any{{"seq": 1.0, "t": 5.0, "kind": "damage", "target": "Core"}}
+	h.world.Events.OnSeed = func(seed int) {
+		h.world.Events.Gaps = nil
+		if seed == 2 { // this run lost engine events: it cannot speak for damage
+			h.world.Events.Gaps = []map[string]any{{"source": "engine", "from_t": 1.0, "to_t": 2.0, "dropped": 4.0}}
+		}
+	}
+	sc := `{"schema":"scenario/v1","name":"batch","mode":"pie","duration_s":0.2,"interval_s":0.1,"record_events":true,
+	 "rubric":[{"id":"waves","kind":"reached","path":"gamestate.wave","params":{"value":2}}]}`
+	out := structured(t, h.call(t, "playtest", map[string]any{"op": "batch", "json": sc, "seeds": []any{1, 2, 3}, "wait_s": 25}))
+	r, _ := out["result"].(map[string]any)
+	evs, _ := r["events"].(map[string]any)
+	dmg, _ := evs["damage"].(map[string]any)
+	ex, _ := r["events_excluded_runs"].(map[string]any)
+	if dmg["n"] != 2.0 || ex["damage"] != 1.0 {
+		t.Fatalf("damage spread %v, excluded %v", dmg, ex)
+	}
+	// Cancel during the first run: the job is cancelled, never a PASS.
+	h.world.Events.OnSeed = nil
+	long := strings.Replace(sc, `"duration_s":0.2`, `"duration_s":3`, 1)
+	job := structured(t, h.call(t, "playtest", map[string]any{"op": "batch", "json": long, "seeds": []any{1, 2}}))
+	id := fmt.Sprint(job["job_id"])
+	time.Sleep(700 * time.Millisecond)
+	structured(t, h.call(t, "job", map[string]any{"op": "cancel", "job_id": id}))
+	st := structured(t, h.call(t, "job", map[string]any{"op": "wait", "job_id": id, "wait_s": 20}))
+	if st["state"] == "succeeded" || strings.Contains(fmt.Sprint(st), `verdict:PASS`) {
+		t.Fatalf("a cancelled batch = %v", st)
 	}
 }

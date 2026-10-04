@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -576,14 +578,14 @@ var playtestReaches = []string{"open_level", "pie_start", "pie_stop", "console",
 func playtestSpec() *spec.Spec {
 	ops := []spec.OpSpec{
 		{Name: "run", Summary: "play a scenario: frames + state + beats + rubric verdict", Tier: spec.Exec, Async: true,
-			Reaches: playtestReaches[:len(playtestReaches)-1],
+			Reaches: slices.Clone(playtestReaches[:len(playtestReaches)-1]),
 			Rejects: []string{"seeds"}, Needs: []string{"plugin>=3 for game_command beats", "plugin>=5 for cursor/ui_click/axis beats", "plugin>=8 for engine events"}},
 		{Name: "batch", Summary: "a run per seed (engine RNG seeded) + the spread", Tier: spec.Exec, Async: true,
 			Required: []string{"seeds"}, Reaches: playtestReaches, Needs: []string{"plugin>=8"}},
 	}
 	return &spec.Spec{
 		Name: "playtest", Title: "Automated playtest", Toolset: spec.Core, Timeout: sync15, Max: sync28, Ops: ops,
-		Description: "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict, rubric, logs, timeline, playtest_path, …} + a contact sheet (wait_s / job). record_events: engine + game event timeline. op=batch seeds=[…]: a run per seed + the spread. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
+		Description: "Validate that the game works (async job). op=run plays a scenario/v1 (`path` or `json`): open the level, play (pie|simulate|editor), record frames + state, run timed beats at at_s or game-time at_world_s (exec = call a UFUNCTION, arbitrary code; console; wait_until; input = pie input/cursor/ui_click; game_command), stop, score the rubric → {verdict (or INSUFFICIENT_EVIDENCE), rubric, logs, timeline, playtest_path, …} + a contact sheet (wait_s / job). record_events: engine + game event timeline. op=batch seeds=[…]: a run per seed + the spread. A crash or a failed setup step/beat fails the run (beat_errors=warn: WARN). Saved suite: analyze op=scenarios.",
 		Schema:      spec.SchemaFor[playtestIn](map[string][]any{"op": spec.OpEnum(ops...), "beat_errors": {"fail", "warn"}}, "op"),
 		Replaces:    []string{"playtest_capture", "scenario_run"},
 		Handler:     playtestHandler,
@@ -619,6 +621,11 @@ func playtestHandler(_ context.Context, c *spec.Call) (*spec.Result, error) {
 	}
 	if c.Op.Name == "batch" && (len(in.Seeds) == 0 || len(in.Seeds) > maxSeeds) {
 		return nil, envelope.New(envelope.InvalidArgument, "batch takes 1 to %d seeds", maxSeeds)
+	}
+	for _, s := range in.Seeds {
+		if s < math.MinInt32 || s > math.MaxInt32 {
+			return nil, envelope.New(envelope.InvalidArgument, "seed %d is not a 32-bit integer", s)
+		}
 	}
 	if c.Op.Name == "batch" && sc.Mode == "editor" {
 		return nil, envelope.New(envelope.InvalidArgument, "a seeded batch plays the game: mode pie or simulate")
@@ -660,7 +667,7 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 		}
 	}
 	playing := mode == "pie" || mode == "simulate"
-	var setupErrs []string
+	var setupErrs, seedErrs []string
 	crashed := func(err error) (map[string]any, error) {
 		// A PIE that dies on start (bad Blueprint, null access) is the common case:
 		// diagnose it instead of returning a bare transport error.
@@ -671,10 +678,7 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 	}
 	stop := func() {
 		if playing {
-			cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
-			defer cancel()
-			_, _ = v2Op(cctx, c, "pie_stop", nil)
-			forgetGameWorld(c)
+			stopPIEAndWait(ctx, c)
 		}
 	}
 	if playing {
@@ -688,7 +692,8 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 			return crashed(err)
 		}
 		if seed != nil {
-			setupErrs = append(setupErrs, applySeed(ctx, c, sc, *seed)...)
+			seedErrs = applySeed(ctx, c, sc, *seed)
+			setupErrs = append(setupErrs, seedErrs...)
 		}
 		if sc.TimeDilation > 0 && sc.TimeDilation != 1 {
 			_, _ = v2Op(ctx, c, "console", map[string]any{"command": fmt.Sprintf("slomo %g", sc.TimeDilation), "world": "pie"})
@@ -728,16 +733,19 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 	progress(fmt.Sprintf("recording %s for %.0fs", session, duration))
 	beatErrs := append(setupErrs, runBeatsV2(ctx, c, sc.Beats, duration, progress, timeline)...)
 
-	// Tear down on a detached context so a cancelled job still stops the recorder and PIE.
-	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-	defer cancel()
+	// Tear down on detached contexts (a cancelled job still stops the recorder and PIE),
+	// each call with its own budget: a long timeline must not starve the capture stop.
 	var events *eval.EventLog
 	var engineReport map[string]any
 	if timeline != nil {
-		if events, engineReport, err = timeline.stop(cctx, c); err != nil {
+		ectx, ecancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
+		if events, engineReport, err = timeline.stop(ectx, c); err != nil {
 			beatErrs = append(beatErrs, "record_events: the event session did not stop cleanly: "+err.Error())
 		}
+		ecancel()
 	}
+	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
 	b, _ := v2Bridge(c)
 	raw, stopErr := b.Call(cctx, "capture_stop", map[string]any{"session": session})
 	stop()
@@ -819,6 +827,10 @@ func runPlaytest(ctx context.Context, c *spec.Call, sc *eval.Scenario, in playte
 		result[k] = v
 	}
 	verdict, reasons := finalVerdict(rep.Verdict, beatErrs, crash != nil, in.BeatErrors)
+	if len(seedErrs) > 0 && verdict != "FAIL" {
+		// An unseeded run in a seeded batch is not the run asked for, beat_errors=warn or not.
+		verdict, reasons = "FAIL", append(reasons, "the run was not seeded")
+	}
 	result["verdict"], result["rubric"] = verdict, reportToJSON(rep)
 	if len(reasons) > 0 {
 		result["verdict_reasons"] = reasons
@@ -837,6 +849,16 @@ func notePlaytestJSON(dir string, result map[string]any, events *eval.EventLog) 
 	} else {
 		result["playtest_path_error"] = err.Error()
 	}
+}
+
+// stopPIEAndWait stops PIE on a detached context and waits until it has stopped: the next
+// pie_start (a perf pass, the next seed) must not see the dying session as running.
+func stopPIEAndWait(ctx context.Context, c *spec.Call) {
+	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	_, _ = v2Op(cctx, c, "pie_stop", nil)
+	_ = waitPIE(cctx, c, false, 15*time.Second)
+	forgetGameWorld(c)
 }
 
 // finalVerdict folds what the rubric cannot see into the verdict: a crash always fails

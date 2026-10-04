@@ -23,6 +23,7 @@ type playtestDoc struct {
 	Gaps      []eval.Gap        `json:"event_gaps"`
 	Sources   map[string]string `json:"event_sources"`
 	SourceWhy map[string]string `json:"event_source_why"`
+	Kinds     []string          `json:"event_journal_kinds"`
 }
 
 func loadPlaytest(path string) (*playtestDoc, error) {
@@ -40,20 +41,25 @@ func loadPlaytest(path string) (*playtestDoc, error) {
 	return &d, nil
 }
 
-// window narrows the run's window to [from_t, to_t] and refuses one that a gap or an
-// unavailable source of a needed kind touches (R0.8: never score lost evidence).
+// window narrows the run's window to [from_t, to_t] (seconds from the recording's start)
+// and refuses one that a gap, an unavailable source or an undeclared kind touches (R0.8:
+// never score lost evidence).
 func (d *playtestDoc) window(fromT, toT *float64, kinds []string) (float64, float64, error) {
 	lo, hi := d.Window[0], d.Window[1]
 	if fromT != nil {
-		lo = math.Max(lo, *fromT)
+		lo = math.Max(lo, d.Window[0]+*fromT)
 	}
 	if toT != nil {
-		hi = math.Min(hi, *toT)
+		hi = math.Min(hi, d.Window[0]+*toT)
 	}
 	if hi <= lo {
-		return 0, 0, envelope.New(envelope.InvalidArgument, "the window [%g, %g] s is outside the recording [%g, %g] s", lo, hi, d.Window[0], d.Window[1])
+		return 0, 0, envelope.New(envelope.InvalidArgument, "from_t / to_t (seconds from the start) leave nothing of the %.4g s recording", d.Window[1]-d.Window[0])
 	}
+	log := &eval.EventLog{Sources: d.Sources, JournalKinds: d.Kinds}
 	for _, k := range kinds {
+		if why := log.KindUnknown(k); why != "" {
+			return 0, 0, insufficientEvidence([]string{"events." + k}, why)
+		}
 		src := eval.EventSource(k)
 		if d.Sources[src] != eval.SourceRecorded {
 			why := d.SourceWhy[src]
@@ -64,7 +70,7 @@ func (d *playtestDoc) window(fromT, toT *float64, kinds []string) (float64, floa
 		}
 		for _, g := range d.Gaps {
 			if g.Source == src && g.ToT >= lo && g.FromT <= hi {
-				return 0, 0, insufficientEvidence([]string{"events." + k}, fmt.Sprintf("the %s source lost events in [%g, %g] s (%s, %d dropped): narrow from_t/to_t", src, g.FromT, g.ToT, g.Reason, g.Dropped))
+				return 0, 0, insufficientEvidence([]string{"events." + k}, fmt.Sprintf("the %s source lost events %.4g–%.4g s into the recording (%s, %d dropped): narrow from_t/to_t", src, g.FromT-d.Window[0], g.ToT-d.Window[0], g.Reason, g.Dropped))
 			}
 		}
 	}
@@ -113,7 +119,10 @@ func feelFromPlaytest(raw []byte) (any, error) {
 		return nil, err
 	}
 	within := orDefault(in.WithinMs, 120) / 1000
-	sfx, cam, vfx := d.pick("sfx", lo, hi+within), d.pick("camera_shake", lo, hi+within), d.pick("vfx", lo, hi+within)
+	// A hit is audited only if its whole response window was recorded: the window, and
+	// the second in which the game may still stamp its visual_t (GAME_CONTRACT).
+	lastHit := hi - math.Max(within, 1.0)
+	sfx, cam, vfx := d.pick("sfx", lo, hi), d.pick("camera_shake", lo, hi), d.pick("vfx", lo, hi)
 	var missing []string // channels the whole run never journalled (not: none in this window)
 	for _, name := range []string{"camera_shake", "sfx", "vfx"} {
 		if len(d.pick(name, math.Inf(-1), math.Inf(1))) == 0 {
@@ -133,7 +142,7 @@ func feelFromPlaytest(raw []byte) (any, error) {
 	}
 	var events []audit.Event
 	for _, k := range kinds {
-		for _, e := range d.pick(k, lo, hi) {
+		for _, e := range d.pick(k, lo, lastHit) {
 			ae := audit.Event{T: e.T, Kind: audit.EventKind(k), Instigator: e.Actor, AudioT: first(sfx, e.T), CameraT: first(cam, e.T)}
 			if e.VisualT != nil {
 				ae.VisualT = *e.VisualT
@@ -147,7 +156,7 @@ func feelFromPlaytest(raw []byte) (any, error) {
 		}
 	}
 	if len(events) == 0 {
-		return nil, insufficientEvidence([]string{"events." + strings.Join(kinds, "/")}, fmt.Sprintf("no %s events in [%g, %g] s", strings.Join(kinds, "/"), lo, hi))
+		return nil, insufficientEvidence([]string{"events." + strings.Join(kinds, "/")}, fmt.Sprintf("no %s events in the window (a hit needs %.4g s of recording after it)", strings.Join(kinds, "/"), math.Max(within, 1.0)))
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].T < events[j].T })
 	return map[string]any{"source": in.Source, "window": []float64{lo, hi}, "events": len(events),

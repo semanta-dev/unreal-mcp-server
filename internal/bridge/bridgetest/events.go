@@ -12,6 +12,9 @@ type EventFixture struct {
 	Seeds   []int // seed_random calls, in order
 	// OnSeed, if set, runs on each seed_random (e.g. to vary the journal per seed).
 	OnSeed func(seed int)
+	// Kinds the game declares (default: hit kill death wave_start wave_end); NoKinds: none.
+	Kinds   []string
+	NoKinds bool
 }
 
 func (w *World) installEvents(e *Emulator) {
@@ -30,12 +33,19 @@ func (w *World) installEvents(e *Emulator) {
 		if w.PluginAPI < 8 {
 			sources["engine"], why["engine"] = "unavailable", "the UnrealMCP plugin API is below 8"
 		}
+		var kinds any
 		if j, ok := args["journal"].(map[string]any); ok && j["class"] == w.Game.Class {
 			sources["journal"] = "recorded"
+			if !w.Events.NoKinds && j["capabilities"] != nil {
+				kinds = w.Events.Kinds
+				if w.Events.Kinds == nil {
+					kinds = []string{"death", "hit", "kill", "wave_end", "wave_start"}
+				}
+			}
 		} else if s, ok := args["journal_why"].(string); ok {
 			why["journal"] = s
 		}
-		w.eventSources, w.eventWhy = sources, why
+		w.eventSources, w.eventWhy, w.eventKinds = sources, why, kinds
 		return map[string]any{"session": session, "sources": sources, "source_why": why}, nil
 	})
 	e.Handle("seed_random", func(args map[string]any) (any, *OpError) {
@@ -82,7 +92,8 @@ func (w *World) installEvents(e *Emulator) {
 			gaps = []map[string]any{}
 		}
 		return map[string]any{"session": session, "start_t": start, "end_t": start + 120, "events": evs, "gaps": gaps,
-			"sources": w.eventSources, "source_why": w.eventWhy, "engine": map[string]any{"unbound": 7.0, "still_bound": 0.0}}, nil
+			"sources": w.eventSources, "source_why": w.eventWhy, "journal_kinds": w.eventKinds,
+			"engine": map[string]any{"unbound": 7.0, "still_bound": 0.0}}, nil
 	})
 }
 

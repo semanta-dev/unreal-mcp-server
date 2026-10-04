@@ -100,9 +100,9 @@ func EvaluateInputs(in Inputs, spec RubricSpec) Report {
 	return rep
 }
 
-// verdict applies the FAIL > WARN > PASS precedence. Only fail- and warn-severity
-// checks move the verdict; info-severity (and any unrecognized severity) checks
-// are advisory and never change it.
+// verdict applies the FAIL > INSUFFICIENT_EVIDENCE > WARN > PASS precedence. Only fail-
+// and warn-severity checks move the verdict; info-severity (and any unrecognized
+// severity) checks are advisory and never change it.
 func verdict(results []CheckResult) string {
 	anyFail, anyWarn, anyInsufficient := false, false, false
 	for _, r := range results {

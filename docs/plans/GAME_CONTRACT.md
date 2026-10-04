@@ -39,7 +39,9 @@ declared in the project's `.umcp.json` `game_api` (R1.4). Every function is a `U
   rubric and (scenario `record_events: true`) the merged event timeline `events: [{t, kind, actor?, target?,
   by_player, data?, visual_t?, source}]` — `source` engine (`damage`, `point_damage`, `spawned`, `destroyed`; plugin
   API 8), journal (this API's events) or server (the playtest's `input` / `game_command` beats) — with
-  `event_window`, `event_gaps` and `event_sources`. The engine source names actors by object name (`GetName()`),
+  `event_window`, `event_gaps`, `event_sources` and `event_journal_kinds` (this API's `event_kinds`: a journal kind
+  outside them is never scored). Every `point_damage` is also a `damage` (the engine fires both). The engine source
+  names actors by object name (`GetName()`),
   as Aesir's journal does — a game whose journal uses other names does not join with it.
 - `playtest op=batch` writes `Saved/MCP/playtest/batch-<id>.json` with `runs: [{seed, verdict, waves: [{wave,
   clear_s}]}]`.

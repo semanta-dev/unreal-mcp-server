@@ -33,7 +33,9 @@ public:
 	static UMCPEventRecorder* Get(const UObject* WorldContext);
 
 	/** Start recording (a running recording is restarted: its events are dropped).
-	 *  Capacity: ring size (256..1,000,000; default 65,536). JSON {ok, bound, t, error?}. */
+	 *  Capacity: ring size (256..1,000,000; default 65,536). JSON {ok, bound, t, generation,
+	 *  error?} — generation counts StartRecording calls: a drain under another generation
+	 *  is a different recording. */
 	UFUNCTION(BlueprintCallable, Category = "MCP|Events")
 	FString StartRecording(int32 Capacity);
 
@@ -43,8 +45,10 @@ public:
 
 	/** The events after Cursor (a seq; 0 = from the start), oldest first, at most MaxEvents.
 	 *  JSON {events: [{seq, t, kind, actor?, target?, by_player, data?}], next_cursor, gap,
-	 *  dropped, more, recording, bound, t}. gap/dropped: events the ring overwrote before
-	 *  they were drained. */
+	 *  dropped, more, recording, bound, t, generation, world_lost?, lost_t?}. gap/dropped:
+	 *  events the ring overwrote before they were drained (or a cursor from another
+	 *  recording). world_lost: the recorded world was torn down (map travel, a restart);
+	 *  the recording stopped there — nothing after lost_t was recorded. */
 	UFUNCTION(BlueprintCallable, Category = "MCP|Events")
 	FString DrainEventsJson(int64 Cursor, int32 MaxEvents);
 
@@ -71,6 +75,7 @@ private:
 	};
 
 	void BindActor(AActor* Actor);
+	void OnWorldCleanup(UWorld* World, bool bSessionEnded, bool bCleanupResources);
 	void UnbindActor(AActor* Actor);
 	int32 UnbindAll();
 	void OnActorSpawned(AActor* Actor);
@@ -89,6 +94,11 @@ private:
 	bool bRecording = false;
 	TWeakObjectPtr<UWorld> RecordingWorld;
 	FDelegateHandle SpawnHandle;
+	FDelegateHandle CleanupHandle;
+	int32 Generation = 0;
+	bool bWorldLost = false;
+	double LostT = 0.0;
+	double LastT = 0.0;
 	TArray<TWeakObjectPtr<AActor>> Bound;
 	TArray<FEvent> Ring;
 	int32 Capacity = 0;

@@ -11,6 +11,7 @@ func waveLog() *EventLog {
 	return &EventLog{
 		StartT: 0, EndT: 120,
 		Sources: map[string]string{SourceEngine: SourceRecorded, SourceJournal: SourceRecorded, SourceServer: SourceRecorded},
+		JournalKinds: []string{"dash", "death", "hit", "kill", "wave_end"},
 		Events: []Event{
 			{T: 1, Kind: "hit", Actor: "Player", Target: "E1", ByPlayer: true, VisualT: f64(1.02)},
 			{T: 2, Kind: "hit", Actor: "Player", Target: "E2", ByPlayer: true},
@@ -163,5 +164,40 @@ func TestLintEventAndPerfCSVChecks(t *testing.T) {
 	_, diags, _ := ParseScenario([]byte(`{"schema":"scenario/v1","name":"x","rubric":[{"id":"r","kind":"rate","path":"events.kill","params":{"min":1}}]}`))
 	if len(diags) != 1 || diags[0].Severity != "warning" || !strings.Contains(diags[0].Message, "record_events") {
 		t.Fatalf("%+v", diags)
+	}
+}
+
+
+func TestEventKindsTheGameDoesNotEmitAreNeverScored(t *testing.T) {
+	// A typo (deaths) or a kind the game never declared: zero events is not evidence of zero.
+	r := run1(t, waveLog(), Check{Kind: "rate", Path: "events.deaths", Params: map[string]any{"max": 2.0}})
+	if !r.Insufficient || !strings.Contains(r.Message, `does not emit "deaths"`) {
+		t.Fatalf("undeclared kind: %+v", r)
+	}
+	log := waveLog()
+	log.JournalKinds = nil
+	if r := run1(t, log, Check{Kind: "rate", Path: "events.kill", Params: map[string]any{"min": 0.0}}); !r.Insufficient {
+		t.Fatalf("no declared kinds: %+v", r)
+	}
+	// Engine kinds need no declaration.
+	if r := run1(t, log, Check{Kind: "rate", Path: "events.damage", Params: map[string]any{"min": 0.0}}); !r.Passed {
+		t.Fatalf("engine kind: %+v", r)
+	}
+}
+
+func TestEventWindowsAreRelativeToTheRecordingStart(t *testing.T) {
+	log := waveLog()
+	for i := range log.Events {
+		log.Events[i].T += 1000 // the run started at world second 1000
+	}
+	log.StartT, log.EndT = 1000, 1120
+	r := run1(t, log, Check{Kind: "rate", Path: "events.kill", Params: map[string]any{"from_t": 4.0, "to_t": 64.0, "min": 1.0, "max": 1.0}})
+	if !r.Passed {
+		t.Fatalf("relative window: %+v", r)
+	}
+	// A histogram over no events fails (there is nothing to share), it never passes.
+	r = run1(t, waveLog(), Check{Kind: "histogram", Path: "events.death", Params: map[string]any{"by": "data.cause", "max_share": 0.9, "from_t": 100.0}})
+	if r.Passed || r.Insufficient {
+		t.Fatalf("empty histogram: %+v", r)
 	}
 }

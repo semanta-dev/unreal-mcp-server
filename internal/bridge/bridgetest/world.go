@@ -43,6 +43,7 @@ type World struct {
 	Events       EventFixture
 	eventSources map[string]any
 	eventWhy     map[string]any
+	eventKinds   any
 	// PIEWorld is the running game world's path pie_time reports (a test changes it to
 	// model a map travel).
 	PIEWorld   string
