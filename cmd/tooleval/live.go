@@ -32,7 +32,9 @@ import (
 // it, so listing several candidate values cannot pass.
 const liveSystemPrompt = systemPrompt + ` When the task asks for a value or a verdict, end your final reply with ` +
 	`exactly one line "ANSWER: <value>" (several values: "ANSWER: name=<value>, name=<value>"; a verdict: ` +
-	`"ANSWER: PASS" or "ANSWER: FAIL"). Write numbers in full digits (12500, not 12.5k).`
+	`"ANSWER: PASS" or "ANSWER: FAIL"). Write numbers in full digits (12500, not 12.5k). ` +
+	`Your work is checked in the editor after your final reply: leave what you made in place, and a game you ` +
+	`started playing running.`
 
 // gameTask is one live task (docs/validation/gameeval/tasks.json).
 type gameTask struct {
