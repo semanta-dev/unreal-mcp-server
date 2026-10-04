@@ -200,6 +200,12 @@ bool UMCPHUDWidget::ReadNumericPath(UObject* Src, const FString& Path, double& O
 				Out = NP->IsFloatingPoint() ? NP->GetFloatingPointPropertyValue(Ptr) : (double)NP->GetSignedIntPropertyValue(Ptr);
 				return true;
 			}
+			// A bool reads as 0 / 1 (bool_to_visibility's natural source).
+			if (FBoolProperty* BP = FindFProperty<FBoolProperty>(Cur->GetClass(), Seg))
+			{
+				Out = BP->GetPropertyValue_InContainer(Cur) ? 1.0 : 0.0;
+				return true;
+			}
 			if (UFunction* Fn = Cur->FindFunction(Seg))
 			{
 				if (Fn->NumParms == 1 && Fn->GetReturnProperty())
@@ -211,6 +217,11 @@ bool UMCPHUDWidget::ReadNumericPath(UObject* Src, const FString& Path, double& O
 					{
 						const void* RPtr = RP->ContainerPtrToValuePtr<void>(Buf);
 						Out = RP->IsFloatingPoint() ? RP->GetFloatingPointPropertyValue(RPtr) : (double)RP->GetSignedIntPropertyValue(RPtr);
+						return true;
+					}
+					if (FBoolProperty* RB = CastField<FBoolProperty>(Fn->GetReturnProperty()))
+					{
+						Out = RB->GetPropertyValue_InContainer(Buf) ? 1.0 : 0.0;
 						return true;
 					}
 				}
@@ -310,9 +321,13 @@ void UMCPHUDWidget::NativeTick(const FGeometry& MyGeometry, float DeltaTime)
 		{
 			double MaxVal = 0.0;
 			ReadNumericPath(Src, B.MaxPath, MaxVal);
+			// Whole numbers print as such, fractions keep up to 2 digits (they were truncated to int).
+			FNumberFormattingOptions Fmt;
+			Fmt.MinimumFractionalDigits = 0;
+			Fmt.MaximumFractionalDigits = 2;
 			FFormatNamedArguments Args;
-			Args.Add(TEXT("value"), FText::AsNumber((int32)Val));
-			Args.Add(TEXT("max"), FText::AsNumber((int32)MaxVal));
+			Args.Add(TEXT("value"), FText::AsNumber(Val, &Fmt));
+			Args.Add(TEXT("max"), FText::AsNumber(MaxVal, &Fmt));
 			ApplyText(Target, B.TargetField, FText::Format(FTextFormat::FromString(B.Format), Args));
 		}
 		else if (B.Conversion == EMCPFieldConversion::IntToText)
@@ -334,7 +349,18 @@ void UMCPHUDWidget::NativeTick(const FGeometry& MyGeometry, float DeltaTime)
 		}
 		else if (B.Conversion == EMCPFieldConversion::BoolToVisibility)
 		{
-			const ESlateVisibility Want = Val != 0.0 ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
+			// Shown = the visibility the designer gave the widget (so a HitTestInvisible HUD
+			// text stays click-through); a widget designed hidden shows as SelfHitTestInvisible.
+			ESlateVisibility Shown = ESlateVisibility::SelfHitTestInvisible;
+			if (const UWidget* Design = Cast<UWidget>(Target->GetArchetype()))
+			{
+				const ESlateVisibility V = Design->GetVisibility();
+				if (V != ESlateVisibility::Collapsed && V != ESlateVisibility::Hidden)
+				{
+					Shown = V;
+				}
+			}
+			const ESlateVisibility Want = Val != 0.0 ? Shown : ESlateVisibility::Collapsed;
 			if (Target->GetVisibility() != Want)
 			{
 				Target->SetVisibility(Want);

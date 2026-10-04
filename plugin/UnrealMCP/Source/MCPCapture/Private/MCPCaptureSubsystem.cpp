@@ -247,16 +247,47 @@ void UMCPCaptureSubsystem::CaptureFrame()
 	Frames.Add(F);
 }
 
-bool UMCPCaptureSubsystem::CaptureViewportUI(const FString& AbsPath)
+FString UMCPCaptureSubsystem::CaptureUIFrame(const FString& AbsPath)
 {
+	TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
+	FIntVector Size(0, 0, 0);
+	FString Why;
+	const bool bOk = !AbsPath.IsEmpty() && !FPaths::IsRelative(AbsPath) && CaptureViewportUI(AbsPath, &Size, &Why);
+	Out->SetBoolField(TEXT("ok"), bOk);
+	if (bOk)
+	{
+		Out->SetStringField(TEXT("file"), AbsPath);
+		Out->SetNumberField(TEXT("width"), Size.X);
+		Out->SetNumberField(TEXT("height"), Size.Y);
+	}
+	else
+	{
+		Out->SetStringField(TEXT("error"), Why.IsEmpty() ? TEXT("the path must be absolute") : Why);
+	}
+	FString S;
+	TSharedRef<TJsonWriter<>> W = TJsonWriterFactory<>::Create(&S);
+	FJsonSerializer::Serialize(Out, W);
+	return S;
+}
+
+bool UMCPCaptureSubsystem::CaptureViewportUI(const FString& AbsPath, FIntVector* OutSizeOpt, FString* OutWhy)
+{
+	auto Fail = [OutWhy](const TCHAR* Why)
+	{
+		if (OutWhy)
+		{
+			*OutWhy = Why;
+		}
+		return false;
+	};
 	if (!FSlateApplication::IsInitialized() || !GEngine || !GEngine->GameViewport)
 	{
-		return false;
+		return Fail(TEXT("no game viewport"));
 	}
 	TSharedPtr<SWidget> ViewportWidget = GEngine->GameViewport->GetGameViewportWidget();
 	if (!ViewportWidget.IsValid())
 	{
-		return false;
+		return Fail(TEXT("no game viewport widget"));
 	}
 	const FVector2D LocalSize = ViewportWidget->GetTickSpaceGeometry().GetLocalSize();
 	const FIntRect Rect(0, 0, FMath::Max(1, (int32)LocalSize.X), FMath::Max(1, (int32)LocalSize.Y));
@@ -267,17 +298,21 @@ bool UMCPCaptureSubsystem::CaptureViewportUI(const FString& AbsPath)
 	// foreground frame-flush) — reliable while the window is actually rendering.
 	if (!FSlateApplication::Get().TakeScreenshot(ViewportWidget.ToSharedRef(), Rect, Pixels, OutSize))
 	{
-		return false;
+		return Fail(TEXT("Slate could not read the viewport (is its window minimized or hidden?)"));
 	}
 	if (Pixels.Num() == 0 || OutSize.X <= 0 || OutSize.Y <= 0)
 	{
-		return false;
+		return Fail(TEXT("the viewport has no pixels (is its window minimized?)"));
 	}
 	for (FColor& C : Pixels)
 	{
 		C.A = 255; // opaque
 	}
-	return MCPSavePNG(AbsPath, Pixels, OutSize.X, OutSize.Y);
+	if (OutSizeOpt)
+	{
+		*OutSizeOpt = OutSize;
+	}
+	return MCPSavePNG(AbsPath, Pixels, OutSize.X, OutSize.Y) || Fail(TEXT("could not write the PNG"));
 }
 
 bool UMCPCaptureSubsystem::PositionCapture()

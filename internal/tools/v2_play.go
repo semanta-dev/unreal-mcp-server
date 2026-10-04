@@ -813,13 +813,13 @@ type screenshotIn struct {
 	Cols       int       `json:"cols,omitempty" jsonschema:"orbit: contact-sheet columns (default 4)"`
 	CellWidth  int       `json:"cell_width,omitempty" jsonschema:"orbit: per-angle width (default 480)"`
 	CellHeight int       `json:"cell_height,omitempty" jsonschema:"orbit: per-angle height (default 270)"`
-	UI         bool      `json:"ui,omitempty" jsonschema:"pie: the screen as the player sees it, UMG/Slate UI included (plugin; needs a visible game viewport)"`
+	UI         bool      `json:"ui,omitempty" jsonschema:"pie: the screen as the player sees it, UMG/Slate UI included, paused or not (plugin; a visible game viewport, at its own size)"`
 }
 
 func screenshotSpec() *spec.Spec {
 	ops := []spec.OpSpec{
 		{Name: "viewport", Summary: "render the editor world from the viewport (or a given) camera", Tier: spec.Ephemeral, Idempotent: true, Rejects: []string{"ui"}, Reaches: []string{"take_screenshot"}},
-		{Name: "pie", Summary: "the running game's screen (HighResShot; ui=true: with the UI)", Tier: spec.Ephemeral, Idempotent: true, Reaches: []string{"pie_screenshot", "capture_start", "capture_poll", "capture_stop"}, Needs: []string{"pie", "plugin>=3 for ui"}},
+		{Name: "pie", Summary: "the running game's screen (HighResShot; ui=true: with the UI)", Tier: spec.Ephemeral, Idempotent: true, Reaches: []string{"pie_screenshot", "pie_ui_shot"}, Needs: []string{"pie", "plugin>=7 for ui"}},
 		{Name: "orbit", Summary: "N angles around a target as one contact sheet", Tier: spec.Ephemeral, Idempotent: true, Rejects: []string{"ui"}, Reaches: []string{"scene_bounds", "capture_poses"}},
 	}
 	return &spec.Spec{
@@ -832,53 +832,21 @@ func screenshotSpec() *spec.Spec {
 }
 
 // uiShot takes the running game's screen with its UI: HighResShot renders the scene
-// only (UMG and Slate HUDs are composited by Slate, not the renderer), so this takes one
-// frame of the plugin's game_scene capture with include_ui (FSlateApplication::TakeScreenshot
-// of the game viewport) from the player's camera.
+// only (UMG and Slate HUDs are composited by Slate, not the renderer), so the plugin
+// reads the game viewport through Slate — one frame, taken now (no capture timer, so a
+// paused game, its pause menu included, can be shot). The size is the viewport's.
 func uiShot(ctx context.Context, c *spec.Call, in screenshotIn) (*spec.Result, error) {
-	session := fmt.Sprintf("shot_%d", time.Now().UnixNano())
-	if _, err := v2Op(ctx, c, "capture_start", map[string]any{"session": session, "world": "pie", "source": "game_scene",
-		"include_ui": true, "max_frames": 1, "interval_s": 0.05, "cell_width": orDefaultInt(in.Width, 1280),
-		"cell_height": orDefaultInt(in.Height, 720), "camera": map[string]any{"mode": "player"}}); err != nil {
-		return nil, err
+	if in.Width > 0 || in.Height > 0 {
+		return nil, envelope.New(envelope.InvalidArgument, "ui=true takes the game viewport at its own size: drop width/height")
 	}
-	deadline := time.Now().Add(pollTimeout(ctx, 10, 10*time.Second))
-	for time.Now().Before(deadline) {
-		st, err := v2Op(ctx, c, "capture_poll", map[string]any{"session": session})
-		if err == nil {
-			if n, _ := st["frames_captured"].(float64); n >= 1 {
-				break
-			}
-		}
-		if sleepCtx(ctx, 100*time.Millisecond) != nil {
-			break
-		}
-	}
-	b, err := v2Bridge(c)
+	out, err := v2Op(ctx, c, "pie_ui_shot", nil)
 	if err != nil {
 		return nil, err
 	}
-	stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-	defer cancel()
-	raw, err := b.Call(stopCtx, "capture_stop", map[string]any{"session": session})
-	if err != nil {
-		return nil, err
-	}
-	var r captureStopResult
-	if err := json.Unmarshal(raw, &r); err != nil {
-		return nil, err
-	}
-	if len(r.Frames) == 0 {
-		return nil, envelope.New(envelope.OperationFailed, "no frame was captured with the UI").
-			WithHint("the game viewport must be visible (not minimized) and PIE ticking")
-	}
-	p := r.Frames[0].File
-	if !filepath.IsAbs(p) {
-		p = filepath.Join(r.Dir, p)
-	}
-	out := map[string]any{"file": p, "ui": true, "session": session}
-	res := &spec.Result{Data: out, Summary: "the game's screen with its UI"}
-	attachPNG(res, out, p)
+	p, _ := out["file"].(string)
+	data := map[string]any{"file": p, "ui": true, "width": out["width"], "height": out["height"]}
+	res := &spec.Result{Data: data, Summary: "the game's screen with its UI"}
+	attachPNG(res, data, p)
 	return res, nil
 }
 

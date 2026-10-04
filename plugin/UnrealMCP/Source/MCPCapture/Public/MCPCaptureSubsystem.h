@@ -70,6 +70,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "MCP|Capture")
 	bool IsCapturing() const { return bRunning; }
 
+	/** Plugin API 7: one frame of the game viewport with its UI (scene + UMG/Slate), taken
+	 *  now and saved to AbsPath as PNG — no timer, so it works while the game is paused.
+	 *  JSON {ok, file, width, height} or {ok:false, error}. */
+	UFUNCTION(BlueprintCallable, Category = "MCP|Capture")
+	FString CaptureUIFrame(const FString& AbsPath);
+
 	// --- Audio submix tap (AGENTIC_GAMEDEV_PLAN.md §6.3, RC9) ---------------------
 	// Registers an ISubmixBufferListener on the main output submix and reduces the
 	// PCM stream to an RMS/peak envelope so a build can be certified non-silent (the
@@ -98,7 +104,7 @@ private:
 	// Grab the on-screen game viewport (scene + Slate/UMG HUD composited) via
 	// FSlateApplication and save it as PNG. Needs a rendering window (the visible
 	// PIE viewport); the 3D-only SceneCapture path works headless, this does not.
-	bool CaptureViewportUI(const FString& AbsPath);
+	bool CaptureViewportUI(const FString& AbsPath, FIntVector* OutSize = nullptr, FString* OutWhy = nullptr);
 	void SelfStop(const FString& Reason);
 	void Teardown();
 	void FlushManifest() const;

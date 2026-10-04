@@ -103,6 +103,7 @@ var PyOps = map[string]PyOp{
 	"data_add_variable":   {Tier: Mutating, Plugin: 6, Note: "refuses a name the Blueprint already uses"},
 	"data_input_mapping":  {Tier: Mutating, Note: "creates the InputAction / mapping context when missing"},
 	"pie_screenshot":      {Tier: Ephemeral},
+	"pie_ui_shot":         {Tier: Ephemeral, Plugin: 7},
 	"pie_set_property":    {Tier: Ephemeral},
 	"play_test_sound":     {Tier: Ephemeral},
 	"reflect":             {Tier: ReadOnly},

@@ -529,17 +529,53 @@ def _op_pie_set_property(args):
 # it goes through the plugin's class-default JSON).
 
 _BIND_SOURCES = {"owning_pawn": "OwningPawn", "pawn": "OwningPawn", "owning_pc": "OwningPC", "pc": "OwningPC",
-                 "player_state": "PlayerState", "world_actor": "WorldActor", "ability_system": "AbilitySystem",
+                 "player_state": "PlayerState", "world_actor": "WorldActor",
                  "game_state": "GameState", "gamestate": "GameState", "subsystem": "Subsystem"}
+# The agent's name for each plugin enum value (bind's answer speaks the agent's vocabulary).
+_SOURCE_NAMES = {"OwningPawn": "pawn", "OwningPC": "pc", "PlayerState": "player_state", "WorldActor": "world_actor",
+                 "GameState": "game_state", "Subsystem": "subsystem", "AbilitySystem": "ability_system"}
 # conversion -> (field kind it writes, plugin API it needs)
 _BIND_CONVERSIONS = {"none": ("float", 4), "ratio": ("float", 4), "int_to_text": ("text", 4), "format_text": ("text", 4),
                      "float_to_text": ("text", 7), "float_to_percent": ("text", 7), "bool_to_visibility": ("visibility", 7)}
 _BIND_ENUM = {"none": "None", "ratio": "Ratio", "int_to_text": "IntToText", "format_text": "FormatText",
               "float_to_text": "FloatToText", "float_to_percent": "FloatToPercent", "bool_to_visibility": "BoolToVisibility"}
+_CONVERSION_NAMES = {v: k for k, v in _BIND_ENUM.items()}
+_BIND_FIELDS = ("TargetWidget", "TargetField", "Source", "SourceLabel", "Path", "MaxPath", "Conversion", "Format")
+_SUBSYSTEM_BASES = ("WorldSubsystem", "GameInstanceSubsystem", "LocalPlayerSubsystem")
+
+
+def _stored_binding(b):
+    """A stored binding with the struct's field names: the engine's JSON export lowercases
+    each key's first letter (targetWidget); keys are matched without case."""
+    by_lower = {str(k).lower(): v for k, v in b.items()}
+    return {f: by_lower.get(f.lower(), "") for f in _BIND_FIELDS}
 
 
 def _bind_key(b):
-    return (str(b.get("TargetWidget")), str(b.get("TargetField")))
+    return (str(b["TargetWidget"]), str(b["TargetField"]).lower())
+
+
+def _agent_binding(b):
+    """A stored binding in the agent's vocabulary (what bind takes)."""
+    out = {"widget": b["TargetWidget"], "field": b["TargetField"],
+           "source": _SOURCE_NAMES.get(b["Source"], b["Source"]), "path": b["Path"],
+           "conversion": _CONVERSION_NAMES.get(b["Conversion"], b["Conversion"])}
+    for k, f in (("label", "SourceLabel"), ("max_path", "MaxPath"), ("format", "Format")):
+        if b[f] and b[f] != "None":
+            out[k] = b[f]
+    return out
+
+
+def _check_subsystem_label(i, label):
+    """The HUD finds a subsystem class without loading anything (it runs every tick): only
+    a native /Script/ class that is a World, GameInstance or LocalPlayer subsystem."""
+    cls = unreal.load_class(None, label) if label.startswith("/Script/") else None
+    if cls is None:
+        raise _V2Error("BAD_VALUE", "bindings[%d]: label %r is not a native subsystem class path "
+                       "(/Script/Module.ClassName)" % (i, label))
+    bases = [getattr(unreal, n, None) for n in _SUBSYSTEM_BASES]
+    if not any(base is not None and unreal.MathLibrary.class_is_child_of(cls, base) for base in bases):
+        raise _V2Error("BAD_VALUE", "bindings[%d]: %s is not a %s" % (i, label, " / ".join(_SUBSYSTEM_BASES)))
 
 
 def _check_binding(i, b, index):
@@ -553,10 +589,18 @@ def _check_binding(i, b, index):
     widget, field = str(b.get("widget") or ""), str(b.get("field") or "")
     conv = str(b.get("conversion") or "none").lower()
     if conv == "bool_to_visibility":
-        field = field or "Visibility"
+        if field and field != "Visibility":
+            raise _V2Error("BAD_VALUE", "bindings[%d]: bool_to_visibility writes Visibility, not %s" % (i, field))
+        field = "Visibility"
     if not widget or not field:
         raise _V2Error("BAD_VALUE", "bindings[%d] needs widget and field" % i)
+    if not field[0].isupper() or "_" in field:
+        # The HUD finds the field by its reflected name; a Python spelling never matches.
+        raise _V2Error("BAD_VALUE", "bindings[%d]: field is the reflected (CamelCase) name, e.g. Percent or "
+                       "RenderOpacity, not %r" % (i, field))
     if b.get("remove"):
+        if set(b) - {"widget", "field", "remove", "conversion"}:
+            raise _V2Error("BAD_VALUE", "bindings[%d]: a remove takes widget and field only" % i)
         return {"TargetWidget": widget, "TargetField": field}, True
     w = index.get(widget)
     if w is None:
@@ -574,22 +618,41 @@ def _check_binding(i, b, index):
         if (kind == "text") != is_text or (kind == "float" and not isinstance(cur, float)):
             raise _V2Error("BAD_VALUE", "bindings[%d]: %s writes a %s, but %s.%s is a %s" % (
                 i, conv, kind, widget, field, type(cur).__name__))
-    source = _BIND_SOURCES.get(str(b.get("source") or "").lower())
+    raw_source = str(b.get("source") or "").lower()
+    if raw_source == "ability_system":
+        raise _V2Error("BAD_VALUE", "bindings[%d]: the HUD cannot read the ability system yet (no GAS reader in the "
+                       "plugin): bind a property or getter on the pawn or player state instead" % i)
+    source = _BIND_SOURCES.get(raw_source)
     if source is None:
         raise _V2Error("BAD_VALUE", "bindings[%d]: source must be one of %s" % (i, ", ".join(sorted(set(_BIND_SOURCES)))))
     label = str(b.get("label") or "")
     if source in ("WorldActor", "Subsystem") and not label:
         raise _V2Error("BAD_VALUE", "bindings[%d]: source %s needs label (%s)" % (
             i, source, "the actor's label" if source == "WorldActor" else "the subsystem class path"))
+    if label and source not in ("WorldActor", "Subsystem"):
+        raise _V2Error("BAD_VALUE", "bindings[%d]: label goes with source world_actor or subsystem" % i)
+    if source == "Subsystem":
+        _check_subsystem_label(i, label)
     if not b.get("path"):
         raise _V2Error("BAD_VALUE", "bindings[%d] needs path (a property or zero-arg getter on the source)" % i)
-    if conv == "ratio" and not b.get("max_path"):
+    max_path, fmt = str(b.get("max_path") or ""), str(b.get("format") or "")
+    if conv == "ratio" and not max_path:
         raise _V2Error("BAD_VALUE", "bindings[%d]: ratio needs max_path" % i)
-    if conv == "format_text" and not b.get("format"):
-        raise _V2Error("BAD_VALUE", "bindings[%d]: format_text needs format, e.g. {value} / {max}" % i)
+    if max_path and conv not in ("ratio", "format_text", "none"):
+        raise _V2Error("BAD_VALUE", "bindings[%d]: %s does not read max_path (ratio and format_text do)" % (i, conv))
+    if conv == "format_text":
+        if not fmt:
+            raise _V2Error("BAD_VALUE", "bindings[%d]: format_text needs format, e.g. {value} / {max}" % i)
+        names = set(re.findall(r"\{([^{}]*)\}", fmt))
+        if names - {"value", "max"}:
+            raise _V2Error("BAD_VALUE", "bindings[%d]: format knows {value} and {max}, not %s" % (
+                i, ", ".join("{%s}" % n for n in sorted(names - {"value", "max"}))))
+        if "max" in names and not max_path:
+            raise _V2Error("BAD_VALUE", "bindings[%d]: {max} needs max_path" % i)
+    elif fmt:
+        raise _V2Error("BAD_VALUE", "bindings[%d]: format goes with conversion format_text" % i)
     return {"TargetWidget": widget, "TargetField": field, "Source": source, "SourceLabel": label,
-            "Path": str(b["path"]), "MaxPath": str(b.get("max_path") or ""), "Conversion": _BIND_ENUM[conv],
-            "Format": str(b.get("format") or "")}, False
+            "Path": str(b["path"]), "MaxPath": max_path, "Conversion": _BIND_ENUM[conv], "Format": fmt}, False
 
 
 def _op_widget_bind(args):
@@ -601,6 +664,8 @@ def _op_widget_bind(args):
     wbp = unreal.load_asset(bp_path)
     if not isinstance(wbp, unreal.WidgetBlueprint):
         raise _V2Error("NOT_FOUND", "not a WidgetBlueprint: %s" % bp_path)
+    if _pie_running():
+        raise _V2Error("PRECONDITION", "binding recompiles the widget Blueprint, which would change the running game: stop PIE first")
     bindings = args.get("bindings")
     if not isinstance(bindings, list) or not bindings:
         raise _V2Error("BAD_VALUE", "bindings must be a list of {widget, field, source, path, conversion?, ...}")
@@ -612,21 +677,42 @@ def _op_widget_bind(args):
     root = _wroot(_wtree(wbp))
     if root is not None:
         _widget_index(root, index)
-    merged = {_bind_key(b): b for b in cur.get("value") or []}
+    stored = [_stored_binding(b) for b in cur.get("value") or []]
+    merged = {}
+    for b in stored:
+        if _bind_key(b) in merged:
+            raise _V2Error("CONFLICT", "%s already has two bindings on %s.%s: remove it and bind again" % (
+                bp_path, b["TargetWidget"], b["TargetField"]))
+        merged[_bind_key(b)] = b
+    seen, removed = set(), []
     for i, b in enumerate(bindings):
         entry, remove = _check_binding(i, b, index)
+        key = _bind_key(entry)
+        if key in seen:
+            raise _V2Error("BAD_VALUE", "bindings[%d]: %s.%s appears twice in this call" % (i, entry["TargetWidget"], entry["TargetField"]))
+        seen.add(key)
         if remove:
-            if merged.pop(_bind_key(entry), None) is None:
-                raise _V2Error("NOT_FOUND", "bindings[%d]: no binding on %s.%s to remove" % (i, entry["TargetWidget"], entry["TargetField"]))
+            # Removing what is not there succeeds (a retried remove), and says so.
+            removed.append({"widget": entry["TargetWidget"], "field": entry["TargetField"],
+                            "removed": merged.pop(key, None) is not None})
         else:
-            merged[_bind_key(entry)] = entry
+            merged[key] = entry
     res = json.loads(auth.set_class_default_json(wbp, "FieldSourceBindings", json.dumps(list(merged.values()))))
     if not res.get("ok"):
         raise _V2Error("BAD_VALUE", "%s: %s" % (bp_path, res.get("error")))
     unreal.BlueprintEditorLibrary.compile_blueprint(wbp)
-    unreal.EditorAssetLibrary.save_asset(bp_path)
+    status = json.loads(auth.describe_blueprint_json(wbp, False)).get("status") if _plugin_api() >= 6 else None
+    if status == "error":
+        # Back to the bindings it had (the Blueprint's own graph does not compile).
+        auth.set_class_default_json(wbp, "FieldSourceBindings", json.dumps(stored))
+        unreal.BlueprintEditorLibrary.compile_blueprint(wbp)
+        raise _V2Error("EDITOR_ERROR", "%s does not compile (nothing changed): data_query op=blueprint shows its messages" % bp_path)
+    _save(bp_path)
     after = json.loads(auth.get_class_default_json(wbp, "FieldSourceBindings"))
-    return {"blueprint": bp_path, "bindings": after.get("value") or []}
+    out = {"blueprint": bp_path, "bindings": [_agent_binding(_stored_binding(b)) for b in after.get("value") or []]}
+    if removed:
+        out["removed"] = removed
+    return out
 
 
 def _widget_class(path):
@@ -638,6 +724,8 @@ def _widget_class(path):
     cls = _resolve_class(full)
     if cls is None:
         raise _V2Error("CLASS_UNRESOLVED", "no widget class %s" % path)
+    if not unreal.MathLibrary.class_is_child_of(cls, unreal.UserWidget):
+        raise _V2Error("BAD_VALUE", "%s is not a widget (UserWidget) class" % path)
     return cls
 
 
@@ -648,7 +736,8 @@ def _op_widget_mount(args):
     cls = _widget_class(args.get("class") or "")
     if cls is None:
         raise _V2Error("BAD_VALUE", "mount needs class (a WidgetBlueprint path)")
-    w = ctrl.mount_widget(cls, int(args.get("z_order") or 10))
+    z = args.get("z_order")
+    w = ctrl.mount_widget(cls, 10 if z is None else int(z))
     if not w:
         raise _V2Error("PRECONDITION", "could not mount %s (no player controller?)" % args.get("class"))
     return {"mounted": w.get_name(), "class": cls.get_path_name()}

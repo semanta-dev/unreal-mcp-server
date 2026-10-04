@@ -803,7 +803,7 @@ FString UMCPAuthoringSubsystem::SetConfigDefaultsJson(UClass* SettingsClass, con
 			// The exact name wins over a bool's b-less alias (Enabled vs bEnabled).
 			for (FProperty* M : Matches)
 			{
-				if (M->GetName() == Pair.Key)
+				if (M->GetName().Equals(Pair.Key, ESearchCase::CaseSensitive))
 				{
 					Matches = {M};
 					break;

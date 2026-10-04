@@ -566,13 +566,13 @@ func asSlice(v any) []any {
 func widgetEditSpec() *spec.Spec {
 	ops := []spec.OpSpec{
 		{Name: "compose", Summary: "add/update nodes from a declarative tree (additive), then compile", Tier: spec.Mutating, Idempotent: true,
-			Required: []string{"asset", "tree"}, Rejects: []string{"remove", "prune"}, Reaches: []string{"widget_compose"}},
+			Required: []string{"asset", "tree"}, Rejects: []string{"remove", "prune", "bindings"}, Reaches: []string{"widget_compose"}},
 		{Name: "prune", Summary: "converge on the tree, DELETING nodes absent from it (+ remove)", Tier: spec.Destructive,
-			Required: []string{"asset", "tree"}, Rejects: []string{"mode", "defer"}, Reaches: []string{"widget_compose"}},
+			Required: []string{"asset", "tree"}, Rejects: []string{"mode", "defer", "bindings"}, Reaches: []string{"widget_compose"}},
 		{Name: "compile", Summary: "compile and save; ends a deferred compose", Tier: spec.Mutating, Idempotent: true,
 			Required: []string{"asset"}, Rejects: []string{"tree", "remove", "mode", "defer", "bindings"}, Reaches: []string{"widget_compile"}},
 		{Name: "bind", Summary: "HUD value bindings (MCPHUDWidget): a child's field follows a game value", Tier: spec.Mutating, Idempotent: true,
-			Required: []string{"asset", "bindings"}, Rejects: []string{"tree", "remove", "mode", "defer"}, Reaches: []string{"widget_bind"}, Needs: []string{"plugin>=4"}},
+			Required: []string{"asset", "bindings"}, Rejects: []string{"tree", "remove", "mode", "defer"}, Reaches: []string{"widget_bind"}, Needs: []string{"plugin>=4", "plugin>=7 for float_to_text/float_to_percent/bool_to_visibility"}},
 	}
 	return &spec.Spec{
 		Name: "widget_edit", Title: "Author UMG widgets", Toolset: spec.UI, Timeout: sync25, Max: sync28, Ops: ops,
@@ -581,9 +581,9 @@ func widgetEditSpec() *spec.Spec {
 			"Re-composing the same tree is a no-op (same digest).\n" +
 			"- op=prune: like compose, but DELETES every node absent from `tree` and the names in `remove`.\n" +
 			"- op=compile: compile + save; returns the digest (and ends a deferred patch).\n" +
-			"- op=bind (parent class MCPHUDWidget): `bindings` [{widget, field, source: pawn|pc|player_state|game_state|subsystem|world_actor|ability_system, " +
-			"path, label?, max_path?, conversion?: none|ratio|int_to_text|float_to_text|float_to_percent|format_text|bool_to_visibility, format?}] — " +
-			"each tick the field follows the value; keyed by widget+field ({remove: true} drops one).\n" +
+			"- op=bind (parent class MCPHUDWidget): `bindings` [{widget, field (reflected name, e.g. Percent), source: pawn|pc|player_state|game_state|subsystem|world_actor, " +
+			"path, label?, max_path?, conversion?: none|ratio|int_to_text|float_to_text|float_to_percent|format_text ({value} {max})|bool_to_visibility, format?}] — " +
+			"each tick the field follows the value; keyed by widget+field ({remove: true} drops one). Not during PIE.\n" +
 			"Check the result with widget_query op=tree / op=render.",
 		Schema:   spec.SchemaFor[widgetEditIn](map[string][]any{"op": spec.OpEnum(ops...), "mode": {"full", "patch"}}, "op", "asset"),
 		Replaces: []string{"widget_compose", "widget_compile"},

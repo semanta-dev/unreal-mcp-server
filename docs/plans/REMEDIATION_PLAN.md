@@ -208,7 +208,7 @@ An audit whose evidence has no source for a game returns `insufficient_evidence`
 | *Measured after R0 (46 tools / 34 core)* | *41 818 B core (−3 165 B vs v2.0.2's 44 983 B); all toolsets 61 188 B* |
 | *Measured after R2 (48 tools / 34 core)* | *43 808 B core; all toolsets 65 006 B* |
 | *Measured after R3 (50 tools / 34 core)* | *43 989 B core; all toolsets 68 506 B* |
-| *Measured after R4 (50 tools / 34 core)* | *44 451 B core; all toolsets 69 743 B* |
+| *Measured after R4 (50 tools / 34 core)* | *44 477 B core; all toolsets 69 817 B* |
 
 New optional toolsets: `game` (`game`, `game_command`), `data` (`data_query`, `data_edit`), `world` (moved tools).
 Count pins: **50 tools / 34 core** after the plan (from 45 / 36). All toolsets ≤ 75 000 B (est. ~66 KB). Each phase

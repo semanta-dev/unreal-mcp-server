@@ -2593,7 +2593,7 @@
             "type": "array"
           },
           "ui": {
-            "description": "pie: the screen as the player sees it, UMG/Slate UI included (plugin; needs a visible game viewport)",
+            "description": "pie: the screen as the player sees it, UMG/Slate UI included, paused or not (plugin; a visible game viewport, at its own size)",
             "type": "boolean"
           },
           "width": {
@@ -2862,7 +2862,7 @@
         "destructiveHint": true,
         "openWorldHint": true
       },
-      "description": "Author a WidgetBlueprint's tree declaratively (create the asset with asset_create kind=widget_blueprint).\n- op=compose: apply `tree` — add/update/reorder nodes, slots, props — then compile; never deletes. Re-composing the same tree is a no-op (same digest).\n- op=prune: like compose, but DELETES every node absent from `tree` and the names in `remove`.\n- op=compile: compile + save; returns the digest (and ends a deferred patch).\n- op=bind (parent class MCPHUDWidget): `bindings` [{widget, field, source: pawn|pc|player_state|game_state|subsystem|world_actor|ability_system, path, label?, max_path?, conversion?: none|ratio|int_to_text|float_to_text|float_to_percent|format_text|bool_to_visibility, format?}] — each tick the field follows the value; keyed by widget+field ({remove: true} drops one).\nCheck the result with widget_query op=tree / op=render.",
+      "description": "Author a WidgetBlueprint's tree declaratively (create the asset with asset_create kind=widget_blueprint).\n- op=compose: apply `tree` — add/update/reorder nodes, slots, props — then compile; never deletes. Re-composing the same tree is a no-op (same digest).\n- op=prune: like compose, but DELETES every node absent from `tree` and the names in `remove`.\n- op=compile: compile + save; returns the digest (and ends a deferred patch).\n- op=bind (parent class MCPHUDWidget): `bindings` [{widget, field (reflected name, e.g. Percent), source: pawn|pc|player_state|game_state|subsystem|world_actor, path, label?, max_path?, conversion?: none|ratio|int_to_text|float_to_text|float_to_percent|format_text ({value} {max})|bool_to_visibility, format?}] — each tick the field follows the value; keyed by widget+field ({remove: true} drops one). Not during PIE.\nCheck the result with widget_query op=tree / op=render.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

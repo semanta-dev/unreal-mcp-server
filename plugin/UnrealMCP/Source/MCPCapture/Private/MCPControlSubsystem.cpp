@@ -7,6 +7,7 @@
 #include "Policies/CondensedJsonPrintPolicy.h"
 #include "Dom/JsonObject.h"
 #include "Components/EditableTextBox.h"
+#include "Components/PanelWidget.h"
 #include "Components/RichTextBlock.h"
 #include "Components/TextBlock.h"
 #include "Blueprint/WidgetTree.h"
@@ -258,6 +259,9 @@ FString UMCPControlSubsystem::DescribeLiveWidgets(TSubclassOf<UUserWidget> Widge
 	{
 		TArray<UUserWidget*> Found;
 		UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, Found, WidgetClass ? WidgetClass.Get() : UUserWidget::StaticClass(), false);
+		// Bounded: a menu-heavy game can hold thousands of live widgets.
+		constexpr int32 MaxNodes = 2000;
+		int32 Total = 0;
 		for (UUserWidget* W : Found)
 		{
 			if (!W || !W->WidgetTree)
@@ -269,16 +273,33 @@ FString UMCPControlSubsystem::DescribeLiveWidgets(TSubclassOf<UUserWidget> Widge
 			J->SetStringField(TEXT("class"), W->GetClass()->GetName());
 			J->SetBoolField(TEXT("in_viewport"), W->IsInViewport());
 			TArray<TSharedPtr<FJsonValue>> Nodes;
-			W->WidgetTree->ForEachWidget([&Nodes, W](UWidget* N)
+			bool bTruncated = false;
+			W->WidgetTree->ForEachWidget([&Nodes, &Total, &bTruncated, W](UWidget* N)
 			{
 				if (!N)
 				{
 					return;
 				}
+				if (Total >= MaxNodes)
+				{
+					bTruncated = true;
+					return;
+				}
+				++Total;
 				TSharedRef<FJsonObject> NJ = MakeShared<FJsonObject>();
 				NJ->SetStringField(TEXT("name"), N->GetName());
 				NJ->SetStringField(TEXT("class"), N->GetClass()->GetName());
-				NJ->SetBoolField(TEXT("visible"), N->IsVisible());
+				const UPanelWidget* Parent = N->GetParent();
+				NJ->SetStringField(TEXT("parent"), Parent ? Parent->GetName() : FString());
+				// visible: on screen as far as visibility goes — the node, every ancestor
+				// panel and the user widget itself (a child of a collapsed panel is hidden).
+				bool bShown = N->IsVisible() && W->IsVisible();
+				for (const UWidget* A = Parent; A && bShown; A = A->GetParent())
+				{
+					bShown = A->IsVisible();
+				}
+				NJ->SetBoolField(TEXT("visible"), bShown);
+				NJ->SetBoolField(TEXT("own_visible"), N->IsVisible());
 				const FGeometry& G = N->GetCachedGeometry();
 				FVector2D Pixel, Viewport;
 				USlateBlueprintLibrary::LocalToViewport(W, G, FVector2D::ZeroVector, Pixel, Viewport);
@@ -300,6 +321,10 @@ FString UMCPControlSubsystem::DescribeLiveWidgets(TSubclassOf<UUserWidget> Widge
 				Nodes.Add(MakeShared<FJsonValueObject>(NJ));
 			});
 			J->SetArrayField(TEXT("nodes"), Nodes);
+			if (bTruncated)
+			{
+				J->SetBoolField(TEXT("truncated"), true);
+			}
 			Out.Add(MakeShared<FJsonValueObject>(J));
 		}
 	}

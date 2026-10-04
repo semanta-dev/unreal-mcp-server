@@ -34,6 +34,7 @@ _OPS = {
     "take_screenshot": _op_take_screenshot_v2,
     "pie_observe": _op_pie_observe_v2,
     "pie_screenshot": _op_pie_screenshot_v2,
+    "pie_ui_shot": _op_pie_ui_shot,
     "apply_level_recipe": _op_apply_level_recipe,
     "asset_info": _op_asset_info,
     "asset_thumbnail": _op_asset_thumbnail,

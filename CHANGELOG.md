@@ -99,16 +99,22 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
   name). Every edit is saved and a failed save is an error. Property, table and curve edits are one undo step each;
   `add_variable`, `input_mapping` and `settings` say `undoable: false`.
 
-- **The UI loop** (R4): `widget_edit op=bind` sets a `UMCPHUDWidget`'s value bindings — `bindings` [{widget, field,
-  source: pawn | pc | player_state | game_state | subsystem | world_actor | ability_system, path, label?, max_path?,
-  conversion?, format?}], keyed by widget+field ({remove: true} drops one); every binding is checked against the
-  widget's real fields first (a text conversion onto a number field — which the HUD applied as nothing — is refused)
-  and written all or nothing. Plugin API 7 implements the conversions the HUD silently ignored (`float_to_text`,
-  `float_to_percent`, `bool_to_visibility`) and a `format_text` binding with a `max_path` (it was read as a ratio and
-  wrote nothing). `widget_query op=mount` / `unmount` put a widget on the running game's screen, `op=live_tree` lists
-  the live widgets with geometry (viewport pixels), visibility and text. `screenshot op=pie ui=true` is the screen as
-  the player sees it, UMG/Slate UI included (one frame of the plugin's game-scene capture with the UI; HighResShot
-  leaves the UI out).
+- **The UI loop** (R4): `widget_edit op=bind` sets a `UMCPHUDWidget`'s value bindings — `bindings` [{widget, field
+  (the reflected name, e.g. `Percent`), source: pawn | pc | player_state | game_state | subsystem | world_actor, path,
+  label?, max_path?, conversion?, format?}], keyed by widget+field: a binding replaces the one on its field, the others
+  stay; {remove: true} drops one (`removed` says whether it was there, so a retried remove succeeds). Every binding is
+  checked first and written all or nothing: the widget's real fields (a text conversion onto a number field, which the
+  HUD applied as nothing, is refused), a subsystem label must be a native World / GameInstance / LocalPlayer subsystem
+  class, `format` knows `{value}` and `{max}` only, the same key twice in one call is refused; the Blueprint is
+  compiled (a compile error puts the old bindings back) and its save checked; not during PIE. The answer lists the
+  bindings in bind's own vocabulary. Plugin API 7 implements the conversions the HUD silently ignored
+  (`float_to_text`, `float_to_percent`, `bool_to_visibility` — from a number or a bool property or getter, shown with
+  the widget's designed visibility) and a `format_text` binding with a `max_path` (it was read as a ratio and wrote
+  nothing; values keep up to 2 decimals). `widget_query op=mount` / `unmount` put a widget on the running game's
+  screen, `op=live_tree` lists the live widgets with parent, geometry (viewport pixels), effective visibility (a child
+  of a collapsed panel is not visible; `own_visible` is the node's own) and text, at most 2000 nodes (`truncated`).
+  `screenshot op=pie ui=true` is the screen as the player sees it, UMG/Slate UI included — one frame taken by the
+  plugin at the viewport's size, paused or not (HighResShot leaves the UI out).
 
 ### Fixed
 - `world=editor` during PIE found no editor world on UE 5.7 (`get_editor_world()` is None while PIE runs): it is now

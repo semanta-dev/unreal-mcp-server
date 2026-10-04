@@ -318,6 +318,22 @@ def _op_pie_screenshot_v2(args):
     return {"file": out_dir + fname, "async": True}
 
 
+def _op_pie_ui_shot(args):
+    """The running game's screen with its UI (scene + UMG/Slate), one frame taken now by the
+    plugin (API 7) - no capture timer, so it works while the game is paused."""
+    _need_plugin(7, "the UI screenshot")
+    if not _pie_running():
+        raise _V2Error("NOT_IN_PIE", "PIE is not running")
+    sub = _mcp_capture_subsystem()
+    if sub is None:
+        raise _V2Error("PLUGIN_MISSING", "the plugin's capture subsystem is not in the game world")
+    path = "%s/ui_%d.png" % (_saved_mcp_dir("Screenshots"), int(time.time() * 1000))
+    out = json.loads(sub.capture_ui_frame(path) or "{}")
+    if not out.get("ok"):
+        raise _V2Error("EDITOR_ERROR", "no frame with the UI: %s" % (out.get("error") or "unknown"))
+    return {"file": out["file"], "width": out.get("width"), "height": out.get("height")}
+
+
 def _op_capture_start_v2(args):
     if args.get("session"):
         _safe_name(args["session"], "session")

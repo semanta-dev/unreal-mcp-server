@@ -1,6 +1,9 @@
 package e2e
 
 import (
+	"fmt"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -43,21 +46,22 @@ func TestUILoopTools(t *testing.T) {
 	}
 }
 
-// screenshot op=pie ui=true takes one frame of the plugin's game_scene capture with the UI
-// (HighResShot leaves UMG/Slate out).
+// screenshot op=pie ui=true takes one frame of the game viewport with its UI, now, from
+// the plugin (no capture timer: works while paused); HighResShot leaves UMG/Slate out.
 func TestScreenshotWithUI(t *testing.T) {
 	h := startHarness(t, harnessOpts{})
 	h.world.StartPIE()
 	defer h.world.StopPIE()
-	rec := &bridgetest.Recorder{Dir: t.TempDir(), Frames: 1, State: func(int) map[string]any { return map[string]any{} }}
-	rec.Install(h.emu)
-	var start map[string]any
-	h.emu.Handle("capture_start", func(args map[string]any) (any, *bridgetest.OpError) {
-		start = args
-		return map[string]any{"session": args["session"], "running": true}, nil
-	})
-	h.emu.Handle("capture_poll", func(map[string]any) (any, *bridgetest.OpError) {
-		return map[string]any{"frames_captured": 1.0, "running": false}, nil
+	shot := filepath.Join(t.TempDir(), "ui_1.png")
+	if err := bridgetest.WritePNG(shot, 90); err != nil {
+		t.Fatal(err)
+	}
+	fail := false
+	h.emu.Handle("pie_ui_shot", func(args map[string]any) (any, *bridgetest.OpError) {
+		if fail {
+			return nil, &bridgetest.OpError{Code: "EDITOR_ERROR", Message: "no frame with the UI: the viewport has no pixels (is its window minimized?)"}
+		}
+		return map[string]any{"file": shot, "width": 1280.0, "height": 720.0}, nil
 	})
 	res := h.call(t, "screenshot", map[string]any{"op": "pie", "ui": true})
 	out := structured(t, res)
@@ -67,9 +71,16 @@ func TestScreenshotWithUI(t *testing.T) {
 			img = true
 		}
 	}
-	cam, _ := start["camera"].(map[string]any)
-	if !img || out["ui"] != true || start["source"] != "game_scene" || start["include_ui"] != true || start["max_frames"] != 1.0 || cam["mode"] != "player" {
-		t.Fatalf("ui screenshot = %v (start %v, image %v)", out, start, img)
+	if !img || out["ui"] != true || out["file"] != shot || out["width"] != 1280.0 {
+		t.Fatalf("ui screenshot = %v (image %v)", out, img)
+	}
+	if e := errorOf(t, h.call(t, "screenshot", map[string]any{"op": "pie", "ui": true, "width": 640})); e["code"] != "INVALID_ARGUMENT" {
+		t.Fatalf("ui with a width = %v", e)
+	}
+	fail = true
+	if e := errorOf(t, h.call(t, "screenshot", map[string]any{"op": "pie", "ui": true})); e["code"] != "OPERATION_FAILED" ||
+		!strings.Contains(fmt.Sprint(e["message"]), "minimized") {
+		t.Fatalf("a failed ui shot = %v", e)
 	}
 	if e := errorOf(t, h.call(t, "screenshot", map[string]any{"op": "viewport", "ui": true})); e["code"] != "INVALID_ARGUMENT" {
 		t.Fatalf("ui on viewport = %v", e)

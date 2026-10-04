@@ -132,7 +132,7 @@ def ue(v2):
     fake.WidgetBlueprintFactory = lambda: _NS(set_editor_property=lambda k, v: None)
     fake.AssetToolsHelpers = _NS(get_asset_tools=lambda: _NS(create_asset=lambda name, path, cls, factory: fake.wbp))
     fake.BlueprintEditorLibrary = _NS(compile_blueprint=lambda bp: None)
-    fake.EditorAssetLibrary = _NS(save_asset=lambda p: True, load_asset=lambda p: fake.wbp,
+    fake.EditorAssetLibrary = _NS(save_asset=lambda p, only_if_is_dirty=True: True, load_asset=lambda p: fake.wbp,
                                   does_asset_exist=lambda p: True)
     fake.load_asset = lambda p: fake.wbp
     with installed(v2["_mcp2"], fake):
