@@ -22,6 +22,17 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
   own exposure) unless `source_exposure` states it.
 - `design_explore` says what it is: an abstract wave-defense model, not the project's game.
 
+### Added
+- **`undo`** (core, destructive): `op=undo|redo` steps the editor's undo buffer only when the next step is the
+  server's own edit (titled `MCP: …`); a human's edit on top is `CONFLICT` with its title and nothing changes; refused
+  during PIE. The title check and the step are one plugin call. `asset_create`, `asset_edit` and `widget_edit` results
+  say `undoable: false` (they open no transaction — roll back with `git_revert`).
+- **Plugin API handshake**: the UnrealMCP plugin reports its API version (`UMCPCoreLibrary::GetPluginApiVersion`, now
+  3); `editor op=health` returns `plugin_api` and takes `expect_plugin`; ops that need a newer plugin fail with
+  `PRECONDITION` (`editor_code: PLUGIN_MISSING`, `details.needed`/`have`). API 3 also adds `IsPureOrConst`,
+  `PeekUndoTitle`/`PeekRedoTitle`, `UndoIfTitled`/`RedoIfTitled` and `FindGameSubsystem` (UE 5.7's Python has none of
+  these — [`docs/plans/REMEDIATION_SPIKES.md`](docs/plans/REMEDIATION_SPIKES.md)).
+
 ## v2.0.2 — 2026-10-03
 
 - First signed release: every archive and `SHA256SUMS` is signed with Sigstore cosign (keyless, GitHub OIDC) and has

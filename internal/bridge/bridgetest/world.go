@@ -26,17 +26,74 @@ type World struct {
 	seq      int
 	assets   map[string]string // asset path -> kind
 	selected []string          // selected editor actor paths
+	// PluginAPI is the UnrealMCP plugin API version editor_ping reports (default 3).
+	PluginAPI int
+	undo      []txn // the editor's transaction buffer (spawn/delete record theirs)
+	redo      []txn
+}
+
+// txn is one undoable editor transaction.
+type txn struct {
+	title      string
+	undo, redo func()
+}
+
+// record pushes a transaction and clears the redo stack, like a new editor edit.
+func (w *World) record(title string, undo, redo func()) {
+	w.undo = append(w.undo, txn{title, undo, redo})
+	w.redo = nil
+}
+
+// UserEdit records a transaction made by the human (not titled "MCP: ").
+func (w *World) UserEdit(title string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.record(title, func() {}, func() {})
+}
+
+// editorUndo models the plugin's UndoIfTitled/RedoIfTitled behind the companion's
+// editor_undo op: refused in PIE, CONFLICT when the next step is not the server's.
+func (w *World) editorUndo(args map[string]any) (any, *OpError) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	redo, _ := args["redo"].(bool)
+	if w.PluginAPI < 3 {
+		return nil, &OpError{Code: "PLUGIN_MISSING", Message: "undo needs the UnrealMCP plugin API 3"}
+	}
+	if w.pie != nil {
+		return nil, &OpError{Code: "PRECONDITION", Message: "undo is refused while PIE runs"}
+	}
+	from, to := &w.undo, &w.redo
+	if redo {
+		from, to = &w.redo, &w.undo
+	}
+	if len(*from) == 0 {
+		return nil, &OpError{Code: "PRECONDITION", Message: "nothing to undo/redo"}
+	}
+	t := (*from)[len(*from)-1]
+	if !strings.HasPrefix(t.title, "MCP: ") {
+		return nil, &OpError{Code: "CONFLICT", Message: "the next step is not the server's: " + t.title, Details: map[string]any{"title": t.title}}
+	}
+	*from = (*from)[:len(*from)-1]
+	*to = append(*to, t)
+	if redo {
+		t.redo()
+		return map[string]any{"redone": t.title}, nil
+	}
+	t.undo()
+	return map[string]any{"undone": t.title}, nil
 }
 
 // NewWorld returns an empty level.
 func NewWorld() *World {
-	return &World{editor: map[string]*Actor{}, level: "/Game/Maps/L_Test", assets: map[string]string{}}
+	return &World{editor: map[string]*Actor{}, level: "/Game/Maps/L_Test", assets: map[string]string{}, PluginAPI: 3}
 }
 
 // Install registers the ops the world answers.
 func (w *World) Install(e *Emulator) {
 	e.Handle("editor_status", w.editorStatus)
 	e.Handle("editor_ping", w.editorPing)
+	e.Handle("editor_undo", w.editorUndo)
 	e.Handle("list_actors", w.listActorsV1)
 	e.Handle("actor_query", w.actorQuery)
 	e.Handle("actor_spawn", w.actorSpawn)
@@ -86,7 +143,7 @@ func (w *World) editorStatus(map[string]any) (any, *OpError) {
 func (w *World) editorPing(map[string]any) (any, *OpError) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return map[string]any{"ok": true, "version": 1, "pie": w.pie != nil}, nil
+	return map[string]any{"ok": true, "version": 1, "pie": w.pie != nil, "plugin_api": w.PluginAPI}, nil
 }
 
 // worldFor resolves the world argument like the companion's _v2_world.
@@ -218,6 +275,7 @@ func (w *World) actorSpawn(args map[string]any) (any, *OpError) {
 		}
 	}
 	w.editor[a.Path] = a
+	w.record("MCP: spawn "+label, func() { delete(w.editor, a.Path) }, func() { w.editor[a.Path] = a })
 	return map[string]any{"world": "editor", "spawned": view(a, "editor"), "property_errors": []any{}}, nil
 }
 
@@ -239,6 +297,9 @@ func (w *World) actorDelete(args map[string]any) (any, *OpError) {
 		return nil, err
 	}
 	delete(actors, a.Path)
+	if name == "editor" {
+		w.record("MCP: delete "+a.Label, func() { actors[a.Path] = a }, func() { delete(actors, a.Path) })
+	}
 	return map[string]any{"world": name, "deleted": view(a, name)}, nil
 }
 

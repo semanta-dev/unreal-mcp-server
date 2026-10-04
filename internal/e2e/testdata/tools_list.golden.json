@@ -1274,10 +1274,14 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Inspect the connected Unreal Editor.\n- op=status: engine version, project, current level, is_in_pie, viewport camera, selection, actor count.\n- op=ping: cheap liveness probe.\n- op=health: ping, then check expect_version and for crashes since `since` → {healthy, problems[]}.",
+      "description": "Inspect the connected Unreal Editor.\n- op=status: engine version, project, current level, is_in_pie, viewport camera, selection, actor count.\n- op=ping: cheap liveness probe.\n- op=health: ping, then check expect_version, expect_plugin and for crashes since `since` → {healthy, plugin_api, problems[]}.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "expect_plugin": {
+            "description": "health: fail if the UnrealMCP plugin API is below this",
+            "type": "integer"
+          },
           "expect_version": {
             "description": "health: fail if the companion version is below this (catches a stale module)",
             "type": "integer"
@@ -2485,6 +2489,31 @@
       },
       "name": "toolsets",
       "title": "Toolsets and capabilities"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": true
+      },
+      "description": "Step the editor's undo buffer (editor world; refused during PIE). Acts only when the next step is the server's own (title \"MCP: …\"): a human's edit on top is CONFLICT and nothing changes. Covers actor_edit, scene, snapshot_restore; asset_create/asset_edit/widget_edit are not undoable (undoable:false — use git_revert).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "enum": [
+              "undo",
+              "redo"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "type": "object"
+      },
+      "name": "undo",
+      "title": "Undo the server's edits"
     },
     {
       "annotations": {

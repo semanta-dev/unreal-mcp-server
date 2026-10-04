@@ -2,7 +2,7 @@
 
 # Migrating from v1 to v2
 
-v2 replaces v1's 155 tools with 45. Tool names are not compatible: update prompts, scripts and `.mcp.json` allow-lists using the table below. The v1 server is recoverable from tag `v1-final`.
+v2 replaces v1's 155 tools with 46. Tool names are not compatible: update prompts, scripts and `.mcp.json` allow-lists using the table below. The v1 server is recoverable from tag `v1-final`.
 
 ## What changed everywhere
 

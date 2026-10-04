@@ -5,6 +5,9 @@
 //	tooleval -mode dry                       # no API: replay each task's reference calls
 //	tooleval -mode pilot -key-file <file>    # 5 tasks x 1 run x each model: token/cost estimate
 //	tooleval -mode full  -key-file <file>    # every task x -runs x each model
+//	tooleval -mode live-lint                 # no API: check the game-making task file
+//	tooleval -mode live -projects aesir=<dir>,polyworld=<dir> -server <unreal-mcp> -server-args "<flags>"
+//	                                         # the live game-making eval (REMEDIATION_PLAN.md §2)
 //
 // The v1 surface cannot run end to end (its adapter and companion ops are gone), so its
 // tools are the recorded v1 tools/list (testdata/v1_tools_list.json) and only the first
@@ -71,7 +74,55 @@ func main() {
 	rerun := flag.String("rerun", "", "full: re-run only the runs that errored in this results .jsonl")
 	only := flag.String("only", "", "comma-separated task ids to run (pilot/full)")
 	merge := flag.String("merge", "", "report only: comma-separated results .jsonl files (a later file's run replaces an earlier one)")
+	gameTasks := flag.String("game-tasks", "docs/validation/gameeval/tasks.json", "live: the game-making task file")
+	server := flag.String("server", "dist/unreal-mcp.exe", "live: the server binary under test")
+	serverArgs := flag.String("server-args", "-engine D:/Unreal/Engine/UE_5.7 -group 239.0.0.42:6799 -log-format text -log-level warn", "live: extra server flags")
+	projectsFlag := flag.String("projects", "aesir=../_p7scratch/aesir,polyworld=../_p7scratch/PolyWorld", "live: name=scratch project dir,…")
+	portsFlag := flag.String("ports", "aesir=127.0.0.1:6791,polyworld=127.0.0.1:6792", "live: name=command addr,…")
+	checkpoints := flag.String("checkpoints", "", "live: name=baseline checkpoint,… (default: make one per project at start)")
+	liveTurns := flag.Int("live-turns", 40, "live: agent turns per run (a run that needs more fails)")
+	costCap := flag.Float64("cost-cap", 1.50, "live: USD per run (a run that costs more is aborted and fails)")
+	evalCap := flag.Float64("eval-cap", 150, "live: USD for the whole eval (later runs are aborted)")
+	label := flag.String("label", "live", "live: report label (e.g. baseline v2.0.2)")
 	flag.Parse()
+
+	if *mode == "live-lint" || *mode == "live" {
+		gts, err := loadGameTasks(*gameTasks)
+		must(err)
+		projects := kv(*projectsFlag)
+		var names []string
+		for n := range projects {
+			names = append(names, n)
+		}
+		if errs := lintGameTasks(gts, names, 3, 8); len(errs) > 0 && *mode == "live-lint" {
+			for _, e := range errs {
+				fmt.Println(e)
+			}
+			os.Exit(1)
+		} else if *mode == "live-lint" {
+			fmt.Printf("%d game tasks: OK\n", len(gts))
+			return
+		}
+		if *only != "" {
+			keep := map[string]bool{}
+			for _, id := range strings.Split(*only, ",") {
+				keep[id] = true
+			}
+			var sel []*gameTask
+			for _, t := range gts {
+				if keep[t.ID] {
+					sel = append(sel, t)
+				}
+			}
+			gts = sel
+		}
+		cl := apiClient(*keyFile)
+		o := liveOpts{server: *server, serverArgs: strings.Fields(*serverArgs), projects: projects, ports: kv(*portsFlag),
+			checkpoint: kv(*checkpoints), maxTurns: *liveTurns, costCap: *costCap, prices: parsePrices(*prices),
+			model: strings.Split(*modelsFlag, ",")[0]}
+		liveMain(context.Background(), cl, o, gts, *runs, *evalCap, *outDir, *label)
+		return
+	}
 
 	tasks, err := loadTasks(*tasksPath)
 	must(err)
@@ -113,6 +164,10 @@ func main() {
 		fmt.Println(report)
 		return
 	}
+	tasks, pending := activeTasks(tasks, allV2Tools())
+	if len(pending) > 0 {
+		fmt.Fprintf(os.Stderr, "%d task(s) wait for tools not built yet: %v\n", len(pending), pending)
+	}
 	if *mode == "dry" {
 		code := dryRun(ctx, tasks)
 		for _, t := range tasks {
@@ -126,22 +181,7 @@ func main() {
 		_ = v1Tools
 		os.Exit(code)
 	}
-	key := os.Getenv("ANTHROPIC_API_KEY")
-	if *keyFile != "" {
-		b, err := os.ReadFile(*keyFile)
-		must(err)
-		key = strings.TrimSpace(string(b))
-	}
-	token := os.Getenv("ANTHROPIC_AUTH_TOKEN")
-	if key == "" && token == "" {
-		fmt.Fprintln(os.Stderr, "no credentials: set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN, or pass -key-file")
-		os.Exit(2)
-	}
-	base := os.Getenv("ANTHROPIC_BASE_URL")
-	if base == "" {
-		base = "https://api.anthropic.com"
-	}
-	cl := &client{key: key, token: token, baseURL: base, http: &http.Client{Timeout: 5 * time.Minute}}
+	cl := apiClient(*keyFile)
 	models := strings.Split(*modelsFlag, ",")
 	order := append([]*task(nil), tasks...)
 	rand.New(rand.NewSource(*seed)).Shuffle(len(order), func(i, j int) { order[i], order[j] = order[j], order[i] })
@@ -230,6 +270,38 @@ func main() {
 	report := summarize(results, models, parsePrices(*prices), *mode, len(order), nRuns, len(tasks), *runs)
 	must(os.WriteFile(filepath.Join(*outDir, fmt.Sprintf("%s-%s.md", *mode, stamp)), []byte(report), 0o644))
 	fmt.Println(report)
+}
+
+// apiClient builds the Messages API client from ANTHROPIC_API_KEY / -key-file or
+// ANTHROPIC_AUTH_TOKEN (bearer, e.g. a local router) and ANTHROPIC_BASE_URL.
+func apiClient(keyFile string) *client {
+	key := os.Getenv("ANTHROPIC_API_KEY")
+	if keyFile != "" {
+		b, err := os.ReadFile(keyFile)
+		must(err)
+		key = strings.TrimSpace(string(b))
+	}
+	token := os.Getenv("ANTHROPIC_AUTH_TOKEN")
+	if key == "" && token == "" {
+		fmt.Fprintln(os.Stderr, "no credentials: set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN, or pass -key-file")
+		os.Exit(2)
+	}
+	base := os.Getenv("ANTHROPIC_BASE_URL")
+	if base == "" {
+		base = "https://api.anthropic.com"
+	}
+	return &client{key: key, token: token, baseURL: base, http: &http.Client{Timeout: 5 * time.Minute}}
+}
+
+// kv parses "a=x,b=y".
+func kv(s string) map[string]string {
+	m := map[string]string{}
+	for _, p := range strings.Split(s, ",") {
+		if k, v, ok := strings.Cut(strings.TrimSpace(p), "="); ok {
+			m[k] = v
+		}
+	}
+	return m
 }
 
 func deref(b *bool) string {

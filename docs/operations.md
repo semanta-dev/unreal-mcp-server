@@ -56,8 +56,9 @@ Actions in both workflows are pinned to commit SHAs (the version is in a trailin
    `keep_package_recovery`. `-toolsets`/`UMCP_TOOLSETS` adds toolsets for a stdio session.
 4. Optional plugin (`plugin/UnrealMCP`): needed for `pie op=input`, `audio`, `capture source=game_scene`,
    `widget_query op=render`, the `pie op=start` Blueprint pre-flight and the cockpit. Copy it into `<game>/Plugins/`,
-   then `build strategy=ubt`. Keep the project's copy current: an older build answers `PRECONDITION` (with
-   `details.editor_code: PLUGIN_MISSING`) for the features it lacks, `pie op=start` reports a `blueprint_preflight`
+   then `build strategy=ubt`. Keep the project's copy current: `editor op=health expect_plugin=<N>` reports the
+   plugin API version the editor has (`plugin_api`; 3 since v2.1 — `undo` needs it), and an older build answers
+   `PRECONDITION` (with `details.editor_code: PLUGIN_MISSING`, `details.needed`/`have`) for the features it lacks, `pie op=start` reports a `blueprint_preflight`
    starting with `unavailable`, and `ignore_blueprint_errors` has no effect.
 
 **Package recovery.** Every editor launch by the server (`editor_lifecycle`, `build`, `git_revert`, crash relaunch,
@@ -120,7 +121,8 @@ go test -tags live -run TestLiveSpawnGetDelete ./internal/tools/   # spawn/get/d
 the emulator cannot:
 1. `editor op=health`; `actor_query`/`actor_edit` in editor and PIE worlds, including `@pawn` and PIE path translation;
    a duplicated label returns CONFLICT; class short names resolve (and are CONFLICT when ambiguous).
-2. Undo: `actor_edit` and `snapshot_restore` are one Ctrl+Z step each.
+2. Undo: `actor_edit` and `snapshot_restore` are one Ctrl+Z step each; the `undo` tool steps them back and forth,
+   refuses a human's edit on top (`CONFLICT`) and refuses during PIE.
 3. `asset_create op=replace` over an existing asset (delete, then create at the same path in the same tick).
 4. `screenshot op=viewport|pie|orbit`, `asset_query op=thumbnail`, `widget_query op=render` return images (absolute
    paths); HighResShot's real output location; `capture start/stop` with each source.
@@ -144,8 +146,10 @@ needs explicit approval of the spend after a 5-task pilot.
 
 ## Plugin rebuild drill
 
-After changing `plugin/UnrealMCP/Source`: `build strategy=ubt` (closes the editor safely, runs Build.bat, relaunches
-on the same map), then `editor op=health expect_version=<companion version>` and the T4 items that use the plugin.
+After changing `plugin/UnrealMCP/Source`: `scripts/plugin-gate.sh <project dir> <expected plugin API>` copies the
+plugin into the project, runs `build strategy=ubt` (closes the editor safely, runs Build.bat, relaunches on the same
+map), then `editor op=health expect_plugin=<N>`; then run the T4 items that use the plugin. GitHub's runners have no
+UE 5.7, so this gate runs on a workstation, on a scratch copy, for every change that touches the plugin.
 
 ## Rollback runbook
 

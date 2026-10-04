@@ -125,7 +125,7 @@ func pick(args map[string]any, keys ...string) map[string]any {
 
 func coreSpecs() []*spec.Spec {
 	return []*spec.Spec{editorSpec(), pythonSpec(), consoleSpec(), levelSpec(),
-		actorQuerySpec(), actorEditSpec(), actorCallSpec()}
+		actorQuerySpec(), actorEditSpec(), actorCallSpec(), undoSpec()}
 }
 
 // --- editor ----------------------------------------------------------------------
@@ -134,6 +134,7 @@ type editorIn struct {
 	Op            string `json:"op" jsonschema:"status | ping | health"`
 	ExpectVersion int    `json:"expect_version,omitempty" jsonschema:"health: fail if the companion version is below this (catches a stale module)"`
 	Since         string `json:"since,omitempty" jsonschema:"health: RFC3339; count crashes since (default 10 min ago)"`
+	ExpectPlugin  int    `json:"expect_plugin,omitempty" jsonschema:"health: fail if the UnrealMCP plugin API is below this"`
 }
 
 func editorSpec() *spec.Spec {
@@ -147,7 +148,7 @@ func editorSpec() *spec.Spec {
 		Description: "Inspect the connected Unreal Editor.\n" +
 			"- op=status: engine version, project, current level, is_in_pie, viewport camera, selection, actor count.\n" +
 			"- op=ping: cheap liveness probe.\n" +
-			"- op=health: ping, then check expect_version and for crashes since `since` → {healthy, problems[]}.",
+			"- op=health: ping, then check expect_version, expect_plugin and for crashes since `since` → {healthy, plugin_api, problems[]}.",
 		Schema:   spec.SchemaFor[editorIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
 		Replaces: []string{"editor_status", "editor_state", "editor_ping", "health_check"},
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
@@ -179,9 +180,13 @@ func editorHealth(ctx context.Context, c *spec.Call, in editorIn) (*spec.Result,
 		return &spec.Result{Data: res, Summary: "unhealthy: editor unreachable"}, nil
 	}
 	ver, _ := ping["version"].(float64)
-	res["version"], res["pie"] = int(ver), ping["pie"]
+	papi, _ := ping["plugin_api"].(float64)
+	res["version"], res["pie"], res["plugin_api"] = int(ver), ping["pie"], int(papi)
 	if in.ExpectVersion > 0 && int(ver) < in.ExpectVersion {
 		problems = append(problems, "companion version "+strconv.Itoa(int(ver))+" < expected "+strconv.Itoa(in.ExpectVersion)+" (stale module: rebuild/redeploy)")
+	}
+	if in.ExpectPlugin > 0 && int(papi) < in.ExpectPlugin {
+		problems = append(problems, "UnrealMCP plugin API "+strconv.Itoa(int(papi))+" < expected "+strconv.Itoa(in.ExpectPlugin)+" (copy plugin/UnrealMCP into the project and build strategy=ubt)")
 	}
 	since := time.Now().Add(-10 * time.Minute)
 	if in.Since != "" {
@@ -434,6 +439,37 @@ func actorEditSpec() *spec.Spec {
 				return nil, err
 			}
 			return &spec.Result{Data: out, Summary: fmt.Sprintf("%s done in the %v world", c.Op.Name, out["world"])}, nil
+		},
+	}
+}
+
+// --- undo ------------------------------------------------------------------------
+
+type undoIn struct {
+	Op string `json:"op" jsonschema:"undo | redo"`
+}
+
+func undoSpec() *spec.Spec {
+	ops := []spec.OpSpec{
+		{Name: "undo", Summary: "undo the server's last editor edit", Tier: spec.Destructive, Reaches: []string{"editor_undo"}, Needs: []string{"plugin>=3"}},
+		{Name: "redo", Summary: "redo the server's last undone edit", Tier: spec.Destructive, Reaches: []string{"editor_undo"}, Needs: []string{"plugin>=3"}},
+	}
+	return &spec.Spec{
+		Name: "undo", Title: "Undo the server's edits", Toolset: spec.Core, Timeout: sync15, Max: sync28, Ops: ops,
+		Description: "Step the editor's undo buffer (editor world; refused during PIE). Acts only when the next step is " +
+			"the server's own (title \"MCP: …\"): a human's edit on top is CONFLICT and nothing changes. Covers actor_edit, " +
+			"scene, snapshot_restore; asset_create/asset_edit/widget_edit are not undoable (undoable:false — use git_revert).",
+		Schema: spec.SchemaFor[undoIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op"),
+		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
+			out, err := v2Op(ctx, c, "editor_undo", map[string]any{"redo": c.Op.Name == "redo"})
+			if err != nil {
+				return nil, err
+			}
+			title, _ := out["undone"].(string)
+			if title == "" {
+				title, _ = out["redone"].(string)
+			}
+			return &spec.Result{Data: out, Summary: c.Op.Name + ": " + title}, nil
 		},
 	}
 }

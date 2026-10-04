@@ -84,3 +84,41 @@ def test_recorder_reports_its_own_tick_not_fps(v2, ue, tmp_path):
     assert "perf" not in st
     assert st["recorder"]["tick_ms"] == pytest.approx(40.0)
     assert st["recorder"]["max_tick_ms"] == pytest.approx(40.0)
+
+
+def test_plugin_api_handshake(v2, ue):
+    # R0.5: API 3+ answers GetPluginApiVersion; a pre-handshake plugin (subsystems but no
+    # library) is 2; no plugin is 0. _need_plugin refuses older ones with both versions.
+    m = v2["_mcp2"]
+    assert m._plugin_api() == 0
+    ue.MCPControlSubsystem = object()
+    assert m._plugin_api() == 2
+    ue.MCPCoreLibrary = _NS(get_plugin_api_version=lambda: 3)
+    assert m._plugin_api() == 3
+    assert m._need_plugin(3, "x") is ue.MCPCoreLibrary
+    with pytest.raises(m._V2Error) as e:
+        m._need_plugin(5, "axis input")
+    assert e.value.code == "PLUGIN_MISSING" and e.value.details == {"needed": 5, "have": 3}
+    assert call(v2, "editor_ping", {})["result"]["plugin_api"] == 3
+
+
+def test_editor_undo_maps_the_plugin_verdicts(v2, ue):
+    # R0.9: the plugin does check + step in one call; the op maps its verdict.
+    calls = []
+
+    def step(kind):
+        def f(prefix):
+            calls.append((kind, prefix))
+            return ue._undo_result
+        return f
+    ue.MCPCoreLibrary = _NS(get_plugin_api_version=lambda: 3, undo_if_titled=step("undo"), redo_if_titled=step("redo"))
+    ue._undo_result = '{"ok": true, "title": "MCP: spawn A"}'
+    assert call(v2, "editor_undo", {})["result"] == {"undone": "MCP: spawn A"}
+    assert call(v2, "editor_undo", {"redo": True})["result"] == {"redone": "MCP: spawn A"}
+    assert calls == [("undo", "MCP: "), ("redo", "MCP: ")]
+    for reason, code in (("title_mismatch", "CONFLICT"), ("pie", "PRECONDITION"), ("empty", "PRECONDITION"), ("failed", "EDITOR_ERROR")):
+        ue._undo_result = '{"ok": false, "title": "Move", "reason": "%s"}' % reason
+        env = call(v2, "editor_undo", {})
+        assert not env["ok"] and env["code"] == code, (reason, env)
+    ue.MCPCoreLibrary = _NS(get_plugin_api_version=lambda: 2)
+    assert call(v2, "editor_undo", {})["code"] == "PLUGIN_MISSING"

@@ -2,7 +2,7 @@
 
 # Tools
 
-45 tools (33 core). Optional toolsets are enabled per session with `toolsets op=enable` or a project's `.umcp.json` `toolsets`. Every tool takes JSON arguments validated against its schema; errors come back as `{"error": {code, message, hint, retryable, outcome, details}}` with a closed code set.
+46 tools (34 core). Optional toolsets are enabled per session with `toolsets op=enable` or a project's `.umcp.json` `toolsets`. Every tool takes JSON arguments validated against its schema; errors come back as `{"error": {code, message, hint, retryable, outcome, details}}` with a closed code set.
 
 **Tiers** (per op; a tool's annotations follow its worst op): `readonly` · `ephemeral` (UI/session state, server-owned scratch files) · `mutating` (project/world content; nothing authored is lost) · `destructive` (can lose authored content; approval-gated when the gate policy requires) · `exec` (runs caller-supplied code/input; gated).
 
@@ -12,7 +12,7 @@
 
 | Toolset | Tools |
 |---|---|
-| core (always on) | `editor`, `python`, `console`, `level`, `actor_query`, `actor_edit`, `actor_call`, `viewport`, `asset_query`, `asset_create`, `asset_edit`, `asset_import`, `reflect`, `project_config`, `project_map`, `widget_query`, `pie`, `pie_observe`, `pie_wait`, `snapshot`, `snapshot_restore`, `screenshot`, `capture`, `audio`, `job`, `logs`, `analyze`, `git`, `playtest`, `editor_lifecycle`, `build`, `git_revert`, `toolsets` |
+| core (always on) | `editor`, `python`, `console`, `level`, `actor_query`, `actor_edit`, `actor_call`, `undo`, `viewport`, `asset_query`, `asset_create`, `asset_edit`, `asset_import`, `reflect`, `project_config`, `project_map`, `widget_query`, `pie`, `pie_observe`, `pie_wait`, `snapshot`, `snapshot_restore`, `screenshot`, `capture`, `audio`, `job`, `logs`, `analyze`, `git`, `playtest`, `editor_lifecycle`, `build`, `git_revert`, `toolsets` |
 | daemon (on in daemon mode (multi-project server)) | `project` |
 | headless (separate UnrealEditor-Cmd processes) | `headless` |
 | design (offline design analysis) | `design_audit`, `design_explore` |
@@ -30,7 +30,7 @@ _tier readonly_
 Inspect the connected Unreal Editor.
 - op=status: engine version, project, current level, is_in_pie, viewport camera, selection, actor count.
 - op=ping: cheap liveness probe.
-- op=health: ping, then check expect_version and for crashes since `since` → {healthy, problems[]}.
+- op=health: ping, then check expect_version, expect_plugin and for crashes since `since` → {healthy, plugin_api, problems[]}.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
@@ -40,6 +40,7 @@ Inspect the connected Unreal Editor.
 
 | param | type | description |
 |---|---|---|
+| `expect_plugin` | integer | health: fail if the UnrealMCP plugin API is below this |
 | `expect_version` | integer | health: fail if the companion version is below this (catches a stale module) |
 | `op` | string | one of: status, ping, health |
 | `since` | string | health: RFC3339; count crashes since (default 10 min ago) |
@@ -175,6 +176,21 @@ Call a UFUNCTION on an actor in the running game (PIE) and return its result. Wi
 | `timeout_s` | number | until: give up after this many seconds (default 20, max 27) |
 | `until` | string | poll until this predicate over {result} holds, e.g. 'result >= 3'; the function RE-RUNS each poll |
 | `world` | string | pie (default). editor is UNSUPPORTED in v2.0 — one of: pie, editor |
+
+### `undo` — Undo the server's edits
+
+_tier destructive_
+
+Step the editor's undo buffer (editor world; refused during PIE). Acts only when the next step is the server's own (title "MCP: …"): a human's edit on top is CONFLICT and nothing changes. Covers actor_edit, scene, snapshot_restore; asset_create/asset_edit/widget_edit are not undoable (undoable:false — use git_revert).
+
+| op | tier | does | required | needs |
+|---|---|---|---|---|
+| `undo` | destructive | undo the server's last editor edit |  | editor, plugin>=3 |
+| `redo` | destructive | redo the server's last undone edit |  | editor, plugin>=3 |
+
+| param | type | description |
+|---|---|---|
+| `op` | string | one of: undo, redo |
 
 ### `viewport` — Editor viewport
 

@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -204,5 +205,20 @@ func TestCallsSurviveChannelDrops(t *testing.T) {
 	}
 	if n := h.emu.VersionChecks(); n < 3 {
 		t.Fatalf("version re-verified %d times, want >= 3", n)
+	}
+}
+
+// TestHealthReportsThePluginAPI (R0.5): health reports the plugin API version the editor
+// has and flags one older than expect_plugin.
+func TestHealthReportsThePluginAPI(t *testing.T) {
+	h := startHarness(t, harnessOpts{})
+	res := structured(t, h.call(t, "editor", map[string]any{"op": "health", "expect_plugin": 3}))
+	if res["healthy"] != true || res["plugin_api"] != 3.0 {
+		t.Fatalf("health with plugin API 3 = %v", res)
+	}
+	h.world.PluginAPI = 2
+	res = structured(t, h.call(t, "editor", map[string]any{"op": "health", "expect_plugin": 3}))
+	if res["healthy"] != false || !strings.Contains(fmt.Sprint(res["problems"]), "plugin API 2 < expected 3") {
+		t.Fatalf("health with a stale plugin = %v", res)
 	}
 }

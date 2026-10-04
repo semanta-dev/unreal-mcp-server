@@ -173,3 +173,37 @@ func TestWidgetEditComposeRejectsRemoval(t *testing.T) {
 		t.Fatalf("compose+remove = %v calls=%v", e, h.emu.Calls())
 	}
 }
+
+// TestUndoOnlyStepsTheServersEdits (R0.9): undo/redo step the editor's buffer only when
+// the next step is the server's ("MCP: " title); a human's edit on top is CONFLICT and
+// nothing changes; PIE and an older plugin refuse.
+func TestUndoOnlyStepsTheServersEdits(t *testing.T) {
+	h := startHarness(t, harnessOpts{})
+	count := func() int {
+		res := structured(t, h.call(t, "actor_query", map[string]any{"op": "list", "world": "editor"}))
+		actors, _ := res["actors"].([]any)
+		return len(actors)
+	}
+	before := count()
+	h.call(t, "actor_edit", map[string]any{"op": "spawn", "world": "editor", "class": "/Script/Engine.Actor", "label": "Undoable"})
+	if res := structured(t, h.call(t, "undo", map[string]any{"op": "undo"})); res["undone"] != "MCP: spawn Undoable" || count() != before {
+		t.Fatalf("undo = %v (actors %d, want %d)", res, count(), before)
+	}
+	if res := structured(t, h.call(t, "undo", map[string]any{"op": "redo"})); res["redone"] != "MCP: spawn Undoable" || count() != before+1 {
+		t.Fatalf("redo = %v", res)
+	}
+	h.world.UserEdit("Move Actor")
+	e := errorOf(t, h.call(t, "undo", map[string]any{"op": "undo"}))
+	if d, _ := e["details"].(map[string]any); e["code"] != "CONFLICT" || d["title"] != "Move Actor" || count() != before+1 {
+		t.Fatalf("undo over a human edit = %v", e)
+	}
+	h.world.StartPIE()
+	if e := errorOf(t, h.call(t, "undo", map[string]any{"op": "undo"})); e["code"] != "PRECONDITION" {
+		t.Fatalf("undo in PIE = %v", e)
+	}
+	h.world.StopPIE()
+	h.world.PluginAPI = 2
+	if e := errorOf(t, h.call(t, "undo", map[string]any{"op": "undo"})); e["code"] != "PRECONDITION" {
+		t.Fatalf("undo with an old plugin = %v", e)
+	}
+}

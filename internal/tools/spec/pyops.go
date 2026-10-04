@@ -29,6 +29,7 @@ type Escalation struct {
 var PyOps = map[string]PyOp{
 	"actor_call":           {Tier: Exec, Note: "calls a caller-named UFUNCTION (PIE)"},
 	"actor_delete":         {Tier: Destructive},
+	"editor_undo":          {Tier: Destructive, Note: "undo/redo the next editor transaction, only if the server made it"},
 	"actor_query":          {Tier: ReadOnly},
 	"actor_set_properties": {Tier: Mutating},
 	"actor_spawn":          {Tier: Mutating},

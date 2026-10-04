@@ -51,6 +51,8 @@ jobs:
         run: bash scripts/coverage.sh
       - name: tool-selection eval tasks are solvable (offline dry run)
         run: go run ./cmd/tooleval -mode dry
+      - name: game-making eval task file is well-formed (structure and goal coverage)
+        run: go run ./cmd/tooleval -mode live-lint
 
   test-windows:
     name: test + build + integration (windows)

@@ -1,6 +1,6 @@
 # Remediation plan — from "drives the editor" to "makes and judges a game"
 
-Status: **r6 — approved** (CTO review: r1 B−, r2 A−, r3 A, r4 A, r5 A, **r6 A+**; every finding is addressed — see §11–§15). Source: the game-designer
+Status: **r6 — approved; R0.2/R0.3 spike results in [`REMEDIATION_SPIKES.md`](REMEDIATION_SPIKES.md) (plugin API numbering gained an R3 row)** (CTO review: r1 B−, r2 A−, r3 A, r4 A, r5 A, **r6 A+**; every finding is addressed — see §11–§15). Source: the game-designer
 adversarial review of v2.0.2 (overall **C−**; infrastructure B+, game-making D+).
 
 ## 1. Problem
@@ -146,19 +146,19 @@ describe) and **`data_edit`** (Mutating: `set_properties` on any asset, `table_u
 | R3.5 | `add_variable`; Blueprint **graph editing stays a non-goal** (logic in C++ via `build`) | live |
 | R3.6 | `input_mapping`: create/edit `InputAction` + `InputMappingContext` assets (per R0.2) | live: `IA_Dash` (G.4) remapped and fired via R2.1 |
 
-### R4 — UI loop (≈ 5 d; plugin API 6 for `mount`/`live_tree`; §7 rebuild gate)
+### R4 — UI loop (≈ 5 d; plugin API 7 for `mount`/`live_tree`; §7 rebuild gate)
 
 | ID | Item | Acceptance |
 |---|---|---|
 | R4.1 | `widget_edit op=bind` → `MCPHUDWidget` bindings incl. the G.5 `GameState`/`Subsystem` sources | live: wave number on the HUD |
 | R4.2 | `widget_query op=mount` (add to viewport in PIE) and `op=live_tree` (live tree with geometry/visibility) | live |
-| R4.3 | `screenshot op=pie ui=true` routed to the **existing** plugin capture with UI (`MCPCaptureSubsystem` `include_ui` → `FSlateApplication::TakeScreenshot`) | live screenshot shows the HUD |
+| R4.3 | ~~`screenshot op=pie ui=true` routed to the plugin capture~~ — **R0.2 spike row 11: `screenshot op=pie` (HighResShot during PIE) already includes UMG.** R4.3 becomes: document it in the `screenshot` description and add the HUD-visible check to the acceptance | live screenshot shows the HUD (seen in the R0.2 spike; re-checked with the R4.1 binding) |
 
-### R5 — Judge with evidence (≈ 12 d; plugin API 7; §7 rebuild gate)
+### R5 — Judge with evidence (≈ 12 d; plugin API 8; §7 rebuild gate)
 
 | ID | Item | Acceptance |
 |---|---|---|
-| R5.1 | **Event recorder in the plugin** (C++, never Python on the game thread): `UMCPEventRecorder` binds the engine hooks of the §5 matrix (world `OnActorSpawned`, per-actor `OnTakeAnyDamage`/`OnDestroyed` bound at spawn **and on every actor already in the world when recording starts** — placed nests, the core, the player; all bindings removed on disable and at PIE end), stamps world time, and writes a bounded ring buffer (drop count reported); the companion drains it per recorder tick (`DrainEvents(cursor)`) and merges game-journal events (G.1/G.2 `GetEventsSince`) into the playtest timeline; a plugin-buffer drop or a journal `gap` (G.6) becomes a **timeline gap** marker, and an audit or telemetry rubric over a range with a gap returns `insufficient_evidence`. Off unless the scenario enables it; `Needs: plugin>=7`, older plugin ⇒ engine-hook rows `unavailable` (audits then `insufficient_evidence`) | live Aesir playtest timeline has hit/kill/death/VFX/SFX events; drop count 0 on a 5-minute wave run; damage to a placed (pre-existing) actor is recorded; no bindings remain after PIE end |
+| R5.1 | **Event recorder in the plugin** (C++, never Python on the game thread): `UMCPEventRecorder` binds the engine hooks of the §5 matrix (world `OnActorSpawned`, per-actor `OnTakeAnyDamage`/`OnDestroyed` bound at spawn **and on every actor already in the world when recording starts** — placed nests, the core, the player; all bindings removed on disable and at PIE end), stamps world time, and writes a bounded ring buffer (drop count reported); the companion drains it per recorder tick (`DrainEvents(cursor)`) and merges game-journal events (G.1/G.2 `GetEventsSince`) into the playtest timeline; a plugin-buffer drop or a journal `gap` (G.6) becomes a **timeline gap** marker, and an audit or telemetry rubric over a range with a gap returns `insufficient_evidence`. Off unless the scenario enables it; `Needs: plugin>=8`, older plugin ⇒ engine-hook rows `unavailable` (audits then `insufficient_evidence`) | live Aesir playtest timeline has hit/kill/death/VFX/SFX events; drop count 0 on a 5-minute wave run; damage to a placed (pre-existing) actor is recorded; no bindings remain after PIE end |
 | R5.2 | Audits read a playtest result directly (`design_audit kind=feel source=<result>`) | live feel + decision audits on Aesir |
 | R5.3 | Telemetry rubric kinds `histogram`, `rate`, `time_between` (time-to-kill, deaths by cause, waves per minute) | eval tests + live |
 | R5.4 | Perf pass: `playtest op=run perf=true` — CsvProfiler with the recorder off, then `analyze perf`; rubric reads `perf.p95_frame_ms`; overhead of R5.1 measured here | live |
@@ -231,8 +231,9 @@ Plugin API versions — one bump per phase that changes the plugin; each op decl
 | 3 | R0.5 | `GetPluginApiVersion`, R0.2 fallbacks (`IsPureOrConst`, `PeekUndoTitle`/`PeekRedoTitle`, `UndoIfTitled`/`RedoIfTitled`) if needed |
 | 4 | G.5 | `EMCPBindSource` `GameState`/`Subsystem` |
 | 5 | R2 | axis injection, cursor/UI click, `SpawnInGame` |
-| 6 | R4 | widget mount, live tree |
-| 7 | R5 | `UMCPEventRecorder` |
+| 6 | R3 | curve keys, Blueprint describe (R0.2 spike rows 5–6) |
+| 7 | R4 | widget mount, live tree |
+| 8 | R5 | `UMCPEventRecorder` |
 
 ## 9. Sequencing and effort
 

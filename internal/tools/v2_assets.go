@@ -215,6 +215,7 @@ func assetCreateSpec() *spec.Spec {
 			if out["replaced"] == true {
 				verb = "replaced"
 			}
+			out["undoable"] = false // no editor transaction: roll back with git_revert
 			return &spec.Result{Data: out, Summary: fmt.Sprintf("%s %s %v", verb, kind, c.Args["dest"])}, nil
 		},
 	}
@@ -250,6 +251,7 @@ func assetEditSpec() *spec.Spec {
 			if err != nil {
 				return nil, err
 			}
+			out["undoable"] = false // no editor transaction: roll back with git_revert
 			return &spec.Result{Data: out, Summary: fmt.Sprintf("%s on %v", c.Op.Name, c.Args["asset"])}, nil
 		},
 	}
@@ -564,7 +566,11 @@ func widgetEditSpec() *spec.Spec {
 		Handler: func(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 			if c.Op.Name == "compile" {
 				out, err := v2Op(ctx, c, "widget_compile", map[string]any{"blueprint": c.Args["asset"]})
-				return &spec.Result{Data: out, Summary: fmt.Sprintf("compiled %v (digest %v)", c.Args["asset"], out["digest"])}, err
+				if err != nil {
+					return nil, err
+				}
+				out["undoable"] = false
+				return &spec.Result{Data: out, Summary: fmt.Sprintf("compiled %v (digest %v)", c.Args["asset"], out["digest"])}, nil
 			}
 			args := rename(map[string]any{}, c.Args, "asset", "blueprint", "tree", "tree", "mode", "mode", "defer", "defer", "remove", "remove")
 			if c.Op.Name == "prune" {
@@ -574,6 +580,7 @@ func widgetEditSpec() *spec.Spec {
 			if err != nil {
 				return nil, err
 			}
+			out["undoable"] = false // no editor transaction: roll back with git_revert
 			return &spec.Result{Data: out, Summary: fmt.Sprintf("%s %v → digest %v", c.Op.Name, c.Args["asset"], out["digest"])}, nil
 		},
 	}

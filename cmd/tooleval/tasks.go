@@ -26,6 +26,28 @@ type task struct {
 	// checks must hold (every task is proven solvable before any API spend).
 	Reference       []refCall `json:"reference"`
 	ReferenceAnswer string    `json:"reference_answer,omitempty"`
+	// Requires names v2 tools the task needs (remediation-plan cases written before
+	// their tool exists): until every one is in the catalog the task is skipped, by the
+	// dry run and by paid runs alike; from then on it must replay like any other.
+	Requires []string `json:"requires,omitempty"`
+}
+
+// activeTasks drops the tasks whose required tools are not in the catalog yet.
+func activeTasks(ts []*task, catalog map[string]bool) (active []*task, pending []string) {
+	for _, t := range ts {
+		ok := true
+		for _, n := range t.Requires {
+			if !catalog[n] {
+				ok = false
+			}
+		}
+		if ok {
+			active = append(active, t)
+		} else {
+			pending = append(pending, t.ID)
+		}
+	}
+	return active, pending
 }
 
 type refCall struct {

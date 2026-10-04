@@ -20,6 +20,30 @@ class _V2Error(Exception):
         self.details = details
 
 
+def _plugin_api():
+    """The UnrealMCP plugin API version compiled into this editor: the handshake
+    (UMCPCoreLibrary.GetPluginApiVersion, API 3+); 2 for a plugin built before the
+    handshake (its subsystems exist, the library does not); 0 without the plugin."""
+    lib = getattr(unreal, "MCPCoreLibrary", None)
+    if lib is not None and hasattr(lib, "get_plugin_api_version"):
+        return int(lib.get_plugin_api_version())
+    for cls in ("MCPControlSubsystem", "MCPCaptureSubsystem", "MCPAuthoringSubsystem", "MCPCockpitBridge"):
+        if getattr(unreal, cls, None) is not None:
+            return 2
+    return 0
+
+
+def _need_plugin(api, feature):
+    """Fail unless the editor's plugin offers API >= api (Needs plugin>=N): a stale
+    or missing plugin is PLUGIN_MISSING with the versions, never a fallback."""
+    have = _plugin_api()
+    if have < api:
+        raise _V2Error("PLUGIN_MISSING", "%s needs the UnrealMCP plugin API %d; this editor has %s — copy plugin/UnrealMCP "
+                       "into <project>/Plugins and rebuild (build strategy=ubt)" % (feature, api, have or "no plugin"),
+                       needed=api, have=have)
+    return unreal.MCPCoreLibrary
+
+
 def _v2_world(args, default):
     """Resolve args["world"] (editor | pie | auto; default per tool) to (world, name).
     Unknown values are an error, never a silent fallback. "auto" means PIE when it is
@@ -256,6 +280,34 @@ def _undoable(name, label, *actors):
         for a in actors:
             a.modify()
         yield
+
+
+_MCP_TX_PREFIX = "MCP: "  # every server edit's transaction title starts with it (_undoable, _transaction)
+
+
+def _op_editor_undo(args):
+    """Undo (or redo) the editor's next transaction — only when the server made it:
+    the undo buffer is shared with the human, so a step not titled "MCP: " is a
+    CONFLICT and nothing changes. The title check and the step are one plugin call
+    on the game thread (no edit can land between them); PIE refuses it."""
+    redo = bool(args.get("redo"))
+    lib = _need_plugin(3, "undo")
+    raw = lib.redo_if_titled(_MCP_TX_PREFIX) if redo else lib.undo_if_titled(_MCP_TX_PREFIX)
+    res = json.loads(raw)
+    verb = "redo" if redo else "undo"
+    title = res.get("title", "")
+    if res.get("ok"):
+        return {("redone" if redo else "undone"): title}
+    reason = res.get("reason")
+    if reason == "pie":
+        raise _V2Error("PRECONDITION", "%s is refused while PIE runs (it would rewind the editor world under the game): "
+                       "stop PIE first" % verb, reason="pie")
+    if reason == "empty":
+        raise _V2Error("PRECONDITION", "nothing to %s" % verb, reason="empty")
+    if reason == "title_mismatch":
+        raise _V2Error("CONFLICT", "the next %s step is not the server's (%r): it was not changed — undo it by hand, "
+                       "or roll back with snapshot_restore / git_revert" % (verb, title), title=title)
+    raise _V2Error("EDITOR_ERROR", "%s of %r failed" % (verb, title), title=title)
 
 
 def _op_actor_spawn(args):

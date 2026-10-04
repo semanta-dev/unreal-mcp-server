@@ -1787,14 +1787,16 @@
   "id": "line-trace",
   "source": "derived",
   "tags": [
-   "workflow"
+   "workflow",
+   "toolset-world"
   ],
   "prompt": "Is anything blocking a straight line from (0, 0, 100) to (5000, 0, 100) in the level?",
   "first_v1": [
    "world_query"
   ],
   "first_v2": [
-   "world_query"
+   "world_query",
+   "toolsets"
   ],
   "success": [
    {
@@ -1804,6 +1806,13 @@
    }
   ],
   "reference": [
+   {
+    "tool": "toolsets",
+    "args": {
+     "op": "enable",
+     "toolset": "world"
+    }
+   },
    {
     "tool": "world_query",
     "args": {
@@ -1827,14 +1836,16 @@
   "id": "nav-path",
   "source": "derived",
   "tags": [
-   "workflow"
+   "workflow",
+   "toolset-world"
   ],
   "prompt": "Can an AI character walk from (0, 0, 0) to (3000, 0, 0) on the navmesh?",
   "first_v1": [
    "world_query"
   ],
   "first_v2": [
-   "world_query"
+   "world_query",
+   "toolsets"
   ],
   "success": [
    {
@@ -1844,6 +1855,13 @@
    }
   ],
   "reference": [
+   {
+    "tool": "toolsets",
+    "args": {
+     "op": "enable",
+     "toolset": "world"
+    }
+   },
    {
     "tool": "world_query",
     "args": {
@@ -3067,6 +3085,568 @@
      "actor": "/Game/Maps/L_Test.L_Test:PersistentLevel.Lamp_2"
     }
    }
+  ]
+ },
+ {
+  "id": "undo-spawn",
+  "source": "remediation",
+  "tags": [
+   "undo",
+   "multi-step"
+  ],
+  "prompt": "Place a PointLight in the editor level at [0, 0, 300], then undo that placement so the level is as it was.",
+  "setup": {},
+  "first_v1": [
+   "spawn_actor"
+  ],
+  "first_v2": [
+   "actor_edit"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "undo",
+    "op": "undo"
+   },
+   {
+    "kind": "actor_absent",
+    "label": "PointLight"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "actor_edit",
+    "args": {
+     "op": "spawn",
+     "world": "editor",
+     "class": "/Script/Engine.PointLight",
+     "location": [
+      0,
+      0,
+      300
+     ],
+     "label": "PointLight"
+    }
+   },
+   {
+    "tool": "undo",
+    "args": {
+     "op": "undo"
+    }
+   }
+  ],
+  "requires": [
+   "undo"
+  ]
+ },
+ {
+  "id": "undo-redo",
+  "source": "remediation",
+  "tags": [
+   "undo",
+   "multi-step"
+  ],
+  "prompt": "Spawn a TargetPoint labeled Marker in the editor level, undo it, then redo it so the marker is back.",
+  "setup": {},
+  "first_v1": [
+   "spawn_actor"
+  ],
+  "first_v2": [
+   "actor_edit"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "undo",
+    "op": "redo"
+   },
+   {
+    "kind": "actor_exists",
+    "label": "Marker"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "actor_edit",
+    "args": {
+     "op": "spawn",
+     "world": "editor",
+     "class": "/Script/Engine.TargetPoint",
+     "label": "Marker"
+    }
+   },
+   {
+    "tool": "undo",
+    "args": {
+     "op": "undo"
+    }
+   },
+   {
+    "tool": "undo",
+    "args": {
+     "op": "redo"
+    }
+   }
+  ],
+  "requires": [
+   "undo"
+  ]
+ },
+ {
+  "id": "world-line-of-sight",
+  "source": "remediation",
+  "tags": [
+   "toolset-world",
+   "multi-step"
+  ],
+  "prompt": "In the running game, is there a clear line of sight from [0, 0, 100] to [1000, 0, 100]? Start Play In Editor first if needed.",
+  "setup": {},
+  "first_v1": [
+   "start_play",
+   "world_query"
+  ],
+  "first_v2": [
+   "pie",
+   "toolsets",
+   "world_query"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "world_query",
+    "op": "line_trace"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "pie",
+    "args": {
+     "op": "start"
+    }
+   },
+   {
+    "tool": "toolsets",
+    "args": {
+     "op": "enable",
+     "toolset": "world"
+    }
+   },
+   {
+    "tool": "world_query",
+    "args": {
+     "op": "line_trace",
+     "start": [
+      0,
+      0,
+      100
+     ],
+     "end": [
+      1000,
+      0,
+      100
+     ]
+    }
+   }
+  ],
+  "requires": [
+   "world_query"
+  ]
+ },
+ {
+  "id": "world-scene-preview",
+  "source": "remediation",
+  "tags": [
+   "toolset-world"
+  ],
+  "prompt": "Preview where a 4-object grid layout with 200-unit spacing would place things, without spawning anything.",
+  "setup": {},
+  "first_v1": [
+   "scene_apply"
+  ],
+  "first_v2": [
+   "toolsets",
+   "scene"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "scene",
+    "op": "preview"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "toolsets",
+    "args": {
+     "op": "enable",
+     "toolset": "world"
+    }
+   },
+   {
+    "tool": "scene",
+    "args": {
+     "op": "preview",
+     "layout": {
+      "type": "grid",
+      "count": 4,
+      "spacing": 200
+     }
+    }
+   }
+  ],
+  "requires": [
+   "scene"
+  ]
+ },
+ {
+  "id": "explicit-ufunction",
+  "source": "remediation",
+  "tags": [
+   "game-vs-actor-call"
+  ],
+  "prompt": "Start Play In Editor, then call the UFUNCTION GetWave on the actor ArenaGameState in the running game and tell me what it returns.",
+  "setup": {
+   "actors": [
+    {
+     "label": "ArenaGameState",
+     "class": "ArenaGameState",
+     "location": [
+      0,
+      0,
+      0
+     ],
+     "properties": {
+      "wave_number": 2,
+      "GetWave": 2
+     }
+    }
+   ]
+  },
+  "first_v1": [
+   "start_play",
+   "pie_exec"
+  ],
+  "first_v2": [
+   "pie",
+   "actor_call"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "actor_call"
+   },
+   {
+    "kind": "answer",
+    "text": "2"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "pie",
+    "args": {
+     "op": "start"
+    }
+   },
+   {
+    "tool": "actor_call",
+    "args": {
+     "actor": "ArenaGameState",
+     "function": "GetWave"
+    }
+   }
+  ],
+  "requires": [
+   "actor_call"
+  ],
+  "reference_answer": "GetWave returns 2."
+ },
+ {
+  "id": "game-wave-snapshot",
+  "source": "remediation",
+  "tags": [
+   "game-api"
+  ],
+  "prompt": "Using the game's own agent interface (not Python), what wave is the running game on?",
+  "setup": {
+   "pie": true
+  },
+  "first_v1": [
+   "execute_python"
+  ],
+  "first_v2": [
+   "game",
+   "toolsets"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "game",
+    "op": "snapshot"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "game",
+    "args": {
+     "op": "snapshot"
+    }
+   }
+  ],
+  "requires": [
+   "game"
+  ]
+ },
+ {
+  "id": "game-start-wave",
+  "source": "remediation",
+  "tags": [
+   "game-api"
+  ],
+  "prompt": "Tell the running game to start its next wave now, through the game's own command interface.",
+  "setup": {
+   "pie": true
+  },
+  "first_v1": [
+   "execute_python",
+   "pie_exec"
+  ],
+  "first_v2": [
+   "game",
+   "game_command",
+   "toolsets"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "game_command"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "game",
+    "args": {
+     "op": "capabilities"
+    }
+   },
+   {
+    "tool": "game_command",
+    "args": {
+     "name": "start_wave",
+     "request_id": "eval-1"
+    }
+   }
+  ],
+  "requires": [
+   "game_command"
+  ]
+ },
+ {
+  "id": "game-recent-events",
+  "source": "remediation",
+  "tags": [
+   "game-api"
+  ],
+  "prompt": "List the gameplay events the running game has recorded so far (kills, hits, deaths).",
+  "setup": {
+   "pie": true
+  },
+  "first_v1": [
+   "execute_python"
+  ],
+  "first_v2": [
+   "game",
+   "toolsets"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "game",
+    "op": "events"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "game",
+    "args": {
+     "op": "events"
+    }
+   }
+  ],
+  "requires": [
+   "game"
+  ]
+ },
+ {
+  "id": "table-read-row",
+  "source": "remediation",
+  "tags": [
+   "data"
+  ],
+  "prompt": "What is the EnemyCount of row Wave_03 in the DataTable /Game/Data/DT_Waves?",
+  "setup": {
+   "assets": [
+    "/Game/Data/DT_Waves"
+   ]
+  },
+  "first_v1": [
+   "execute_python"
+  ],
+  "first_v2": [
+   "data_query",
+   "toolsets"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "data_query",
+    "op": "table"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "data_query",
+    "args": {
+     "op": "table",
+     "path": "/Game/Data/DT_Waves"
+    }
+   }
+  ],
+  "requires": [
+   "data_query"
+  ]
+ },
+ {
+  "id": "table-upsert-row",
+  "source": "remediation",
+  "tags": [
+   "data"
+  ],
+  "prompt": "In the DataTable /Game/Data/DT_Waves, set row Wave_03's EnemyCount to 12, leaving every other row alone.",
+  "setup": {
+   "assets": [
+    "/Game/Data/DT_Waves"
+   ]
+  },
+  "first_v1": [
+   "datatable_import",
+   "execute_python"
+  ],
+  "first_v2": [
+   "data_edit",
+   "data_query",
+   "toolsets"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "data_edit",
+    "op": "table_upsert"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "data_edit",
+    "args": {
+     "op": "table_upsert",
+     "path": "/Game/Data/DT_Waves",
+     "rows": {
+      "Wave_03": {
+       "EnemyCount": 12
+      }
+     }
+    }
+   }
+  ],
+  "requires": [
+   "data_edit"
+  ]
+ },
+ {
+  "id": "dataasset-set",
+  "source": "remediation",
+  "tags": [
+   "data"
+  ],
+  "prompt": "Set PlayerDamageMultiplier to 1.5 on the data asset /Game/Data/DA_AesirTuning.",
+  "setup": {
+   "assets": [
+    "/Game/Data/DA_AesirTuning"
+   ]
+  },
+  "first_v1": [
+   "execute_python",
+   "blueprint_set_defaults"
+  ],
+  "first_v2": [
+   "data_edit",
+   "toolsets"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "data_edit",
+    "op": "set_properties"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "data_edit",
+    "args": {
+     "op": "set_properties",
+     "path": "/Game/Data/DA_AesirTuning",
+     "properties": {
+      "PlayerDamageMultiplier": 1.5
+     }
+    }
+   }
+  ],
+  "requires": [
+   "data_edit"
+  ]
+ },
+ {
+  "id": "curve-add-key",
+  "source": "remediation",
+  "tags": [
+   "data"
+  ],
+  "prompt": "Add a key at time 2000 with value 0.5 to the float curve /Game/Data/C_DamageFalloff.",
+  "setup": {
+   "assets": [
+    "/Game/Data/C_DamageFalloff"
+   ]
+  },
+  "first_v1": [
+   "execute_python"
+  ],
+  "first_v2": [
+   "data_edit",
+   "toolsets"
+  ],
+  "success": [
+   {
+    "kind": "called",
+    "tool": "data_edit",
+    "op": "curve_keys"
+   }
+  ],
+  "reference": [
+   {
+    "tool": "data_edit",
+    "args": {
+     "op": "curve_keys",
+     "path": "/Game/Data/C_DamageFalloff",
+     "keys": [
+      [
+       2000,
+       0.5
+      ]
+     ]
+    }
+   }
+  ],
+  "requires": [
+   "data_edit"
   ]
  }
 ]

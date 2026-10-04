@@ -4,6 +4,7 @@ _OPS = {
     "actor_query": _op_actor_query,
     "actor_spawn": _op_actor_spawn,
     "actor_delete": _op_actor_delete,
+    "editor_undo": _op_editor_undo,
     "actor_transform": _op_actor_transform,
     "actor_set_properties": _op_actor_set_properties,
     "actor_call": _op_actor_call,
