@@ -252,7 +252,7 @@ def _op_pie_aim_state(args):
     pc = unreal.GameplayStatics.get_player_controller(world, 0)
     pawn = unreal.GameplayStatics.get_player_pawn(world, 0)
     if not pc or not pawn:
-        raise _V2Error("NOT_FOUND", "no player controller with a pawn in the running game")
+        raise _V2Error("NOT_FOUND", "no player pawn in the running game (the player is dead or not spawned?)")
     cam = pc.get_editor_property("player_camera_manager")
     eye = cam.get_camera_location() if cam else pawn.get_actor_location()
     if args.get("actor"):
@@ -279,7 +279,7 @@ def _op_pie_aim_state(args):
     rot = pc.get_control_rotation()
     return {"target": target.get_actor_label(), "path": target.get_path_name(),
             "distance": round(math.sqrt(flat * flat + dz * dz), 1),
-            "yaw": rot.yaw, "pitch": _wrap180(rot.pitch),
+            "yaw": rot.yaw, "pitch": _wrap180(rot.pitch), "look_ignored": bool(pc.is_look_input_ignored()),
             "yaw_error": round(_wrap180(want_yaw - rot.yaw), 3), "pitch_error": round(_wrap180(want_pitch - _wrap180(rot.pitch)), 3)}
 
 

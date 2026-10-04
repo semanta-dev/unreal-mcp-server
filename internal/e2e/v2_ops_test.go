@@ -464,3 +464,26 @@ func TestPlaytestAimBeat(t *testing.T) {
 		t.Fatalf("aim beat: %d axis inputs, view yaw %.2f (want %.2f)", axes, h.world.ViewYaw, yaw)
 	}
 }
+
+// The player dies between aims: the view stops turning with a known gain. aim stops
+// with a PRECONDITION instead of learning a near-zero gain and escalating the input
+// (live: 5000-unit ticks at a dead player's view).
+func TestPieAimStopsWhenTheViewStopsResponding(t *testing.T) {
+	h := startHarness(t, harnessOpts{project: t.TempDir()})
+	h.world.PluginAPI = 5
+	h.world.AddActor("Enemy_1", "/Script/Game.EnemyCharacter", [3]float64{1000, 600, 300}, nil)
+	h.world.AddActor("Enemy_2", "/Script/Game.EnemyCharacter", [3]float64{-3000, -100, 0}, nil)
+	h.world.StartPIE()
+	if out := structured(t, h.call(t, "pie", map[string]any{"op": "aim", "actor": "Enemy_1"})); out["aimed"] != true {
+		t.Fatalf("calibrating aim = %v", out)
+	}
+	h.world.LookIgnored = true
+	n := len(h.world.RecordedInputs())
+	e := errorOf(t, h.call(t, "pie", map[string]any{"op": "aim", "actor": "Enemy_2"}))
+	if e["code"] != "PRECONDITION" || !strings.Contains(fmt.Sprint(e["message"]), "look_ignored: true") {
+		t.Fatalf("aim at a view that stopped turning = %v", e)
+	}
+	if sent := len(h.world.RecordedInputs()) - n; sent > 2 {
+		t.Fatalf("aim kept sending input (%d) to a view that does not turn", sent)
+	}
+}

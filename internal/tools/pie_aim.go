@@ -96,6 +96,7 @@ func aimOnce(ctx context.Context, c *spec.Call, target map[string]any) (map[stri
 	}
 	gain, ticks := cal.gain, cal.ticks
 	var stuck [2]bool
+	var trace []map[string]any // per step: axis units sent, degrees turned, error before
 	st, err := v2Op(ctx, c, "pie_aim_state", target)
 	if err != nil {
 		return nil, err
@@ -141,6 +142,11 @@ func aimOnce(ctx context.Context, c *spec.Call, target map[string]any) (map[stri
 		if err != nil {
 			return nil, err
 		}
+		var turnedAll [2]float64
+		for i, ax := range aimAxes {
+			turnedAll[i] = wrap180(aimNum(next[ax.angKey]) - aimNum(st[ax.angKey]))
+		}
+		trace = append(trace, map[string]any{"sent": sent, "turned": turnedAll, "error": errs})
 		for i, ax := range aimAxes {
 			if sent[i] == 0 {
 				continue
@@ -149,12 +155,15 @@ func aimOnce(ctx context.Context, c *spec.Call, target map[string]any) (map[stri
 			if math.Abs(turned) >= 179 {
 				continue // ambiguous once wrapped: learn nothing from it
 			}
-			if math.Abs(turned) < 0.01 {
-				// No turn: the axis is unbound, look input is ignored, or pitch is at its limit.
+			g := turned / sent[i]
+			// No turn, or far less than (or against) a known gain predicts: the axis is
+			// unbound, look input is ignored (the player died, a cursor mode), or pitch is
+			// at its limit. Learning a gain from that would blow up the next step.
+			if math.Abs(turned) < 0.01 || gain[i] != 0 && g/gain[i] < 0.25 {
 				stuck[i] = true
 				continue
 			}
-			if g := turned / sent[i]; gain[i] == 0 {
+			if gain[i] == 0 {
 				gain[i] = g
 			} else {
 				gain[i] = (gain[i] + g) / 2
@@ -163,9 +172,9 @@ func aimOnce(ctx context.Context, c *spec.Call, target map[string]any) (map[stri
 		st = next
 	}
 	if stuck[0] && stuck[1] || stuck[0] && gain[0] == 0 {
-		return nil, envelope.New(envelope.Precondition, "MouseX/MouseY input did not turn the view").
-			WithHint("is look input bound to the mouse axes and not ignored (a cursor/tactical mode)? pie op=input action=axis key=MouseX shows what one axis does").
-			WithDetail("state", st)
+		return nil, envelope.New(envelope.Precondition, "MouseX/MouseY input stopped turning the view (look_ignored: %v)", st["look_ignored"]).
+			WithHint("is the player alive (game op=snapshot), look input bound to the mouse axes and not ignored (a cursor/tactical mode)? pie op=input action=axis key=MouseX shows what one axis does").
+			WithDetail("state", st).WithDetail("trace", trace)
 	}
 	aimGains.Lock()
 	aimGains.m[c.Deps.ProjectDir] = aimCal{gain, ticks}
@@ -173,7 +182,7 @@ func aimOnce(ctx context.Context, c *spec.Call, target map[string]any) (map[stri
 	errs := [2]float64{aimNum(st[aimAxes[0].errKey]), aimNum(st[aimAxes[1].errKey])}
 	aimed := math.Abs(errs[0]) <= aimTolDeg && math.Abs(errs[1]) <= aimTolDeg
 	out := map[string]any{"target": st["target"], "path": st["path"], "distance": st["distance"], "aimed": aimed,
-		"yaw_error": errs[0], "pitch_error": errs[1], "steps": step, "gain": map[string]any{"MouseX": gain[0], "MouseY": gain[1]}}
+		"yaw_error": errs[0], "pitch_error": errs[1], "steps": step, "gain": map[string]any{"MouseX": gain[0], "MouseY": gain[1]}, "trace": trace}
 	if stuck[1] && !aimed {
 		out["note"] = "pitch stopped turning (at its limit?): the target may be out of the view's pitch range"
 	}

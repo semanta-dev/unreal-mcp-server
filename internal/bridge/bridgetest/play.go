@@ -240,5 +240,5 @@ func (w *World) aimState(args map[string]any) (any, *OpError) {
 	pitch := math.Atan2(t.Location[2], math.Hypot(t.Location[0], t.Location[1])) * 180 / math.Pi
 	wrap := func(d float64) float64 { return math.Mod(math.Mod(d+180, 360)+360, 360) - 180 }
 	return map[string]any{"target": t.Label, "path": t.Path, "distance": best, "yaw": w.ViewYaw, "pitch": w.ViewPitch,
-		"yaw_error": wrap(yaw - w.ViewYaw), "pitch_error": wrap(pitch - w.ViewPitch)}, nil
+		"yaw_error": wrap(yaw - w.ViewYaw), "pitch_error": wrap(pitch - w.ViewPitch), "look_ignored": w.LookIgnored}, nil
 }
