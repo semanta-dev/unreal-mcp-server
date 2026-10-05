@@ -43,12 +43,12 @@ func TestEnvelopePythonException(t *testing.T) {
 }
 
 func TestEnvelopeTimeoutIsUnknownOutcomeForMutatingCall(t *testing.T) {
-	h := startHarness(t, harnessOpts{cfg: func(c *uexec.Config) { c.CommandTimeout = 400 * time.Millisecond }})
-	if res := h.call(t, "editor", map[string]any{"op": "status"}); res.IsError { // install the companion first
+	h := startHarness(t, harnessOpts{cfg: func(c *uexec.Config) { c.CommandTimeout = 2 * time.Second }}) // the companion install on the first call fits (slow under -race)
+	if res := h.call(t, "editor", map[string]any{"op": "status"}); res.IsError {                         // install the companion first
 		t.Fatal(text(res))
 	}
 	h.emu.Handle("actor_spawn", func(map[string]any) (any, *bridgetest.OpError) {
-		time.Sleep(1200 * time.Millisecond) // the editor is still working when the client gives up
+		time.Sleep(5 * time.Second) // the editor is still working when the client gives up
 		return map[string]any{"label": "late"}, nil
 	})
 	e := errorOf(t, h.call(t, "actor_edit", map[string]any{"op": "spawn", "world": "editor", "class": "/Script/Engine.Actor"}))

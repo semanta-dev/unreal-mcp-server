@@ -358,7 +358,7 @@ func TestPlaytestWorldClockAcrossTravel(t *testing.T) {
 		return map[string]any{"gamestate": map[string]any{"wave": float64(2)}}
 	}}
 	rec.Install(h.emu)
-	time.AfterFunc(500*time.Millisecond, func() { h.world.TravelTo("/Game/Maps/UEDPIE_0_L_City.L_City") })
+	h.world.AfterPIEStarts(500*time.Millisecond, func() { h.world.TravelTo("/Game/Maps/UEDPIE_0_L_City.L_City") })
 	scenario := `{"schema":"scenario/v1","name":"travel","mode":"pie","duration_s":1.5,"interval_s":0.1,
 	 "beats":[{"at_world_s":1.2,"input":{"key":"W"}}],
 	 "rubric":[{"id":"waves","kind":"reached","path":"gamestate.wave","params":{"value":2}}]}`
@@ -378,7 +378,7 @@ func TestPlaytestWorldClockRestart(t *testing.T) {
 		return map[string]any{"gamestate": map[string]any{"wave": float64(2)}}
 	}}
 	rec.Install(h.emu)
-	time.AfterFunc(600*time.Millisecond, h.world.RestartClock)
+	h.world.AfterPIEStarts(600*time.Millisecond, h.world.RestartClock)
 	scenario := `{"schema":"scenario/v1","name":"restart","mode":"pie","duration_s":1.5,"interval_s":0.1,
 	 "beats":[{"at_world_s":1.2,"input":{"key":"W"}}],
 	 "rubric":[{"id":"waves","kind":"reached","path":"gamestate.wave","params":{"value":2}}]}`

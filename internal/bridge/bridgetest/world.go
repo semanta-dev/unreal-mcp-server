@@ -480,3 +480,21 @@ func (w *World) SpawnInPIE(label, class string, loc [3]float64) {
 		w.pie[a.Path] = a
 	}
 }
+
+// AfterPIEStarts runs f d after PIE next starts (a test's mid-run event timed from the
+// game's start, not from the test's: setup may take longer than d, e.g. under -race).
+func (w *World) AfterPIEStarts(d time.Duration, f func()) {
+	go func() {
+		for {
+			w.mu.Lock()
+			running := w.pie != nil
+			w.mu.Unlock()
+			if running {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		time.Sleep(d)
+		f()
+	}()
+}
