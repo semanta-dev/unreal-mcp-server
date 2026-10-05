@@ -1,0 +1,391 @@
+{
+  "prelude": "import json, os\nimport unreal\n\ndef _gw():\n    return unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_game_world()\n\ndef _sub(cls_name):\n    w = _gw()\n    c = getattr(unreal, cls_name, None)\n    if not (w and c):\n        return None\n    return unreal.MCPCoreLibrary.find_game_subsystem(w, c.static_class())\n\ndef _gs():\n    w = _gw()\n    return unreal.GameplayStatics.get_game_state(w) if w else None\n\ndef _count(cls_name):\n    w = _gw()\n    c = getattr(unreal, cls_name, None)\n    if not (w and c):\n        return 0\n    return len(unreal.GameplayStatics.get_all_actors_of_class(w, c))\n\ndef _rows(path):\n    dt = unreal.load_asset(path)\n    if not dt:\n        return {}\n    return {r.get('Name'): r for r in json.loads(unreal.DataTableFunctionLibrary.export_data_table_to_json_string(dt))}\n\ndef _base_path():\n    return os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir()), 'gameeval_baseline.json')\n\ndef _save_base(d):\n    with open(_base_path(), 'w') as f:\n        json.dump(d, f)\n\ndef _base():\n    try:\n        with open(_base_path()) as f:\n            return json.load(f)\n    except Exception:\n        return {}\n\ndef _pw_snapshot():\n    s = _sub('PolyWorldAgentSubsystem')\n    if not s:\n        return {}\n    f = getattr(s, 'peek_snapshot_json', None) or s.get_snapshot_json\n    return json.loads(f())\n\ndef _aesir_snapshot():\n    s = _sub('AesirAgentSubsystem')\n    return json.loads(s.get_snapshot_json()) if s else {}\n\ndef _events(cls_name):\n    s = _sub(cls_name)\n    return json.loads(s.get_events_since('')).get('events', []) if s else []\n\ndef RESULT(d):\n    print('RESULT ' + json.dumps(d, default=str))\n\nimport glob, statistics\n\ndef _mcp_saved(*parts):\n    return os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir()), 'MCP', *parts)\n\ndef _newest(pattern):\n    files = glob.glob(pattern)\n    return max(files, key=os.path.getmtime) if files else None\n\ndef _latest_playtest():\n    # R5 contract: playtest op=run writes <capture session>/playtest.json with its events\n    p = _newest(_mcp_saved('capture', '*', 'playtest.json'))\n    return json.load(open(p)) if p else {}\n\ndef _latest_batch():\n    # R5 contract: playtest op=batch writes Saved/MCP/playtest/batch-<id>.json\n    p = _newest(_mcp_saved('playtest', 'batch-*.json'))\n    return json.load(open(p)) if p else {}\n\ndef _aesir_snapshot():\n    s = _sub('AesirAgentSubsystem')\n    if not s:\n        return {}\n    f = getattr(s, 'peek_snapshot_json', None) or getattr(s, 'get_snapshot_json')\n    return json.loads(f())\n\ndef _tuning():\n    a = unreal.load_asset('/Game/Data/DA_AesirTuning')\n    if not a:\n        return {}\n    return {'pdm': a.get_editor_property('player_damage_multiplier'), 'ehm': a.get_editor_property('enemy_health_multiplier')}\n\ndef _close(a, b, eps=0.001):\n    try:\n        return abs(float(a) - float(b)) <= eps\n    except Exception:\n        return False\n",
+  "tasks": [
+    {
+      "id": "ho_pw_cheapest_research",
+      "goal": "G2",
+      "project": "polyworld",
+      "prompt": "In PolyWorld (playing in the editor), queue exactly one research program: the cheapest one that is available right now and not already completed or queued. Use the game's own interface (no Python), check that it is queued, and tell me its research-point cost as ANSWER: cost_rp=<n>.",
+      "requires": [
+        "G",
+        "R1"
+      ],
+      "no_python": true,
+      "multi_step": true,
+      "held_out": true,
+      "setup": [
+        {
+          "tool": "pie",
+          "args": {
+            "op": "start",
+            "wait": true
+          }
+        },
+        {
+          "tool": "python",
+          "args": {
+            "op": "run",
+            "code": "rs = _pw_snapshot().get('research', [])\nop = [r for r in rs if r.get('available') and not r.get('completed') and not r.get('queued')]\nm = min([r.get('cost_rp', 0) for r in op]) if op else None\n_save_base({'open': [r.get('id') for r in rs if not r.get('completed') and not r.get('queued')], 'cheapest': [r.get('id') for r in op if r.get('cost_rp') == m], 'min_cost': m})\nRESULT({'ok': True})"
+          }
+        }
+      ],
+      "checks": [
+        {
+          "name": "research",
+          "probe": "b = _base()\nnow = {r.get('id'): r for r in _pw_snapshot().get('research', [])}\nnew = [i for i in b.get('open', []) if now.get(i, {}).get('queued') or now.get(i, {}).get('completed')]\nRESULT({'new': len(new), 'cheapest': bool(new) and all(i in b.get('cheapest', []) for i in new), 'cost': b.get('min_cost')})",
+          "expect": [
+            {
+              "path": "new",
+              "op": "eq",
+              "value": 1
+            },
+            {
+              "path": "cheapest",
+              "op": "eq",
+              "value": true
+            },
+            {
+              "path": "cost",
+              "op": "exists"
+            }
+          ]
+        },
+        {
+          "name": "commanded",
+          "called": {
+            "tool": "game_command"
+          }
+        },
+        {
+          "name": "answer_cost",
+          "answer": {
+            "from": "research.cost",
+            "key": "cost_rp",
+            "tolerance": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "ho_aesir_dash_skirmish",
+      "goal": "G3",
+      "project": "aesir",
+      "prompt": "Hand-test the dash in Aesir the way a player would: play in the editor, start a wave, dash at least twice (keyboard), and kill at least three enemies by aiming with the mouse and firing. Player input only: no Python, no cheats, no difficulty or data changes. Tell me how many enemies you killed as ANSWER: kills=<n>.",
+      "requires": [
+        "G",
+        "R1",
+        "R2"
+      ],
+      "no_python": true,
+      "multi_step": true,
+      "held_out": true,
+      "setup": [
+        {
+          "tool": "python",
+          "args": {
+            "op": "run",
+            "code": "t = _tuning()\n_save_base({'tuning': t, 'wave1': _rows('/Game/Data/DT_Waves').get('Wave_01', {})})\nRESULT({'ok': True})"
+          }
+        }
+      ],
+      "checks": [
+        {
+          "name": "play",
+          "probe": "ev = _events('AesirAgentSubsystem')\nRESULT({'kills': len([e for e in ev if e.get('kind') == 'kill' and e.get('by_player')]), 'dashes': len([e for e in ev if e.get('kind') == 'dash']), 'hits': len([e for e in ev if e.get('kind') == 'hit' and e.get('by_player')])})",
+          "expect": [
+            {
+              "path": "kills",
+              "op": "gte",
+              "value": 3
+            },
+            {
+              "path": "dashes",
+              "op": "gte",
+              "value": 2
+            },
+            {
+              "path": "hits",
+              "op": "gte",
+              "value": 3
+            }
+          ]
+        },
+        {
+          "name": "fair",
+          "probe": "b = _base()\nt = _tuning()\nRESULT({'difficulty': _aesir_snapshot().get('difficulty'), 'tuning_same': _close(t.get('pdm'), b.get('tuning', {}).get('pdm')) and _close(t.get('ehm'), b.get('tuning', {}).get('ehm')), 'wave1_same': _rows('/Game/Data/DT_Waves').get('Wave_01', {}) == b.get('wave1')})",
+          "expect": [
+            {
+              "path": "difficulty",
+              "op": "eq",
+              "value": "normal"
+            },
+            {
+              "path": "tuning_same",
+              "op": "eq",
+              "value": true
+            },
+            {
+              "path": "wave1_same",
+              "op": "eq",
+              "value": true
+            }
+          ]
+        },
+        {
+          "name": "inputs",
+          "called": {
+            "tool": "pie",
+            "op": "input",
+            "min": 6
+          }
+        },
+        {
+          "name": "answer_kills",
+          "answer": {
+            "from": "play.kills",
+            "key": "kills",
+            "tolerance": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "ho_aesir_endgame_waves",
+      "goal": "G4",
+      "project": "aesir",
+      "prompt": "Extend Aesir's endgame in its data, not its code. In the wave table add two boss waves after the last one, Wave_11 and Wave_12: EnemyCount is Wave_10's plus 5 and plus 10 respectively, SpawnInterval is half of Wave_10's, BruteChance is 0.6, and SprinterChance stays as in Wave_10. Leave the existing rows exactly as they are. Also raise the tuning asset's enemy health multiplier by 0.25 (added, not multiplied) without touching the player's damage. Then run a short playtest to confirm a wave still starts.",
+      "requires": [
+        "G",
+        "R3",
+        "R5"
+      ],
+      "multi_step": true,
+      "held_out": true,
+      "setup": [
+        {
+          "tool": "python",
+          "args": {
+            "op": "run",
+            "code": "_save_base({'rows': _rows('/Game/Data/DT_Waves'), 'tuning': _tuning()})\nRESULT({'ok': True})"
+          }
+        }
+      ],
+      "checks": [
+        {
+          "name": "boss_rows",
+          "probe": "b = _base().get('rows', {})\nw10 = b.get('Wave_10', {})\nrows = _rows('/Game/Data/DT_Waves')\ndef ok(name, add):\n    r = rows.get(name)\n    return bool(r) and bool(w10) and r.get('EnemyCount') == w10.get('EnemyCount', -999) + add and _close(r.get('SpawnInterval'), (w10.get('SpawnInterval') or 0) / 2.0) and _close(r.get('BruteChance'), 0.6) and _close(r.get('SprinterChance'), w10.get('SprinterChance'))\nRESULT({'w11': ok('Wave_11', 5), 'w12': ok('Wave_12', 10)})",
+          "expect": [
+            {
+              "path": "w11",
+              "op": "eq",
+              "value": true
+            },
+            {
+              "path": "w12",
+              "op": "eq",
+              "value": true
+            }
+          ]
+        },
+        {
+          "name": "old_rows",
+          "probe": "b = _base().get('rows', {})\nrows = _rows('/Game/Data/DT_Waves')\nRESULT({'same': bool(b) and all(rows.get(k) == v for k, v in b.items()), 'count': len(rows) - len(b)})",
+          "expect": [
+            {
+              "path": "same",
+              "op": "eq",
+              "value": true
+            },
+            {
+              "path": "count",
+              "op": "eq",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "name": "tuning",
+          "probe": "b = _base().get('tuning', {})\nt = _tuning()\nRESULT({'ehm_delta': round((t.get('ehm') or 0) - (b.get('ehm') or 0), 3), 'pdm_same': _close(t.get('pdm'), b.get('pdm'))})",
+          "expect": [
+            {
+              "path": "ehm_delta",
+              "op": "eq",
+              "value": 0.25
+            },
+            {
+              "path": "pdm_same",
+              "op": "eq",
+              "value": true
+            }
+          ]
+        },
+        {
+          "name": "smoke",
+          "probe": "ev = _latest_playtest().get('events', [])\nRESULT({'wave_starts': len([e for e in ev if e.get('kind') == 'wave_start'])})",
+          "expect": [
+            {
+              "path": "wave_starts",
+              "op": "gte",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "name": "edited",
+          "called": {
+            "tool": "data_edit",
+            "min": 2
+          }
+        },
+        {
+          "name": "played",
+          "called": {
+            "tool": "playtest",
+            "op": "run",
+            "after": "data_edit"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ho_aesir_hud_score",
+      "goal": "G5",
+      "project": "aesir",
+      "prompt": "Put a score counter on Aesir's in-game HUD, bound to the player's actual score (not fixed text). Mount it while playing in the editor, then kill at least one enemy so the score is no longer zero, and confirm with a screenshot that the counter shows the new score.",
+      "requires": [
+        "G",
+        "R2",
+        "R4"
+      ],
+      "multi_step": true,
+      "held_out": true,
+      "checks": [
+        {
+          "name": "bound",
+          "probe": "ar = unreal.AssetRegistryHelpers.get_asset_registry()\nfound = []\nfor a in ar.get_assets(unreal.ARFilter(class_paths=[unreal.TopLevelAssetPath('/Script/UMGEditor', 'WidgetBlueprint')], package_paths=['/Game'], recursive_paths=True)):\n    gc = unreal.load_object(None, str(a.package_name) + '.' + str(a.asset_name) + '_C')\n    cdo = unreal.get_default_object(gc) if gc else None\n    try:\n        b = cdo.get_editor_property('bindings') if cdo else []\n    except Exception:\n        b = []\n    if any('score' in str(x).lower() for x in b):\n        found.append(str(a.package_name))\nRESULT({'widgets': found})",
+          "expect": [
+            {
+              "path": "widgets.0",
+              "op": "exists"
+            }
+          ]
+        },
+        {
+          "name": "state",
+          "probe": "s = _aesir_snapshot()\nev = _events('AesirAgentSubsystem')\nRESULT({'score': s.get('score'), 'kills': len([e for e in ev if e.get('kind') == 'kill' and e.get('by_player')])})",
+          "expect": [
+            {
+              "path": "score",
+              "op": "gt",
+              "value": 0
+            },
+            {
+              "path": "kills",
+              "op": "gte",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "name": "hud",
+          "call": {
+            "tool": "widget_query",
+            "args": {
+              "op": "live_tree"
+            }
+          },
+          "expect": [
+            {
+              "path": "text",
+              "op": "word",
+              "value_from": "state.score"
+            }
+          ]
+        },
+        {
+          "name": "bound_by_tool",
+          "called": {
+            "tool": "widget_edit",
+            "op": "bind"
+          }
+        },
+        {
+          "name": "mounted",
+          "called": {
+            "tool": "widget_query",
+            "op": "mount"
+          }
+        },
+        {
+          "name": "shown",
+          "called": {
+            "tool": "screenshot",
+            "op": "pie",
+            "after": "widget_query/mount"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ho_aesir_accuracy",
+      "goal": "G6",
+      "project": "aesir",
+      "prompt": "Measure the player's shooting accuracy in Aesir from evidence: run a playtest of about 45 seconds of wave 1 with gameplay event recording on, then run a decision audit on that recording. From the recording's own game events, count the player's weapon_fire events and the player's hit events that name a weapon, and report the shots fired and accuracy (hits / shots x 100, a percentage) as ANSWER: shots=<n>, accuracy=<percent>.",
+      "requires": [
+        "G",
+        "R5"
+      ],
+      "multi_step": true,
+      "held_out": true,
+      "checks": [
+        {
+          "name": "played",
+          "called": {
+            "tool": "playtest",
+            "op": "run"
+          }
+        },
+        {
+          "name": "audited",
+          "called": {
+            "tool": "design_audit",
+            "after": "playtest/run"
+          }
+        },
+        {
+          "name": "acc",
+          "probe": "ev = _latest_playtest().get('events', [])\nshots = len([e for e in ev if e.get('kind') == 'weapon_fire' and e.get('by_player')])\nhits = len([e for e in ev if e.get('kind') == 'hit' and e.get('by_player') and (e.get('data') or {}).get('weapon')])\nRESULT({'shots': shots, 'hits': hits, 'accuracy': (100.0 * hits / shots) if shots else None})",
+          "expect": [
+            {
+              "path": "shots",
+              "op": "gte",
+              "value": 3
+            },
+            {
+              "path": "hits",
+              "op": "gte",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "name": "answer_shots",
+          "answer": {
+            "from": "acc.shots",
+            "key": "shots",
+            "tolerance": 0
+          }
+        },
+        {
+          "name": "answer_accuracy",
+          "answer": {
+            "from": "acc.accuracy",
+            "key": "accuracy",
+            "tolerance": 0.5,
+            "rel_tolerance": 0.01
+          }
+        }
+      ]
+    }
+  ]
+}

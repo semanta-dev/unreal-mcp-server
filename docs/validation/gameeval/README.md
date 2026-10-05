@@ -84,3 +84,30 @@ model that served it; a rolling prompt-cache breakpoint; the system prompt says 
 fixes for aesir_start_wave (opening intermission), aesir_hud_enemies (prompt + a probe that could not pass),
 pw_road_connect (no existing roads to connect to), aesir_hud_wave (a check that could not pass) and aesir_aim_kill
 (pie op=aim counts). Earlier, superseded passes are kept uncommitted in `final/diagnostic/` (not a record).
+
+### Final record pass 2 — 2026-10-04 (`final/live-20261004T234623Z.*`, stopped at 58 of 75 runs)
+
+Server and harness at `2a08dad` (pass 1's fixes plus: the feel audit's per-channel delays and medians — it reported
+only the first response on any channel, which a shot's sound makes 0 ms; playtest results naming `analyze op=events`
+/ `op=rubric` for their `playtest_path` and, when the player hit nothing, the aim input step; probe values recorded in
+the results). Same caps ($4/run). Stopped by the user's decision to release on "the tools work" (below) with
+batch_variance (1 run), broken_beat and four held-out Aesir tasks not run. $45.17, python 0.48 calls/run.
+
+Of the 19 tasks that completed, **15 pass**; of the 18 plan tasks that completed, 15 pass — aesir_player_damage 0/3
+(the agents measured by playing after the edit; one ran a `playtest` before it and read it with `analyze op=events`),
+aesir_ttk 1/3 (one run excluded an outlier kill the task's average includes: 0.35 s answered, 0.96 s by the task's
+definition), aesir_wave2_more 1/3 (cost and turn limits before wave 2 was proved). aesir_feel_audit went 0/3 → 2/3
+with the audit fix. The held-out ho_pw_cheapest_research failed 3/3 as in every pass.
+
+### Release decision
+
+The plan's pass bar (≥ 20/25, each of G2–G6 ≥ 2, python ≤ 0.1/run) was **not met** in either record pass (16/25 in
+pass 1; pass 2 incomplete). v2.1.0 is released on the user's criterion that the tools work: every tool added or
+fixed here was validated live against the scratch editors without an LLM (`cmd/mcpcall` scripts) and by the test
+suites; the remaining eval failures are agent choices (manual play instead of `playtest`, an outlier excluded), cost
+limits under the router's model choice, and held-out tasks whose checks could not be examined. The v2.0.2 baseline
+(1–2/25) was not re-run under the final harness, so the baseline/final comparison mixes harness versions.
+
+The held-out plaintext is committed with this result: [`heldout_tasks.json`](heldout_tasks.json) (SHA-256 `15d06205…`,
+as sealed in [`HELDOUT.md`](HELDOUT.md)). ho_aesir_hud_score's `bound` / `hud` checks read a CDO `bindings` property
+and a top-level live_tree `text`, the two shapes found unpassable in the plan tasks; they were not changed.
