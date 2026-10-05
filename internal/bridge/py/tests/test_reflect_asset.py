@@ -1,8 +1,8 @@
 """reflect op=object reads an asset (a data asset's properties) when actor is an asset
 path; actor paths (Map.Map:PersistentLevel.X) still resolve in the world."""
+import pytest
 from conftest import run_dispatch
 from fakeunreal import Fake, installed
-import pytest
 
 
 class Tuning:

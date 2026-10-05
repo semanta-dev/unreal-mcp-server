@@ -10,7 +10,7 @@ func f64(v float64) *float64 { return &v }
 func waveLog() *EventLog {
 	return &EventLog{
 		StartT: 0, EndT: 120,
-		Sources: map[string]string{SourceEngine: SourceRecorded, SourceJournal: SourceRecorded, SourceServer: SourceRecorded},
+		Sources:      map[string]string{SourceEngine: SourceRecorded, SourceJournal: SourceRecorded, SourceServer: SourceRecorded},
 		JournalKinds: []string{"dash", "death", "hit", "kill", "wave_end"},
 		Events: []Event{
 			{T: 1, Kind: "hit", Actor: "Player", Target: "E1", ByPlayer: true, VisualT: f64(1.02)},
@@ -166,7 +166,6 @@ func TestLintEventAndPerfCSVChecks(t *testing.T) {
 		t.Fatalf("%+v", diags)
 	}
 }
-
 
 func TestEventKindsTheGameDoesNotEmitAreNeverScored(t *testing.T) {
 	// A typo (deaths) or a kind the game never declared: zero events is not evidence of zero.

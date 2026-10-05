@@ -2,7 +2,7 @@
 with mouse input). The eye is the camera, the target its bounds' centre."""
 import pytest
 from conftest import run_dispatch
-from fakeunreal import Fake, Rotator, Vector, _NS, installed
+from fakeunreal import _NS, Fake, Rotator, Vector, installed
 
 
 @pytest.fixture
