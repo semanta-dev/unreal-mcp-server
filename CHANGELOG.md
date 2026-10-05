@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased (v2.1.0)
+## v2.1.0 — 2026-10-04
 
-Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN.md)).
+Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN.md)). Released on the tools
+working (each validated live and by the test suites); the plan's game-making eval bar was not met — 16/25 tasks
+in the last complete pass, see [`docs/validation/gameeval/README.md`](docs/validation/gameeval/README.md).
 
 ### Behaviour changes
 - `scene`, `scene_clear` and `world_query` moved from core to the new optional toolset **`world`** (the move
@@ -175,8 +177,29 @@ Remediation plan ([`docs/plans/REMEDIATION_PLAN.md`](docs/plans/REMEDIATION_PLAN
     not `settings` / `curve_keys` (the plugin checks those while writing). A dry run is no edit for `undo`.
   - `world_query sphere_overlap object_types` — default the six engine object channels (pawns were invisible: only
     WorldStatic was asked), or a project object channel by its name (plugin API 9); hits list path and class.
+  - **`pie op=aim`**: turns the player's view onto `actor` (or the nearest `class`) through MouseX/MouseY axis
+    input, a closed loop that measures the gain (sensitivity, smoothing, inverted Y) and caches it per project; waits
+    up to 5 s for a target to spawn; a view the mouse stops turning (a dead player, a cursor mode) is `PRECONDITION`.
+    Playtest input steps aim too: `{"input": {"class"|"actor", "duration_s"}}` keeps the view on the target while a
+    hold-fire step shoots.
+  - **`project_map op=source`**: list, read (400 lines from `line`) or search (`match`, ≤ 60 hits) the project's text
+    files offline — C++, Build.cs, config, scenarios; build output, Content and .git skipped; binary files and paths
+    outside the project refused.
+  - **`analyze op=events`**: a playtest's recorded events (its `playtest_path`) filtered by `kinds`, with counts;
+    `analyze op=rubric path=` re-scores a playtest's frames.
+  - `reflect op=object` reads an asset (a data asset's properties) when `actor` is an asset path.
+  - Feel audit: each event's per-channel delay (`VisualMs`, `AudioMs`, `CameraMs`) and their medians
+    (`MedianVisualMs`…); `LatencyMs` is the first response on any channel (a shot's sound: usually 0).
 
 ### Fixed
+- Playtest results carry the timeline's frame count and final state, not every frame (one result was 104 KB, back
+  through each `job` wait); the frames are in `playtest.json`. Results name `analyze op=events` / `op=rubric` for
+  their `playtest_path`, and say when the player hit nothing.
+- A dict for a struct property (widget props, actor props, Blueprint defaults) merges into its current value: a
+  `font: {size}` prop no longer drops the font object (UMG text drew as boxes).
+- The feel audit on a playtest with no hits says the scenario never attacked, with the recorded event kinds.
+- Discoverability: `python`, `asset_edit`, `asset_import op=datatable` and `project_config op=input_action` (legacy
+  input) point to the data toolset; a non-DataTable `data_query` names `reflect` / `data_edit set_properties`.
 - `world=editor` during PIE found no editor world on UE 5.7 (`get_editor_world()` is None while PIE runs): it is now
   the PIE map's source level.
 - A short class name (`AesirAgentSubsystem`, `LevelEditorSubsystem`) resolved only in a fixed list of engine modules;
