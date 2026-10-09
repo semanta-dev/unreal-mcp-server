@@ -934,12 +934,12 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Read game data. table: rows of a DataTable {row: {field: value}}. curve: a float curve's keys. blueprint: components (Blueprint + native), variables (type, default, flags), functions, events, and the status + messages of a fresh in-memory compile (not saved; refused during PIE). Change data with data_edit.",
+      "description": "Read game data. table: rows of a DataTable {row: {field: value}}. curve: a float curve's keys. blueprint: components (Blueprint + native), variables (type, default, flags), functions, events, and the status + messages of a fresh in-memory compile (not saved; refused during PIE). input_mapping: a mapping context's actions and their keys. Change data with data_edit.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "asset": {
-            "description": "the DataTable, CurveFloat or Blueprint asset path",
+            "description": "the DataTable, CurveFloat, Blueprint or InputMappingContext asset path",
             "type": "string"
           },
           "limit": {
@@ -950,7 +950,8 @@
             "enum": [
               "table",
               "curve",
-              "blueprint"
+              "blueprint",
+              "input_mapping"
             ],
             "type": "string"
           },
@@ -2092,7 +2093,7 @@
             "type": "array"
           },
           "json": {
-            "description": "run: the scenario as inline JSON (instead of path)",
+            "description": "the scenario as inline JSON (instead of path)",
             "type": "string"
           },
           "max_frames": {
@@ -2107,7 +2108,7 @@
             "type": "string"
           },
           "path": {
-            "description": "run: a scenario/v1 .json file",
+            "description": "a scenario/v1 .json file",
             "type": "string"
           },
           "perf": {

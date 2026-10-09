@@ -259,7 +259,7 @@ func pythonSpec() *spec.Spec {
 					return nil, pythonFailure(err)
 				}
 				noteEdit()
-				return &spec.Result{Data: map[string]any{"value": v, "undoable": false}, Summary: v}, nil
+				return &spec.Result{Data: map[string]any{"value": v, "undoable": false, "see_also": pythonSeeAlso}, Summary: v}, nil
 			}
 			res, err := b.RunPython(ctx, in.Code, uexec.ModeExecFile)
 			noteEdit() // even a failed script may have changed things before it raised
@@ -268,12 +268,20 @@ func pythonSpec() *spec.Spec {
 			}
 			out := bridge.FormatOutput(res)
 			if !res.Success {
-				return nil, envelope.New(envelope.PythonError, "the script raised an error").WithDetail("output", out)
+				return nil, envelope.New(envelope.PythonError, "the script raised an error").WithDetail("output", out).
+					WithDetail("see_also", pythonSeeAlso)
 			}
-			return &spec.Result{Data: map[string]any{"output": out, "undoable": false}, Summary: out}, nil
+			return &spec.Result{Data: map[string]any{"output": out, "undoable": false, "see_also": pythonSeeAlso}, Summary: out}, nil
 		},
 	}
 }
+
+// pythonSeeAlso rides on every python result: the tools that do what agents most often
+// script by hand (final eval: data assets and tables, playtest.json, project files) —
+// result text costs no tool-list bytes.
+const pythonSeeAlso = "dedicated tools first: tables, data assets, curves, input mappings: data_query / data_edit (toolset data); " +
+	"an asset's properties: reflect op=object actor=<asset path>; project files: project_map op=source; " +
+	"a playtest's events: analyze op=events path=<playtest_path>"
 
 func pythonFailure(err error) error {
 	if errors.Is(err, uexec.ErrCommandFailed) {

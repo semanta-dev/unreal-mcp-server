@@ -793,10 +793,10 @@ Validate the game (async job). op=run plays a scenario/v1 (`path` or `json`): op
 | `frame_h` | integer | run: per-frame height (default 144) |
 | `frame_w` | integer | run: per-frame width (default 256) |
 | `include` | string[] | run: observed property include globs |
-| `json` | string | run: the scenario as inline JSON (instead of path) |
+| `json` | string | the scenario as inline JSON (instead of path) |
 | `max_frames` | integer | run: frame cap (default 96) |
 | `op` | string | one of: run, batch |
-| `path` | string | run: a scenario/v1 .json file |
+| `path` | string | a scenario/v1 .json file |
 | `perf` | boolean | replay under CsvProfiler (no capture/recorder) → perf_csv.* |
 | `properties` | string[] | run: exact observed properties |
 | `seeds` | integer[] | batch: one run per seed (≤ 20) |
@@ -1251,19 +1251,20 @@ Run one of the game's commands (its own API; PIE) → {accepted, result}. reques
 
 _tier ephemeral_
 
-Read game data. table: rows of a DataTable {row: {field: value}}. curve: a float curve's keys. blueprint: components (Blueprint + native), variables (type, default, flags), functions, events, and the status + messages of a fresh in-memory compile (not saved; refused during PIE). Change data with data_edit.
+Read game data. table: rows of a DataTable {row: {field: value}}. curve: a float curve's keys. blueprint: components (Blueprint + native), variables (type, default, flags), functions, events, and the status + messages of a fresh in-memory compile (not saved; refused during PIE). input_mapping: a mapping context's actions and their keys. Change data with data_edit.
 
 | op | tier | does | required | needs |
 |---|---|---|---|---|
 | `table` | readonly | a DataTable's rows, typed (the engine's JSON forms) | asset | editor |
 | `curve` | readonly | a float curve's keys | asset | editor, plugin>=6 |
 | `blueprint` | ephemeral | a Blueprint's components, variables, functions, events, compile status + messages | asset | editor, plugin>=6 |
+| `input_mapping` | readonly | an InputMappingContext's actions and their keys | asset | editor |
 
 | param | type | description |
 |---|---|---|
-| `asset` | string | the DataTable, CurveFloat or Blueprint asset path |
+| `asset` | string | the DataTable, CurveFloat, Blueprint or InputMappingContext asset path |
 | `limit` | integer | table: max rows returned (default 200) |
-| `op` | string | one of: table, curve, blueprint |
+| `op` | string | one of: table, curve, blueprint, input_mapping |
 | `row_names` | string[] | table: only these rows (default all) |
 
 ### `data_edit` — Edit game data

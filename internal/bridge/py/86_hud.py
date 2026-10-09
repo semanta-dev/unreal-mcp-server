@@ -510,7 +510,9 @@ def _op_widget_describe(args):
     if not wc:
         return {"palette": sorted(_WIDGET_CLASSES.keys()),
                 "anchor_presets": sorted(_ANCHOR_PRESETS.keys())}
-    return _op_reflect_class({"class_path": wc})
+    # Any class reference the v2 resolver takes (a short name like TextBlock or
+    # MCPHUDWidget, Module.Class, a /Script path, a /Game Widget Blueprint).
+    return _op_reflect_class({"class_path": _class_path(wc)})
 
 
 def _op_set_world_gamemode(args):

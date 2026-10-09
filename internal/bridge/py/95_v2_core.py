@@ -320,7 +320,15 @@ def _resolve_class_v2(ref):
         if not cls and ref.endswith("_C"):
             cls = _resolve_class(ref[:-2])
         if not cls:
-            raise _V2Error("CLASS_UNRESOLVED", "could not resolve class %s" % ref)
+            hint = ""
+            short = ref.rsplit(".", 1)[-1] if ref.startswith("/Script/") else ""
+            pytype = getattr(unreal, short, None) if short else None
+            if isinstance(pytype, type) and hasattr(pytype, "static_class"):
+                try:
+                    hint = ": did you mean %s?" % pytype.static_class().get_path_name()
+                except Exception:
+                    hint = ""
+            raise _V2Error("CLASS_UNRESOLVED", "could not resolve class %s%s" % (ref, hint))
         return cls
     base = ref[:-2] if ref.endswith("_C") else ref
     if "." in base:  # Module.Class: any loaded module, incl. plugins

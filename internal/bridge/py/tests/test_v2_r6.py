@@ -259,3 +259,22 @@ def test_revert_is_the_open_level_only(v2, ue):
     ue.get_editor_subsystem = lambda c: _NS(get_editor_world=lambda: world, get_game_world=lambda: None) if c == "UES" else real(c)
     env = call(v2, "level_revert", {"level_path": "/Game/Maps/L_Other"})
     assert env["code"] == "BAD_VALUE" and "open level" in env["error"], env
+
+
+def test_input_mapping_read_lists_each_actions_keys(v2, ue):
+    # data_query op=input_mapping: the final eval read IMC_Aesir's mappings with python.
+    def mapping(action, key):
+        return _NS(get_editor_property=lambda k: {"action": action, "key": _NS(get_editor_property=lambda n: key)}[k])
+
+    dash = _NS(get_path_name=lambda: "/Game/Input/IA_Dash.IA_Dash")
+    fire = _NS(get_path_name=lambda: "/Game/Input/IA_Fire.IA_Fire")
+    maps = [mapping(dash, "LeftShift"), mapping(fire, "LeftMouseButton"), mapping(dash, "Gamepad_FaceButton_Right")]
+    imc_cls = type("InputMappingContext", (), {})
+    ue.InputMappingContext = imc_cls
+    imc = imc_cls()
+    imc.get_editor_property = lambda k: {"default_key_mappings": _NS(get_editor_property=lambda n: maps)}[k]
+    ue.assets["/Game/Input/IMC_Aesir"] = imc
+    env = call(v2, "data_input_mapping_read", {"asset": "/Game/Input/IMC_Aesir"})
+    assert env.get("ok"), env
+    assert env["result"]["mappings"] == [{"action": "/Game/Input/IA_Dash", "keys": ["LeftShift", "Gamepad_FaceButton_Right"]},
+                                         {"action": "/Game/Input/IA_Fire", "keys": ["LeftMouseButton"]}], env

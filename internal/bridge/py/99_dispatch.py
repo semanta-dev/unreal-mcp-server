@@ -110,6 +110,7 @@ _OPS = {
     "data_set_settings": _op_data_set_settings,
     "data_add_variable": _op_data_add_variable,
     "data_input_mapping": _op_data_input_mapping,
+    "data_input_mapping_read": _op_data_input_mapping_read,
 }
 
 

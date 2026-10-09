@@ -283,7 +283,7 @@ func installPermissiveOps(h *harness, dir, png string) {
 		"datatable_import", "map_gameplay", "widget_tree", "widget_describe", "widget_compose", "widget_compile", "world_query",
 		"instances_count", "pie_input", "pie_cursor", "pie_ui_click", "widget_bind", "widget_mount", "widget_unmount", "widget_live_tree", "data_set_settings", "data_table_read", "data_table_upsert",
 		"data_table_delete", "data_curve_read", "data_curve_keys", "data_blueprint", "data_set_properties", "data_add_variable",
-		"data_input_mapping", "audio_capture_start", "audio_capture_stop", "play_test_sound", "scene_apply",
+		"data_input_mapping", "data_input_mapping_read", "audio_capture_start", "audio_capture_stop", "play_test_sound", "scene_apply",
 		"scene_clear", "scene_prune", "scene_actors", "design_probe", "capture_poll", "company_status", "company_build",
 		"company_select", "company_road", "company_demolish", "apply_level_recipe", "quit_editor"} {
 		h.emu.Handle(py, ok(map[string]any{"ok": true, "count": 0.0, "total": 0.0, "actors": []any{}, "capital": 100.0,

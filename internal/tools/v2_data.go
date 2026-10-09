@@ -16,7 +16,7 @@ func dataSpecs() []*spec.Spec { return []*spec.Spec{dataQuerySpec(), dataEditSpe
 
 type dataQueryIn struct {
 	Op       string   `json:"op" jsonschema:"table | curve | blueprint"`
-	Asset    string   `json:"asset" jsonschema:"the DataTable, CurveFloat or Blueprint asset path"`
+	Asset    string   `json:"asset" jsonschema:"the DataTable, CurveFloat, Blueprint or InputMappingContext asset path"`
 	RowNames []string `json:"row_names,omitempty" jsonschema:"table: only these rows (default all)"`
 	Limit    int      `json:"limit,omitempty" jsonschema:"table: max rows returned (default 200)"`
 }
@@ -26,12 +26,14 @@ func dataQuerySpec() *spec.Spec {
 		{Name: "table", Summary: "a DataTable's rows, typed (the engine's JSON forms)", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"asset"}, Reaches: []string{"data_table_read"}},
 		{Name: "curve", Summary: "a float curve's keys", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"asset"}, Rejects: []string{"row_names", "limit"}, Reaches: []string{"data_curve_read"}, Needs: []string{"plugin>=6"}},
 		{Name: "blueprint", Summary: "a Blueprint's components, variables, functions, events, compile status + messages", Tier: spec.Ephemeral, Idempotent: true, Required: []string{"asset"}, Rejects: []string{"row_names", "limit"}, Reaches: []string{"data_blueprint"}, Needs: []string{"plugin>=6"}},
+		{Name: "input_mapping", Summary: "an InputMappingContext's actions and their keys", Tier: spec.ReadOnly, Idempotent: true, Required: []string{"asset"}, Rejects: []string{"row_names", "limit"}, Reaches: []string{"data_input_mapping_read"}},
 	}
 	return &spec.Spec{
 		Name: "data_query", Title: "Read game data", Toolset: spec.Data, Timeout: sync15, Max: sync28, Ops: ops,
 		Description: "Read game data. table: rows of a DataTable {row: {field: value}}. curve: a float curve's keys. " +
 			"blueprint: components (Blueprint + native), variables (type, default, flags), functions, events, and the " +
-			"status + messages of a fresh in-memory compile (not saved; refused during PIE). Change data with data_edit.",
+			"status + messages of a fresh in-memory compile (not saved; refused during PIE). input_mapping: a mapping " +
+			"context's actions and their keys. Change data with data_edit.",
 		Schema:  spec.SchemaFor[dataQueryIn](map[string][]any{"op": spec.OpEnum(ops...)}, "op", "asset"),
 		Handler: dataQueryHandler,
 	}
@@ -42,7 +44,8 @@ func dataQueryHandler(ctx context.Context, c *spec.Call) (*spec.Result, error) {
 	if err := c.Decode(&in); err != nil {
 		return nil, err
 	}
-	py := map[string]string{"table": "data_table_read", "curve": "data_curve_read", "blueprint": "data_blueprint"}[c.Op.Name]
+	py := map[string]string{"table": "data_table_read", "curve": "data_curve_read", "blueprint": "data_blueprint",
+		"input_mapping": "data_input_mapping_read"}[c.Op.Name]
 	out, err := v2Op(ctx, c, py, rename(map[string]any{}, c.Args, "asset", "asset", "row_names", "rows", "limit", "limit"))
 	if err != nil {
 		return nil, err

@@ -419,6 +419,20 @@ def _input_asset(path, cls):
     return obj, True
 
 
+def _op_data_input_mapping_read(args):
+    """An InputMappingContext's actions and the keys mapped to each, in mapping order."""
+    path, context = _data_asset(args, unreal.InputMappingContext)
+    order, keys = [], {}
+    for m in context.get_editor_property("default_key_mappings").get_editor_property("mappings"):
+        action = m.get_editor_property("action")
+        name = action.get_path_name().split(".", 1)[0] if action else "(none)"
+        if name not in keys:
+            order.append(name)
+            keys[name] = []
+        keys[name].append(str(m.get_editor_property("key").get_editor_property("key_name")))
+    return {"context": path, "mappings": [{"action": a, "keys": keys[a]} for a in order]}
+
+
 def _op_data_input_mapping(args):
     """Create or edit an Enhanced Input action and its keys in a mapping context: the
     action's keys in that context become exactly `keys` (none: unmapped). Missing assets

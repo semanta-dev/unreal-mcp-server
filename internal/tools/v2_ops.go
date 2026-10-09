@@ -573,8 +573,8 @@ func headlessRun(_ context.Context, c *spec.Call) (*spec.Result, error) {
 
 type playtestIn struct {
 	Op         string   `json:"op" jsonschema:"run"`
-	Path       string   `json:"path,omitempty" jsonschema:"run: a scenario/v1 .json file"`
-	JSON       string   `json:"json,omitempty" jsonschema:"run: the scenario as inline JSON (instead of path)"`
+	Path       string   `json:"path,omitempty" jsonschema:"a scenario/v1 .json file"`
+	JSON       string   `json:"json,omitempty" jsonschema:"the scenario as inline JSON (instead of path)"`
 	FrameW     int      `json:"frame_w,omitempty" jsonschema:"run: per-frame width (default 256)"`
 	FrameH     int      `json:"frame_h,omitempty" jsonschema:"run: per-frame height (default 144)"`
 	MaxFrames  int      `json:"max_frames,omitempty" jsonschema:"run: frame cap (default 96)"`
