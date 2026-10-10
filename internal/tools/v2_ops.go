@@ -656,9 +656,20 @@ func playtestHandler(_ context.Context, c *spec.Call) (*spec.Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A batch summarises each run's gameplay events (wave clears, kills): it records
+	// them whether or not the scenario asked (record pass 3: five seeded runs without
+	// events, so no wave clear could be read).
+	defaulted := c.Op.Name == "batch" && !sc.RecordEvents
+	if defaulted {
+		sc.RecordEvents = true
+	}
 	j := reg.Start(context.Background(), func(jctx context.Context, progress func(string)) (any, error) {
 		if c.Op.Name == "batch" {
-			return runBatch(jctx, c, sc, in, progress)
+			res, err := runBatch(jctx, c, sc, in, progress)
+			if res != nil && defaulted {
+				res["note"] = "record_events was turned on: a batch summarises each run's gameplay events"
+			}
+			return res, err
 		}
 		return runPlaytest(jctx, c, sc, in, progress, nil)
 	})

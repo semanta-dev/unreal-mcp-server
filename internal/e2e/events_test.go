@@ -390,3 +390,27 @@ func TestPlaytestPerfSkippedWhenPIEWillNotStop(t *testing.T) {
 		t.Fatalf("perf after a stuck PIE = %v (console %v)", out, consoles)
 	}
 }
+
+// A batch records gameplay events even when its scenario did not ask: its summary (wave
+// clears, kills) comes from them (record pass 3: five seeded runs without events read
+// no wave clear).
+func TestPlaytestBatchRecordsEventsByDefault(t *testing.T) {
+	proj := gameProject(t, gameAPIJSON, "")
+	h := startHarness(t, harnessOpts{project: proj, toolsets: []spec.Toolset{spec.Game}})
+	h.world.PluginAPI = 8
+	rec := &bridgetest.Recorder{Dir: t.TempDir(), Frames: 3, State: func(i int) map[string]any {
+		return map[string]any{"gamestate": map[string]any{"wave": float64(i)}}
+	}}
+	rec.Install(h.emu)
+	h.world.Events.OnSeed = func(seed int) {
+		h.world.Game.Journal = []map[string]any{{"seq": 1.0, "t": 40.0, "kind": "wave_end", "data": map[string]any{"wave": 1.0, "clear_s": 30.0 + float64(seed)}}}
+	}
+	sc := `{"schema":"scenario/v1","name":"batch","mode":"pie","duration_s":0.2,"interval_s":0.1,
+	 "rubric":[{"id":"w","kind":"reached","path":"gamestate.wave","params":{"value":1}}]}`
+	out := structured(t, h.call(t, "playtest", map[string]any{"op": "batch", "json": sc, "seeds": []any{1, 2}, "wait_s": 25}))
+	r, _ := out["result"].(map[string]any)
+	waves, _ := r["waves"].([]any)
+	if out["state"] != "succeeded" || r == nil || len(waves) != 1 || !strings.Contains(fmt.Sprint(r["note"]), "record_events") {
+		t.Fatalf("batch without record_events = %v", out)
+	}
+}

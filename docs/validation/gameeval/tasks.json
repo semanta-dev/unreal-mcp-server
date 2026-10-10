@@ -252,6 +252,35 @@
         "R2"
       ],
       "multi_step": true,
+      "setup": [
+        {
+          "tool": "python",
+          "args": {
+            "op": "run",
+            "code": "cdo = unreal.get_default_object(unreal.AesirWaveDefenseGameMode.static_class())\n_save_base({'first_wave_delay': cdo.get_editor_property('first_wave_delay')})\ncdo.set_editor_property('first_wave_delay', 900.0)  # a long opening intermission: the task starts the wave itself\nRESULT({'ok': True})"
+          }
+        },
+        {
+          "tool": "pie",
+          "args": {
+            "op": "stop"
+          }
+        },
+        {
+          "tool": "pie",
+          "args": {
+            "op": "start",
+            "wait": true
+          }
+        },
+        {
+          "tool": "python",
+          "args": {
+            "op": "run",
+            "code": "cdo = unreal.get_default_object(unreal.AesirWaveDefenseGameMode.static_class())\ncdo.set_editor_property('first_wave_delay', _base().get('first_wave_delay', 8.0))  # the running game keeps its timer\ns = _aesir_snapshot()\nRESULT({'state': s.get('wave_state'), 'intermission_remaining_s': s.get('intermission_remaining_s')})"
+          }
+        }
+      ],
       "checks": [
         {
           "name": "weapon",
