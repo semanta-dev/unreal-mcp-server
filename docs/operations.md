@@ -117,6 +117,13 @@ copies with their own multicast group (see `CLAUDE.md`).
 go test -tags live -run TestLiveSpawnGetDelete ./internal/tools/   # spawn/get/delete against a running editor
 ```
 
+**Live tests** ([`internal/livetest`](../internal/livetest)): the built server, through an MCP client, against the
+scratch editors; each test asserts what the tool did in the editor or the game (Python only as an independent oracle)
+and cleans up. `bash scripts/live.sh` (scratch defaults; override `UMCP_LIVE_AESIR`/`_ADDR`,
+`UMCP_LIVE_POLYWORLD`/`_ADDR`, `UMCP_LIVE_GROUP`, `UMCP_ENGINE_DIR`; `-run <pattern>` for a subset). A project that is
+not configured is skipped. Run it before a release and record the result in `validation/live-<date>.md`; add a test
+with every tool change the emulator cannot show. Last run: [`validation/live-2026-10-09.md`](validation/live-2026-10-09.md).
+
 **Live checklist (T4)** — run on each target project (aesir-wave-defense, poly-world) before a release. It covers what
 the emulator cannot:
 1. `editor op=health`; `actor_query`/`actor_edit` in editor and PIE worlds, including `@pawn` and PIE path translation;
