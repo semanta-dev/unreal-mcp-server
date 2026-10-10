@@ -112,7 +112,9 @@ func aimOnce(ctx context.Context, c *spec.Call, target map[string]any) (map[stri
 	}
 	gain, ticks := cal.gain, cal.ticks
 	var stuck [2]bool
-	var trace []map[string]any // per step: axis units sent, degrees turned, error before
+	var stalls [2]int            // consecutive steps an axis did not turn
+	capDeg := [2]float64{45, 45} // largest turn a step asks for (halved when a reading is off)
+	var trace []map[string]any   // per step: axis units sent, degrees turned, error before
 	st, err := v2Op(ctx, c, "pie_aim_state", target)
 	if err != nil {
 		return nil, err
@@ -130,8 +132,10 @@ func aimOnce(ctx context.Context, c *spec.Call, target map[string]any) (map[stri
 			}
 			v := math.Copysign(aimProbe, errs[i])
 			if gain[i] != 0 {
-				// At most 90° a step: a turn near 180° reads back ambiguously (wrapped).
-				turn := math.Max(-90, math.Min(90, errs[i]))
+				// A bounded turn a step: a large one-tick delta is not linear (mouse
+				// smoothing turned a 90° request into 193°), and near 180° it reads back
+				// ambiguously (wrapped).
+				turn := math.Max(-capDeg[i], math.Min(capDeg[i], errs[i]))
 				v = math.Max(-aimMaxUnits, math.Min(aimMaxUnits, turn/gain[i]/ticks[i]))
 			}
 			if _, err := v2Op(ctx, c, "pie_input", map[string]any{"key": ax.key, "action": "axis", "value": v, "duration_s": 0.001}); err != nil {
@@ -171,13 +175,23 @@ func aimOnce(ctx context.Context, c *spec.Call, target map[string]any) (map[stri
 			if math.Abs(turned) >= 179 {
 				continue // ambiguous once wrapped: learn nothing from it
 			}
-			g := turned / sent[i]
-			// No turn, or far less than (or against) a known gain predicts: the axis is
-			// unbound, look input is ignored (the player died, a cursor mode), or pitch is
-			// at its limit. Learning a gain from that would blow up the next step.
-			if math.Abs(turned) < 0.01 || gain[i] != 0 && g/gain[i] < 0.25 {
-				stuck[i] = true
+			// No turn twice running: the axis is unbound, look input is ignored (the
+			// player died, a cursor mode), or pitch is at its limit.
+			if math.Abs(turned) < 0.1 {
+				if stalls[i]++; stalls[i] >= 2 {
+					stuck[i] = true
+				}
 				continue
+			}
+			stalls[i] = 0
+			// A reading far from (or against) the known gain is not learned: the step was
+			// too large to be linear; ask for half as much next time.
+			g := turned / sent[i]
+			if gain[i] != 0 {
+				if r := g / gain[i]; r < 0.25 || r > 4 {
+					capDeg[i] = math.Max(capDeg[i]/2, 5)
+					continue
+				}
 			}
 			if gain[i] == 0 {
 				gain[i] = g

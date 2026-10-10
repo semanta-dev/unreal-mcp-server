@@ -204,9 +204,13 @@ func (w *World) turnView(args map[string]any) {
 		g = [2]float64{0.175, -0.175}
 	}
 	v, _ := args["value"].(float64)
+	over := 1.0
+	if w.AimOvershoot && math.Abs(6*v*g[0]) > 60 {
+		over = 2.15 // live: a 90-degree request turned 193 degrees
+	}
 	switch args["key"] {
 	case "MouseX":
-		w.ViewYaw += 6 * v * g[0] // pie_axis_stats reports 6 ticks
+		w.ViewYaw += over * 6 * v * g[0] // pie_axis_stats reports 6 ticks
 	case "MouseY":
 		w.ViewPitch = math.Max(-89, math.Min(89, w.ViewPitch+6*v*g[1]))
 	}

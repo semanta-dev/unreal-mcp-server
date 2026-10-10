@@ -483,7 +483,7 @@ func TestPieAimStopsWhenTheViewStopsResponding(t *testing.T) {
 	if e["code"] != "PRECONDITION" || !strings.Contains(fmt.Sprint(e["message"]), "look_ignored: true") {
 		t.Fatalf("aim at a view that stopped turning = %v", e)
 	}
-	if sent := len(h.world.RecordedInputs()) - n; sent > 2 {
+	if sent := len(h.world.RecordedInputs()) - n; sent > 4 { // two non-turning steps per axis
 		t.Fatalf("aim kept sending input (%d) to a view that does not turn", sent)
 	}
 }
@@ -554,5 +554,23 @@ func TestPieAimWaitsForATargetToSpawn(t *testing.T) {
 	}()
 	if out := structured(t, h.call(t, "pie", map[string]any{"op": "aim", "class": "EnemyCharacter"})); out["aimed"] != true {
 		t.Fatalf("aim at a spawning target = %v", out)
+	}
+}
+
+// A large one-tick mouse delta that turns more than linearly (live: a 90-degree request
+// turned 193 degrees under mouse smoothing) is not learned as a gain; aim shrinks its
+// steps and still converges, a 180-degree turn included.
+func TestPieAimConvergesWhenLargeDeltasOvershoot(t *testing.T) {
+	h := startHarness(t, harnessOpts{project: t.TempDir()})
+	h.world.PluginAPI = 5
+	h.world.AimOvershoot = true
+	h.world.AddActor("Ahead", "/Script/Game.Target", [3]float64{1000, 100, 0}, nil)
+	h.world.AddActor("Behind", "/Script/Game.Target", [3]float64{-1000, -50, 0}, nil)
+	h.world.StartPIE()
+	for _, target := range []string{"Ahead", "Behind", "Ahead"} {
+		out := structured(t, h.call(t, "pie", map[string]any{"op": "aim", "actor": target}))
+		if out["aimed"] != true {
+			t.Fatalf("aim %s with overshooting deltas = %v", target, out)
+		}
 	}
 }

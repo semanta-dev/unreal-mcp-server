@@ -61,16 +61,13 @@ func TestLiveWidgetFontSizeKeepsTheFont(t *testing.T) {
 	l.enable("ui")
 	name := fmt.Sprintf("WBP_LiveFont_%d", time.Now().UnixNano())
 	wbp := "/Game/LiveTest/" + name
-	// The asset just made is still held in memory and refuses deletion; earlier runs'
-	// are not, so each run clears what the last one left (at most one stays behind).
-	clear := func() {
-		l.python("lib = unreal.EditorAssetLibrary\n" +
-			"for p in lib.list_assets('/Game/LiveTest'):\n" +
-			"    a = lib.load_asset(p.split('.')[0])\n" +
-			"    if a: lib.delete_loaded_asset(a)")
-	}
-	clear()
-	t.Cleanup(clear)
+	// Test assets live under /Game/LiveTest (untracked, uniquely named). Only a plain
+	// delete is used: it refuses an asset the editor still holds. Never force-delete —
+	// delete_loaded_asset force-deleted an in-use widget here, raised an engine ensure, and
+	// L_Arena.umap was gone from disk right after.
+	l.python("lib = unreal.EditorAssetLibrary\n" +
+		"for p in lib.list_assets('/Game/LiveTest'):\n" +
+		"    lib.delete_asset(p.split('.')[0])")
 	l.call("asset_create", map[string]any{"op": "create", "kind": "widget_blueprint", "dest": wbp, "class": "MCPHUDWidget"})
 	l.call("widget_edit", map[string]any{"op": "compose", "asset": wbp, "tree": map[string]any{"class": "CanvasPanel", "name": "Root",
 		"children": []any{map[string]any{"class": "TextBlock", "name": "Label", "props": map[string]any{"text": "WAVE 1", "font": map[string]any{"size": 31}}}}}})

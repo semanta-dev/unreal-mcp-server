@@ -83,6 +83,15 @@ func session(t *testing.T, project string) *live {
 	t.Cleanup(func() { _ = cs.Close() })
 	l := &live{t: t, ctx: ctx, cs: cs, project: dir}
 	l.job(l.call("editor_lifecycle", map[string]any{"op": "ensure_open", "wait_s": 25}), 10*time.Minute)
+	if m := os.Getenv("UMCP_LIVE_" + project + "_MAP"); m != "" {
+		// Every test starts on the map as saved: an earlier test's in-memory changes are
+		// dropped (a later open_level would otherwise save them into the map).
+		l.call("pie", map[string]any{"op": "stop"})
+		if st := l.call("editor", map[string]any{"op": "status"}); !strings.HasSuffix(m, "/"+fmt.Sprint(st["current_level"])) {
+			l.call("level", map[string]any{"op": "open", "level": m, "save": false})
+		}
+		l.call("level", map[string]any{"op": "revert"})
+	}
 	return l
 }
 

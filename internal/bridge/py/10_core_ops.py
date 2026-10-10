@@ -89,8 +89,8 @@ def _op_open_level(args):
     else:
         unreal.EditorLoadingAndSavingUtils.save_dirty_packages(True, True)
     ok = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).load_level(args["level_path"])
-    msg = ("Loaded " if ok else "FAILED to load ") + str(args["level_path"])
-    out = {"loaded": bool(ok), "level_path": args["level_path"], "message": msg}
+    _check_loaded(args["level_path"], ok)
+    out = {"loaded": True, "level_path": args["level_path"], "message": "Loaded " + str(args["level_path"])}
     if args.get("save") is False:
         out["content_unsaved"] = _dirty_packages()[1]  # assets stay changed in memory, unsaved
     return out
@@ -112,9 +112,20 @@ def _op_level_revert(args):
         raise _V2Error("PRECONDITION", "%s was never saved: there is nothing on disk to revert to" % (pkg or "the level"))
     maps, content = _dirty_packages()
     ok = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).load_level(pkg)
-    if not ok:
-        raise _V2Error("EDITOR_ERROR", "could not reload %s" % pkg)
+    _check_loaded(pkg, ok)
     return {"reverted": pkg, "discarded": maps, "content_unsaved": content}
+
+
+def _check_loaded(level_path, ok):
+    """load_level can answer True while the editor falls back to an untitled map (live: the
+    map file was missing — "Can't find file" in the log — and the result said loaded).
+    The open world must be the level asked for."""
+    want = str(level_path).split(".", 1)[0]
+    world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
+    have = (world.get_path_name() if world else "").split(".", 1)[0]
+    if not ok or have != want:
+        raise _V2Error("NOT_FOUND", "%s did not load (the editor is on %s): is the map file on disk?" % (want, have or "no level"),
+                       open_level=have)
 
 
 def _op_save_all(args):

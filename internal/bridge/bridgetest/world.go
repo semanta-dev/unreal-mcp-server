@@ -57,6 +57,8 @@ type World struct {
 	AimGain            [2]float64
 	// LookIgnored: mouse input does not turn the view (a cursor mode).
 	LookIgnored bool
+	// AimOvershoot: a one-tick turn over 60 degrees turns 2.15 times as far (live, mouse smoothing).
+	AimOvershoot bool
 }
 
 // RestartClock models the level restarting on the same map: the game clock starts over.

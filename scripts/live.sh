@@ -8,10 +8,14 @@
 #
 # Defaults are this machine's scratch copies; override with the environment.
 set -euo pipefail
+# Git Bash rewrites /Game/... values into Windows paths for native programs: not these.
+export MSYS2_ENV_CONV_EXCL="UMCP_LIVE_AESIR_MAP;UMCP_LIVE_POLYWORLD_MAP"
 cd "$(dirname "$0")/.."
 SCRATCH="${UMCP_LIVE_SCRATCH:-C:/Users/jorda/code/games/_p7scratch}"
 export UMCP_LIVE_AESIR="${UMCP_LIVE_AESIR:-$SCRATCH/aesir}"
 export UMCP_LIVE_AESIR_ADDR="${UMCP_LIVE_AESIR_ADDR:-127.0.0.1:6791}"
+export UMCP_LIVE_AESIR_CHECKPOINT="${UMCP_LIVE_AESIR_CHECKPOINT:-umcp/cp/4}"
+export UMCP_LIVE_AESIR_MAP="${UMCP_LIVE_AESIR_MAP:-/Game/Maps/L_Arena}"
 export UMCP_LIVE_POLYWORLD="${UMCP_LIVE_POLYWORLD:-$SCRATCH/PolyWorld}"
 export UMCP_LIVE_POLYWORLD_ADDR="${UMCP_LIVE_POLYWORLD_ADDR:-127.0.0.1:6792}"
 export UMCP_LIVE_GROUP="${UMCP_LIVE_GROUP:-239.0.0.42:6799}"

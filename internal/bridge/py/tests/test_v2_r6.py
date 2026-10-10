@@ -189,14 +189,24 @@ def test_open_level_save_false_never_saves_or_asks(v2, ue):
     ue.EditorLoadingAndSavingUtils = _NS(save_dirty_packages=lambda maps, content: saved.append(1) or True,
                                          get_dirty_map_packages=lambda: [_NS(get_name=lambda: "/Game/Maps/L_Arena")],
                                          get_dirty_content_packages=lambda: [])
-    ue.LevelEditorSubsystem = "LES"
+    ue.LevelEditorSubsystem, ue.UnrealEditorSubsystem = "LES", "UES"
     real = ue.get_editor_subsystem
-    ue.get_editor_subsystem = lambda c: _NS(load_level=lambda p: loaded.append(p) or True) if c == "LES" else real(c)
+    world = {"path": "/Game/Maps/L_Arena.L_Arena"}
+
+    def load(p):  # the editor switches worlds, like UE (a missing file: an untitled map)
+        loaded.append(p)
+        world["path"] = "/Temp/Untitled_1.Untitled_1" if p.endswith("L_Missing") else p + "." + p.rsplit("/", 1)[-1]
+        return True
+    ues = _NS(get_editor_world=lambda: _NS(get_path_name=lambda: world["path"]), get_game_world=lambda: None)
+    ue.get_editor_subsystem = lambda c: _NS(load_level=load) if c == "LES" else ues if c == "UES" else real(c)
     env = call(v2, "open_level", {"level_path": "/Game/Maps/L_Other", "save": False})
     assert env["code"] == "PRECONDITION" and env["details"]["unsaved"] == ["/Game/Maps/L_Arena"] and not saved and not loaded, env
     ue.EditorLoadingAndSavingUtils.get_dirty_map_packages = lambda: []
     assert call(v2, "open_level", {"level_path": "/Game/Maps/L_Other", "save": False})["ok"] and loaded and not saved
     assert call(v2, "open_level", {"level_path": "/Game/Maps/L_Arena"})["ok"] and saved  # default: save first
+    # load_level said yes, but the editor fell back to an untitled map (live: the file was gone).
+    env = call(v2, "open_level", {"level_path": "/Game/Maps/L_Missing"})
+    assert env["code"] == "NOT_FOUND" and "Untitled_1" in env["error"], env
 
 
 def test_a_dry_run_is_not_an_edit(v2, ue):
